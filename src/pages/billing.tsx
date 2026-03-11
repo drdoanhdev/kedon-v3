@@ -91,13 +91,10 @@ export default function BillingPage() {
   const router = useRouter();
   const [trial, setTrial] = useState<TrialInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<PaymentOrder[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [selectedMonths, setSelectedMonths] = useState(1);
-  const [showQR, setShowQR] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [checkingPayment, setCheckingPayment] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState<{ type: 'success' | 'error' | 'cancel'; text: string } | null>(null);
   const sepayFormRef = useRef<HTMLFormElement>(null);
   const [sepayCheckout, setSepayCheckout] = useState<{ url: string; fields: Record<string, string> } | null>(null);
@@ -120,23 +117,7 @@ export default function BillingPage() {
       if (res.ok) {
         const data = await res.json();
         setPaymentHistory(data.history || []);
-        // Nếu có pending order, hiển thị QR ngay
-        if (data.pendingOrder) {
-          const bankInfo = {
-            bankId: '970415',
-            bankName: 'VietinBank',
-            accountNo: '101868077303',
-            accountName: 'HOANG VAN DOANH',
-          };
-          const qrUrl = `https://img.vietqr.io/image/${bankInfo.bankId}-${bankInfo.accountNo}-compact2.png?amount=${data.pendingOrder.amount}&addInfo=${encodeURIComponent(data.pendingOrder.transfer_code)}&accountName=${encodeURIComponent(bankInfo.accountName)}`;
-          setPaymentData({
-            order: data.pendingOrder,
-            bankInfo,
-            qrUrl,
-            transferContent: data.pendingOrder.transfer_code,
-          });
-          setShowQR(true);
-        }
+        // Không tự show QR popup nữa - đã chuyển sang SePay checkout
       }
     } catch {}
   }, [currentTenantId]);
@@ -144,30 +125,6 @@ export default function BillingPage() {
   useEffect(() => {
     Promise.all([fetchTrial(), fetchPayments()]).finally(() => setLoading(false));
   }, [fetchTrial, fetchPayments]);
-
-  // Kiểm tra trạng thái thanh toán (polling)
-  useEffect(() => {
-    if (!showQR || !paymentData) return;
-    const interval = setInterval(async () => {
-      try {
-        const headers = await getAuthHeaders();
-        const res = await fetch('/api/tenants/payment', { headers });
-        if (res.ok) {
-          const data = await res.json();
-          // Nếu pending order biến mất → đã thanh toán
-          if (!data.pendingOrder && paymentData) {
-            setShowQR(false);
-            setPaymentData(null);
-            fetchTrial();
-            fetchPayments();
-            // Show thông báo thành công
-            alert('🎉 Thanh toán thành công! Gói dịch vụ đã được kích hoạt.');
-          }
-        }
-      } catch {}
-    }, 10000); // Check mỗi 10 giây
-    return () => clearInterval(interval);
-  }, [showQR, paymentData, fetchTrial, fetchPayments]);
 
   const handleUpgrade = async (planKey: string) => {
     setSelectedPlan(planKey);
@@ -224,28 +181,6 @@ export default function BillingPage() {
     // Clean URL params
     router.replace('/billing', undefined, { shallow: true });
   }, [router.query]);
-
-  const handleCheckPayment = async () => {
-    setCheckingPayment(true);
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/tenants/payment', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.pendingOrder) {
-          setShowQR(false);
-          setPaymentData(null);
-          await fetchTrial();
-          await fetchPayments();
-          alert('🎉 Thanh toán thành công! Gói đã được kích hoạt.');
-        } else {
-          alert('Chưa nhận được thanh toán. Nếu bạn đã chuyển khoản, vui lòng đợi 1-2 phút rồi kiểm tra lại.');
-        }
-      }
-    } catch {} finally {
-      setCheckingPayment(false);
-    }
-  };
 
   return (
     <ProtectedRoute>
@@ -326,101 +261,6 @@ export default function BillingPage() {
                   {trial.planExpiresAt ? new Date(trial.planExpiresAt).toLocaleDateString('vi-VN') : 'Không giới hạn'}
                 </span>
               </p>
-            </div>
-          )}
-
-          {/* QR Payment Modal */}
-          {showQR && paymentData && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold text-gray-900">Thanh toán chuyển khoản</h2>
-                  <button onClick={() => setShowQR(false)} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
-                </div>
-
-                {/* Plan info */}
-                <div className="bg-blue-50 rounded-lg p-3 mb-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-blue-800">
-                      Gói <span className="font-semibold">{paymentData.order.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}</span>
-                      {paymentData.order.months > 1 && ` × ${paymentData.order.months} tháng`}
-                    </span>
-                    <span className="text-lg font-bold text-blue-900">{formatVND(paymentData.order.amount)}</span>
-                  </div>
-                </div>
-
-                {/* QR Code */}
-                <div className="text-center mb-4">
-                  <img
-                    src={paymentData.qrUrl}
-                    alt="VietQR"
-                    className="mx-auto w-64 h-64 rounded-lg border"
-                  />
-                  <p className="text-xs text-gray-500 mt-2">Quét mã QR bằng app ngân hàng để thanh toán</p>
-                </div>
-
-                {/* Bank details */}
-                <div className="bg-gray-50 rounded-lg p-4 space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Ngân hàng</span>
-                    <span className="font-medium">{paymentData.bankInfo.bankName}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Số tài khoản</span>
-                    <span className="font-mono font-medium">{paymentData.bankInfo.accountNo}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Tên TK</span>
-                    <span className="font-medium">{paymentData.bankInfo.accountName}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Số tiền</span>
-                    <span className="font-bold text-blue-700">{formatVND(paymentData.order.amount)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm border-t pt-2 mt-2">
-                    <span className="text-gray-500">Nội dung CK</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-red-600 text-base">{paymentData.transferContent}</span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(paymentData.transferContent);
-                          alert('Đã sao chép nội dung chuyển khoản!');
-                        }}
-                        className="text-xs bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded"
-                      >
-                        Sao chép
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                  <p className="text-yellow-800 text-xs">
-                    ⚠️ <span className="font-semibold">Quan trọng:</span> Nhập đúng nội dung chuyển khoản{' '}
-                    <span className="font-mono font-bold">{paymentData.transferContent}</span> để hệ thống tự động kích hoạt gói.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <button
-                    onClick={handleCheckPayment}
-                    disabled={checkingPayment}
-                    className="w-full py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 transition"
-                  >
-                    {checkingPayment ? 'Đang kiểm tra...' : '✓ Tôi đã chuyển khoản'}
-                  </button>
-                  <button
-                    onClick={() => setShowQR(false)}
-                    className="w-full py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition"
-                  >
-                    Đóng (thanh toán sau)
-                  </button>
-                </div>
-
-                <p className="text-xs text-gray-400 text-center mt-3">
-                  Đơn hết hạn sau 24 giờ. Hệ thống tự kiểm tra mỗi 10 giây.
-                </p>
-              </div>
             </div>
           )}
 
