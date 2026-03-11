@@ -1,10 +1,11 @@
-import type { NextApiRequest, NextApiResponse } from \"next\";\nimport { requireTenant, supabaseAdmin } from '../../../lib/tenantApi';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { requireTenant, supabaseAdmin } from '../../../lib/tenantApi';
 
-// /api/face-embeddings
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const tenant = await requireTenant(req, res);
   if (!tenant) return;
   const supabase = supabaseAdmin;
+
   // ============================
   // 📌 1. LẤY DANH SÁCH EMBEDDINGS (GET)
   // ============================
