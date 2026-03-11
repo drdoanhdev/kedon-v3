@@ -1,6 +1,6 @@
 // filepath: middleware.ts
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/request'
+import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
   // Tạm thời vô hiệu hóa để tránh conflict
