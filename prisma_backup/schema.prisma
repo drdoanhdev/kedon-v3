@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model BenhNhan {
+  id              Int        @id @default(autoincrement())
+  mabenhnhan      String     @unique(map: "BenhNhan_maBenhNhan_key")
+  ten             String
+  gioitinh        String
+  namsinh         Int
+  dienthoai       String
+  diachi          String
+  ngaylap         DateTime
+  ngaykhamgannhat DateTime?
+  ngaytaikham     DateTime?
+  donthuoc        DonThuoc[]
+  hoadon          HoaDon[]
+  dientien        DienTien[]
+  donkinh         DonKinh[]  // Thêm quan hệ với DonKinh
+}
+
+model DonKinh {
+  id                    Int       @id @default(autoincrement())
+  benhnhanid            Int
+  chandoan              String
+  ngaykham              DateTime
+  giatrong              Float?
+  giagong               Float?
+  sotienno              Float?    // <--- đảm bảo có trường này
+  lai                   Float?    // <--- nên để nullable
+  ghichu                String
+  thiluc_khongkinh_mp   String
+  thiluc_kinhcu_mp      String
+  thiluc_kinhmoi_mp     String
+  sokinh_cu_mp          String
+  sokinh_moi_mp         String
+  hangtrong_mp          String
+  gianhap_trong         Float?
+  thiluc_khongkinh_mt   String
+  thiluc_kinhcu_mt      String
+  thiluc_kinhmoi_mt     String
+  sokinh_cu_mt          String
+  sokinh_moi_mt         String
+  hangtrong_mt          String
+  gianhap_gong          Float?
+  no                    Boolean
+  sotiendathanhtoan     Float?
+  benhnhan              BenhNhan  @relation(fields: [benhnhanid], references: [id])
+}
+
+model DonThuoc {
+  id                   Int               @id @default(autoincrement())
+  madonthuoc           String            @unique(map: "DonThuoc_maDonThuoc_key")
+  benhnhanid           Int
+  chandoan             String
+  ngaylap              DateTime
+  ngay_kham            DateTime?         // Thêm field ngày khám - nullable cho tương thích ngược
+  tongtien             Float
+  trangthai_thanh_toan String?           // character varying - nullable
+  chuyen_khoa          String?           // character varying - nullable  
+  sotien_da_thanh_toan Int               // integer type
+  chitiet              ChiTietDonThuoc[]
+  benhnhan             BenhNhan          @relation(fields: [benhnhanid], references: [id])
+}
+
+model ChiTietDonThuoc {
+  id         Int      @id @default(autoincrement())
+  donthuocid Int
+  thuocid    Int
+  soluong    Int
+  donvitinh  String
+  cachdung   String
+  donthuoc   DonThuoc @relation(fields: [donthuocid], references: [id])
+  thuoc      Thuoc    @relation(fields: [thuocid], references: [id])
+}
+
+model Thuoc {
+  id              Int               @id @default(autoincrement())
+  mathuoc         String            @unique
+  tenthuoc        String
+  donvitinh       String
+  cachdung        String
+  nhomthuocs      ThuocNhom[]
+  giaban          Float
+  gianhap         Float
+  la_thu_thuat    Boolean?          // <--- thêm trường này
+  hoatchat        String
+  tonkho          Int
+  soluongmacdinh  Int
+  donthuoc        ChiTietDonThuoc[]
+  hoadon          ChiTietHoaDon[]
+  chitietnhapkho  ChiTietNhapKho[]
+}
+
+model NhomThuoc {
+  id       Int          @id @default(autoincrement())
+  ten      String       @unique
+  thuocs   ThuocNhom[]
+}
+
+model ThuocNhom {
+  thuocId     Int
+  nhomId      Int
+  thuoc       Thuoc     @relation(fields: [thuocId], references: [id])
+  nhomthuoc   NhomThuoc @relation(fields: [nhomId], references: [id])
+
+  @@id([thuocId, nhomId])
+}
+
+model HoaDon {
+  id         Int             @id @default(autoincrement())
+  benhnhanid Int
+  ngaylap    DateTime
+  tongtien   Float
+  chitiet    ChiTietHoaDon[]
+  benhnhan   BenhNhan        @relation(fields: [benhnhanid], references: [id])
+}
+
+model ChiTietHoaDon {
+  id       Int    @id @default(autoincrement())
+  hoadonid Int
+  thuocid  Int
+  soluong  Int
+  dongia   Float
+  hoadon   HoaDon @relation(fields: [hoadonid], references: [id])
+  thuoc    Thuoc  @relation(fields: [thuocid], references: [id])
+}
+
+model PhieuNhapKho {
+  id            Int                @id @default(autoincrement())
+  nhacungcap    String
+  ngaylap       DateTime
+  tongtien      Float
+  chitiet       ChiTietNhapKho[]
+}
+
+model ChiTietNhapKho {
+  id            Int            @id @default(autoincrement())
+  phieunhapkhoid Int
+  thuocid       Int
+  soluong       Int
+  dongia        Float
+  phieunhapkho  PhieuNhapKho    @relation(fields: [phieunhapkhoid], references: [id])
+  thuoc         Thuoc           @relation(fields: [thuocid], references: [id])
+}
+
+model DienTien {
+  id         Int      @id @default(autoincrement())
+  benhnhanid Int
+  ngay       DateTime @default(now())
+  noidung    String
+  benhnhan   BenhNhan @relation(fields: [benhnhanid], references: [id])
+}
+
+model HangTrong {
+  id          Int      @id @default(autoincrement())
+  ten_hang    String   @unique
+  gia_nhap    Int      @default(0)
+  gia_ban     Int      @default(0)
+  mo_ta       String?
+  ngay_tao    DateTime @default(now())
+  trang_thai  Boolean  @default(true)
+}
+
+model GongKinh {
+  id          Int      @id @default(autoincrement())
+  ten_gong    String   @unique
+  chat_lieu   String?
+  gia_nhap    Int      @default(0)
+  gia_ban     Int      @default(0)
+  mo_ta       String?
+  ngay_tao    DateTime @default(now())
+  trang_thai  Boolean  @default(true)
+}
+
+model MauThiLuc {
+  id       Int     @id @default(autoincrement())
+  gia_tri  String  @unique
+  thu_tu   Int     @default(0)
+}
+
+model MauSoKinh {
+  id       Int     @id @default(autoincrement())
+  so_kinh  String  @unique
+  thu_tu   Int     @default(0)
+}
