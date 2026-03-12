@@ -133,6 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sokinh_cu_mt,
         sokinh_moi_mt,
         hangtrong_mt,
+        ten_gong,
         no,
         sotien_da_thanh_toan,
         lai,
@@ -154,6 +155,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Backward compatibility: if new cost fields not provided use ax_mp/ax_mt
   const lensCost = (req.body as any).gianhap_trong ?? 0;
   const frameCost = (req.body as any).gianhap_gong ?? 0;
+
+      // === Resolve FK IDs from text names ===
+      const fkIds = await resolveForeignKeys(supabase, tenantId, {
+        hangtrong_mp: hangtrong_mp as string,
+        hangtrong_mt: hangtrong_mt as string,
+        ten_gong: ten_gong as string,
+      });
+
       const { data, error } = await supabase
         .from('DonKinh')
         .insert([
@@ -173,12 +182,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             sokinh_cu_mp: sokinh_cu_mp || '',
             sokinh_moi_mp: sokinh_moi_mp || '',
             hangtrong_mp: hangtrong_mp || '',
+            hang_trong_mp_id: fkIds.hang_trong_mp_id,
             thiluc_khongkinh_mt: thiluc_khongkinh_mt || '',
             thiluc_kinhcu_mt: thiluc_kinhcu_mt || '',
             thiluc_kinhmoi_mt: thiluc_kinhmoi_mt || '',
             sokinh_cu_mt: sokinh_cu_mt || '',
             sokinh_moi_mt: sokinh_moi_mt || '',
             hangtrong_mt: hangtrong_mt || '',
+            hang_trong_mt_id: fkIds.hang_trong_mt_id,
+            ten_gong: ten_gong || '',
+            gong_kinh_id: fkIds.gong_kinh_id,
             sotien_da_thanh_toan: sotien_da_thanh_toan || 0,
              no: (Number(giatrong) + Number(giagong) - Number(sotien_da_thanh_toan || 0)) > 0,
              // Profit unified
@@ -189,7 +202,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();
 
       if (error) throw error;
-      res.status(200).json({ data: data ? withDebtFields(data) : data });
+
+      // === INVENTORY INTEGRATION ===
+      const inventoryWarnings: string[] = [];
+      if (data) {
+        const donKinhId = data.id;
+        try {
+          const invResult = await processLensInventory(supabase, tenantId, donKinhId, {
+            sokinh_moi_mp: sokinh_moi_mp as string,
+            hangtrong_mp: hangtrong_mp as string,
+            sokinh_moi_mt: sokinh_moi_mt as string,
+            hangtrong_mt: hangtrong_mt as string,
+            ten_gong: ten_gong as string,
+          });
+          inventoryWarnings.push(...invResult.warnings);
+        } catch (invErr) {
+          console.error('⚠️ Inventory processing error:', invErr);
+          inventoryWarnings.push('Lỗi xử lý kho: ' + (invErr instanceof Error ? invErr.message : String(invErr)));
+        }
+      }
+
+      res.status(200).json({ data: data ? withDebtFields(data) : data, inventoryWarnings });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Supabase POST error:', error);
@@ -217,6 +250,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sokinh_cu_mt,
         sokinh_moi_mt,
         hangtrong_mt,
+        ten_gong,
         no,
         sotien_da_thanh_toan,
         lai,
@@ -229,6 +263,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Costs fallback for PUT
   const lensCost = (req.body as any).gianhap_trong ?? 0;
   const frameCost = (req.body as any).gianhap_gong ?? 0;
+
+      // === Fetch old DonKinh to compare & reverse inventory ===
+      const { data: oldDon } = await supabase
+        .from('DonKinh')
+        .select('hangtrong_mp, hangtrong_mt, sokinh_moi_mp, sokinh_moi_mt, ten_gong')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      // === Resolve FK IDs from text names ===
+      const fkIds = await resolveForeignKeys(supabase, tenantId, {
+        hangtrong_mp: hangtrong_mp as string,
+        hangtrong_mt: hangtrong_mt as string,
+        ten_gong: ten_gong as string,
+      });
+
       const { data, error } = await supabase
         .from('DonKinh')
         .update({
@@ -246,12 +296,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sokinh_cu_mp: sokinh_cu_mp || '',
           sokinh_moi_mp: sokinh_moi_mp || '',
           hangtrong_mp: hangtrong_mp || '',
+          hang_trong_mp_id: fkIds.hang_trong_mp_id,
           thiluc_khongkinh_mt: thiluc_khongkinh_mt || '',
           thiluc_kinhcu_mt: thiluc_kinhcu_mt || '',
           thiluc_kinhmoi_mt: thiluc_kinhmoi_mt || '',
           sokinh_cu_mt: sokinh_cu_mt || '',
           sokinh_moi_mt: sokinh_moi_mt || '',
           hangtrong_mt: hangtrong_mt || '',
+          hang_trong_mt_id: fkIds.hang_trong_mt_id,
+          ten_gong: ten_gong || '',
+          gong_kinh_id: fkIds.gong_kinh_id,
        sotien_da_thanh_toan: sotien_da_thanh_toan || 0,
    no: (Number(giatrong) + Number(giagong) - Number(sotien_da_thanh_toan || 0)) > 0,
    lai: (typeof lai === 'number' && !isNaN(lai as number)) ? lai : calcKinhProfit(giatrong, giagong, lensCost, frameCost),
@@ -261,7 +315,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();
 
       if (error) throw error;
-      res.status(200).json({ data: data ? withDebtFields(data) : data });
+
+      // === INVENTORY: Reverse old + process new if lens/frame changed ===
+      const inventoryWarnings: string[] = [];
+      if (data && oldDon) {
+        const donKinhId = Number(id);
+        const lensChanged = oldDon.hangtrong_mp !== (hangtrong_mp || '') ||
+                            oldDon.hangtrong_mt !== (hangtrong_mt || '') ||
+                            oldDon.sokinh_moi_mp !== (sokinh_moi_mp || '') ||
+                            oldDon.sokinh_moi_mt !== (sokinh_moi_mt || '');
+        const frameChanged = oldDon.ten_gong !== (ten_gong || '');
+
+        if (lensChanged || frameChanged) {
+          try {
+            // Reverse old inventory
+            await reverseInventory(supabase, tenantId, donKinhId);
+            // Process new inventory
+            const invResult = await processLensInventory(supabase, tenantId, donKinhId, {
+              sokinh_moi_mp: sokinh_moi_mp as string,
+              hangtrong_mp: hangtrong_mp as string,
+              sokinh_moi_mt: sokinh_moi_mt as string,
+              hangtrong_mt: hangtrong_mt as string,
+              ten_gong: ten_gong as string,
+            });
+            inventoryWarnings.push(...invResult.warnings);
+          } catch (invErr) {
+            console.error('⚠️ PUT inventory error:', invErr);
+            inventoryWarnings.push('Lỗi xử lý kho khi sửa đơn: ' + (invErr instanceof Error ? invErr.message : String(invErr)));
+          }
+        }
+      }
+
+      res.status(200).json({ data: data ? withDebtFields(data) : data, inventoryWarnings });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Supabase PUT error:', error);
@@ -316,6 +401,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (!id) return res.status(400).json({ message: 'Thiếu ID để xoá đơn kính' });
 
+      // === REVERSE INVENTORY before deleting ===
+      try {
+        await reverseInventory(supabase, tenantId, Number(id));
+      } catch (invErr) {
+        console.error('⚠️ DELETE reverse inventory error:', invErr);
+        // Continue with delete even if reverse fails
+      }
+
       const { error } = await supabase.from('DonKinh').delete().eq('id', Number(id)).eq('tenant_id', tenantId);
       if (error) throw error;
 
@@ -329,4 +422,384 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
     res.status(405).json({ message: `Phương thức ${req.method} không được phép` });
   }
+}
+
+// === HELPER: Parse sokinh string → { sph, cyl, add_power? } ===
+// Hỗ trợ nhiều format:
+//   "-1.00/-0.50x180" (đầy đủ)
+//   "-1.00" (chỉ SPH, không loạn → CYL=0)
+//   "Plano" (không độ → SPH=0, CYL=0)
+//   "Plano/-0.50x90" (Plano + loạn)
+//   "-0.50 ADD +1.25" (đa tròng, chỉ SPH + ADD)
+//   "-0.50/-1.00x180 ADD +1.25" (đa tròng đầy đủ)
+function parseSoKinh(sokinh: string): { sph: number; cyl: number; add_power?: number } | null {
+  if (!sokinh || !sokinh.trim()) return null;
+  const s = sokinh.trim();
+
+  // Tách phần ADD nếu có
+  const addMatch = s.match(/\s+ADD\s+([+-]?\d+(?:\.\d{1,2})?)\s*$/i);
+  const base = addMatch ? s.slice(0, addMatch.index).trim() : s;
+  const addPower = addMatch ? parseFloat(addMatch[1]) : undefined;
+
+  // Format đầy đủ: SPH/CYLxAXIS
+  const fullMatch = base.match(/^(Plano|[+-]?\d+(?:\.\d{1,2})?)\s*\/\s*([-+]?\d+(?:\.\d{1,2})?)\s*x\s*(\d{1,3})$/i);
+  if (fullMatch) {
+    const sph = fullMatch[1].toLowerCase() === 'plano' ? 0 : parseFloat(fullMatch[1]);
+    const cyl = parseFloat(fullMatch[2]);
+    if (isNaN(sph) || isNaN(cyl)) return null;
+    const result: { sph: number; cyl: number; add_power?: number } = { sph, cyl };
+    if (addPower !== undefined && !isNaN(addPower)) result.add_power = addPower;
+    return result;
+  }
+
+  // Chỉ SPH (không loạn): "-1.00", "+2.50", "0.00", "-3"
+  const sphOnly = base.match(/^[+-]?\d+(?:\.\d{1,2})?$/);
+  if (sphOnly) {
+    const sph = parseFloat(base);
+    if (isNaN(sph)) return null;
+    const result: { sph: number; cyl: number; add_power?: number } = { sph, cyl: 0 };
+    if (addPower !== undefined && !isNaN(addPower)) result.add_power = addPower;
+    return result;
+  }
+
+  // Plano (không độ)
+  if (/^plano$/i.test(base)) {
+    const result: { sph: number; cyl: number; add_power?: number } = { sph: 0, cyl: 0 };
+    if (addPower !== undefined && !isNaN(addPower)) result.add_power = addPower;
+    return result;
+  }
+
+  return null;
+}
+
+// === HELPER: Resolve text names to FK IDs ===
+async function resolveForeignKeys(
+  db: typeof import('../../../lib/tenantApi').supabaseAdmin,
+  tenantId: string,
+  fields: { hangtrong_mp: string; hangtrong_mt: string; ten_gong: string }
+) {
+  const result: { hang_trong_mp_id: number | null; hang_trong_mt_id: number | null; gong_kinh_id: number | null } = {
+    hang_trong_mp_id: null,
+    hang_trong_mt_id: null,
+    gong_kinh_id: null,
+  };
+
+  if (fields.hangtrong_mp) {
+    const { data } = await db.from('HangTrong').select('id').eq('tenant_id', tenantId).eq('ten_hang', fields.hangtrong_mp).limit(1).maybeSingle();
+    if (data) result.hang_trong_mp_id = data.id;
+  }
+  if (fields.hangtrong_mt) {
+    if (fields.hangtrong_mt === fields.hangtrong_mp && result.hang_trong_mp_id) {
+      result.hang_trong_mt_id = result.hang_trong_mp_id;
+    } else {
+      const { data } = await db.from('HangTrong').select('id').eq('tenant_id', tenantId).eq('ten_hang', fields.hangtrong_mt).limit(1).maybeSingle();
+      if (data) result.hang_trong_mt_id = data.id;
+    }
+  }
+  if (fields.ten_gong) {
+    const { data } = await db.from('GongKinh').select('id').eq('tenant_id', tenantId).eq('ten_gong', fields.ten_gong).limit(1).maybeSingle();
+    if (data) result.gong_kinh_id = data.id;
+  }
+  return result;
+}
+
+// === HELPER: Reverse inventory exports for a DonKinh (for UPDATE/DELETE) ===
+async function reverseInventory(
+  db: typeof import('../../../lib/tenantApi').supabaseAdmin,
+  tenantId: string,
+  donKinhId: number
+) {
+  // 1. Reverse lens exports: add back stock
+  const { data: lensExports } = await db
+    .from('lens_export_sale')
+    .select('id, lens_stock_id, so_luong')
+    .eq('tenant_id', tenantId)
+    .eq('don_kinh_id', donKinhId);
+
+  if (lensExports && lensExports.length > 0) {
+    for (const exp of lensExports) {
+      // Read current stock then add back
+      const { data: stock } = await db.from('lens_stock')
+        .select('ton_hien_tai')
+        .eq('id', exp.lens_stock_id)
+        .single();
+      if (stock) {
+        await db.from('lens_stock').update({
+          ton_hien_tai: stock.ton_hien_tai + exp.so_luong,
+          updated_at: new Date().toISOString(),
+        }).eq('id', exp.lens_stock_id);
+      }
+    }
+    // Delete old lens exports for this donkinh
+    await db.from('lens_export_sale').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
+    console.log(`🔄 Hoàn kho ${lensExports.length} tròng cho đơn #${donKinhId}`);
+  }
+
+  // 2. Reverse frame exports: add back stock
+  const { data: frameExports } = await db
+    .from('frame_export')
+    .select('id, gong_kinh_id, so_luong')
+    .eq('tenant_id', tenantId)
+    .eq('don_kinh_id', donKinhId);
+
+  if (frameExports && frameExports.length > 0) {
+    for (const exp of frameExports) {
+      const { data: gong } = await db.from('GongKinh').select('ton_kho').eq('id', exp.gong_kinh_id).single();
+      if (gong) {
+        await db.from('GongKinh').update({
+          ton_kho: (gong.ton_kho || 0) + exp.so_luong,
+        }).eq('id', exp.gong_kinh_id);
+      }
+    }
+    await db.from('frame_export').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
+    console.log(`🔄 Hoàn kho ${frameExports.length} gọng cho đơn #${donKinhId}`);
+  }
+
+  // 3. Delete pending lens orders for this donkinh
+  await db.from('lens_order').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId).in('trang_thai', ['cho_dat']);
+}
+
+// === HELPER: Process lens & frame inventory after DonKinh creation ===
+async function processLensInventory(
+  db: typeof import('../../../lib/tenantApi').supabaseAdmin,
+  tenantId: string,
+  donKinhId: number,
+  fields: {
+    sokinh_moi_mp: string;
+    hangtrong_mp: string;
+    sokinh_moi_mt: string;
+    hangtrong_mt: string;
+    ten_gong: string;
+  }
+): Promise<{ warnings: string[] }> {
+  const warnings: string[] = [];
+  console.log(`📦 [Inventory] Bắt đầu xử lý kho cho đơn #${donKinhId}`, JSON.stringify(fields));
+
+  const eyes: Array<{ sokinh: string; hangtrong: string; mat: 'phai' | 'trai'; label: string }> = [
+    { sokinh: fields.sokinh_moi_mp, hangtrong: fields.hangtrong_mp, mat: 'phai', label: 'MP' },
+    { sokinh: fields.sokinh_moi_mt, hangtrong: fields.hangtrong_mt, mat: 'trai', label: 'MT' },
+  ];
+
+  for (const eye of eyes) {
+    if (!eye.sokinh || !eye.hangtrong) {
+      console.log(`📦 [Inventory] ${eye.label}: Bỏ qua (sokinh="${eye.sokinh}", hangtrong="${eye.hangtrong}")`);
+      continue;
+    }
+
+    const parsed = parseSoKinh(eye.sokinh);
+    if (!parsed) {
+      warnings.push(`⚠️ ${eye.label}: Không parse được số kính "${eye.sokinh}" (cần format: SPH/CYLxAXIS, ví dụ: -2.00/-1.50x180)`);
+      console.log(`📦 [Inventory] ${eye.label}: parseSoKinh FAILED cho "${eye.sokinh}"`);
+      continue;
+    }
+    console.log(`📦 [Inventory] ${eye.label}: parsed SPH=${parsed.sph} CYL=${parsed.cyl} ADD=${parsed.add_power ?? 'none'} từ "${eye.sokinh}"`);
+
+    // Lookup HangTrong - try with kieu_quan_ly first, fallback to basic
+    let ht: { id: number; kieu_quan_ly?: string; nha_cung_cap_id?: number } | null = null;
+    const { data: htData, error: htErr } = await db
+      .from('HangTrong')
+      .select('id, kieu_quan_ly, nha_cung_cap_id')
+      .eq('tenant_id', tenantId)
+      .eq('ten_hang', eye.hangtrong)
+      .limit(1)
+      .maybeSingle();
+
+    if (htErr) {
+      // Column kieu_quan_ly may not exist - fallback to basic select
+      console.log(`📦 [Inventory] ${eye.label}: HangTrong select lỗi (${htErr.message}), thử fallback`);
+      const { data: htBasic } = await db
+        .from('HangTrong')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('ten_hang', eye.hangtrong)
+        .limit(1)
+        .maybeSingle();
+      if (htBasic) ht = { id: htBasic.id, kieu_quan_ly: 'SAN_KHO' };
+    } else {
+      ht = htData;
+    }
+
+    if (!ht) {
+      warnings.push(`⚠️ ${eye.label}: Không tìm thấy hãng tròng "${eye.hangtrong}" trong danh mục. Chưa xử lý kho.`);
+      console.log(`📦 [Inventory] ${eye.label}: HangTrong "${eye.hangtrong}" NOT FOUND`);
+      continue;
+    }
+    console.log(`📦 [Inventory] ${eye.label}: HangTrong id=${ht.id}, kieu_quan_ly=${ht.kieu_quan_ly || 'N/A'}`);
+
+    const kieuQuanLy = ht.kieu_quan_ly || 'SAN_KHO';
+
+    if (kieuQuanLy === 'SAN_KHO') {
+      let stockQuery = db
+        .from('lens_stock')
+        .select('id, ton_hien_tai')
+        .eq('tenant_id', tenantId)
+        .eq('hang_trong_id', ht.id)
+        .eq('sph', parsed.sph)
+        .eq('cyl', parsed.cyl);
+      // Filter by add_power: match exact value or null for single-vision
+      if (parsed.add_power !== undefined) {
+        stockQuery = stockQuery.eq('add_power', parsed.add_power);
+      } else {
+        stockQuery = stockQuery.is('add_power', null);
+      }
+      const { data: stock, error: stockErr } = await stockQuery
+        .limit(1)
+        .maybeSingle();
+
+      if (stockErr) {
+        warnings.push(`⚠️ ${eye.label}: Lỗi truy vấn lens_stock: ${stockErr.message}`);
+        console.log(`📦 [Inventory] ${eye.label}: lens_stock query ERROR:`, stockErr.message);
+        continue;
+      }
+
+      if (stock) {
+        const tonTruoc = stock.ton_hien_tai;
+        const doInfo = `${parsed.sph}/${parsed.cyl}${parsed.add_power !== undefined ? ` ADD ${parsed.add_power}` : ''}`;
+        if (tonTruoc <= 0) {
+          warnings.push(`⚠️ ${eye.label}: Tròng ${eye.hangtrong} (${doInfo}) đã HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất kho, tồn sẽ âm.`);
+        } else if (tonTruoc <= 2) {
+          warnings.push(`⚠️ ${eye.label}: Tròng ${eye.hangtrong} (${doInfo}) SẮP HẾT (tồn: ${tonTruoc})`);
+        }
+
+        // Insert export record (for audit trail + trigger may fire)
+        const { error: expErr } = await db.from('lens_export_sale').insert({
+          tenant_id: tenantId,
+          lens_stock_id: stock.id,
+          don_kinh_id: donKinhId,
+          so_luong: 1,
+          mat: eye.mat,
+        });
+
+        if (expErr) {
+          // Export table insert failed — update stock directly as fallback
+          console.log(`📦 [Inventory] ${eye.label}: lens_export_sale INSERT lỗi (${expErr.message}), trừ kho trực tiếp`);
+          warnings.push(`⚠️ ${eye.label}: Không ghi được phiếu xuất (${expErr.message}), đã trừ kho trực tiếp.`);
+          await db.from('lens_stock').update({
+            ton_hien_tai: tonTruoc - 1,
+            updated_at: new Date().toISOString(),
+          }).eq('id', stock.id);
+        } else {
+          // Export inserted OK — verify trigger actually deducted stock
+          const { data: afterStock } = await db.from('lens_stock')
+            .select('ton_hien_tai')
+            .eq('id', stock.id)
+            .single();
+
+          if (afterStock && afterStock.ton_hien_tai >= tonTruoc) {
+            // Trigger didn't fire — update stock manually
+            console.log(`📦 [Inventory] ${eye.label}: Trigger chưa trừ kho (trước=${tonTruoc}, sau=${afterStock.ton_hien_tai}). Trừ trực tiếp.`);
+            await db.from('lens_stock').update({
+              ton_hien_tai: tonTruoc - 1,
+              updated_at: new Date().toISOString(),
+            }).eq('id', stock.id);
+          } else {
+            console.log(`📦 [Inventory] ${eye.label}: ✅ Đã trừ kho tròng stock#${stock.id} (${tonTruoc} → ${afterStock?.ton_hien_tai})`);
+          }
+        }
+      } else {
+        // Không có tồn kho cho độ này → tạo đơn đặt tròng (lens_order) để hiện trong tab "Tròng cần đặt"
+        const doInfo = `${parsed.sph}/${parsed.cyl}${parsed.add_power !== undefined ? ` ADD ${parsed.add_power}` : ''}`;
+        console.log(`📦 [Inventory] ${eye.label}: lens_stock NOT FOUND cho HT#${ht.id} SPH=${parsed.sph} CYL=${parsed.cyl} ADD=${parsed.add_power ?? 'null'} → tạo lens_order`);
+        const { error: autoOrderErr } = await db.from('lens_order').insert({
+          tenant_id: tenantId,
+          don_kinh_id: donKinhId,
+          hang_trong_id: ht.id,
+          so_luong_mieng: 1,
+          sph: parsed.sph,
+          cyl: parsed.cyl,
+          add_power: parsed.add_power ?? null,
+          mat: eye.mat,
+          nha_cung_cap_id: ht.nha_cung_cap_id || null,
+          trang_thai: 'cho_dat',
+          ghi_chu: 'Tự động tạo - không có tồn kho cho độ này',
+        });
+        if (autoOrderErr) {
+          warnings.push(`⚠️ ${eye.label}: Không có tồn kho ${eye.hangtrong} (${doInfo}) và lỗi tạo đơn đặt: ${autoOrderErr.message}`);
+        } else {
+          warnings.push(`📋 ${eye.label}: Tròng ${eye.hangtrong} (${doInfo}) chưa có trong kho → đã chuyển sang Tròng cần đặt`);
+        }
+      }
+    } else if (kieuQuanLy === 'DAT_KHI_CO_KHACH') {
+      const { error: orderErr } = await db.from('lens_order').insert({
+        tenant_id: tenantId,
+        don_kinh_id: donKinhId,
+        hang_trong_id: ht.id,
+        so_luong_mieng: 1,
+        sph: parsed.sph,
+        cyl: parsed.cyl,
+        add_power: parsed.add_power ?? null,
+        mat: eye.mat,
+        nha_cung_cap_id: ht.nha_cung_cap_id || null,
+        trang_thai: 'cho_dat',
+      });
+      if (orderErr) {
+        warnings.push(`⚠️ ${eye.label}: Lỗi tạo đơn đặt tròng: ${orderErr.message}`);
+        console.log(`📦 [Inventory] ${eye.label}: lens_order INSERT ERROR:`, orderErr.message);
+      } else {
+        warnings.push(`📋 ${eye.label}: Tròng ${eye.hangtrong} cần đặt (ĐẶT KHI CÓ KHÁCH)`);
+        console.log(`📋 Tạo đơn đặt tròng ${eye.mat}: HT#${ht.id} SPH=${parsed.sph} CYL=${parsed.cyl} ADD=${parsed.add_power ?? 'null'}`);
+      }
+    }
+  }
+
+  // === Frame export ===
+  if (fields.ten_gong) {
+    const { data: gong, error: gongErr } = await db
+      .from('GongKinh')
+      .select('id, ton_kho')
+      .eq('tenant_id', tenantId)
+      .eq('ten_gong', fields.ten_gong)
+      .limit(1)
+      .maybeSingle();
+
+    if (gongErr) {
+      warnings.push(`⚠️ Lỗi tìm gọng "${fields.ten_gong}": ${gongErr.message}`);
+      console.log(`📦 [Inventory] Gọng query ERROR:`, gongErr.message);
+    } else if (gong) {
+      const tonTruoc = gong.ton_kho || 0;
+      if (tonTruoc <= 0) {
+        warnings.push(`⚠️ Gọng "${fields.ten_gong}" đã HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất kho, tồn sẽ âm.`);
+      } else if (tonTruoc <= 2) {
+        warnings.push(`⚠️ Gọng "${fields.ten_gong}" SẮP HẾT (tồn: ${tonTruoc})`);
+      }
+
+      // Insert frame export record (for audit trail + trigger may fire)
+      const { error: fExpErr } = await db.from('frame_export').insert({
+        tenant_id: tenantId,
+        gong_kinh_id: gong.id,
+        don_kinh_id: donKinhId,
+        so_luong: 1,
+      });
+
+      if (fExpErr) {
+        // Export table failed — update GongKinh directly
+        console.log(`📦 [Inventory] Gọng: frame_export INSERT lỗi (${fExpErr.message}), trừ kho trực tiếp`);
+        warnings.push(`⚠️ Gọng: Không ghi được phiếu xuất (${fExpErr.message}), đã trừ kho trực tiếp.`);
+        await db.from('GongKinh').update({
+          ton_kho: tonTruoc - 1,
+        }).eq('id', gong.id);
+      } else {
+        // Verify trigger deducted stock
+        const { data: afterGong } = await db.from('GongKinh')
+          .select('ton_kho')
+          .eq('id', gong.id)
+          .single();
+
+        if (afterGong && (afterGong.ton_kho || 0) >= tonTruoc) {
+          // Trigger didn't fire — update manually
+          console.log(`📦 [Inventory] Gọng: Trigger chưa trừ kho (trước=${tonTruoc}, sau=${afterGong.ton_kho}). Trừ trực tiếp.`);
+          await db.from('GongKinh').update({
+            ton_kho: tonTruoc - 1,
+          }).eq('id', gong.id);
+        } else {
+          console.log(`📦 [Inventory] Gọng: ✅ Đã trừ kho "${fields.ten_gong}" (${tonTruoc} → ${afterGong?.ton_kho})`);
+        }
+      }
+    } else {
+      console.log(`📦 [Inventory] Gọng "${fields.ten_gong}" NOT FOUND trong GongKinh`);
+    }
+  }
+
+  console.log(`📦 [Inventory] Hoàn tất. Warnings: ${warnings.length}`);
+  return { warnings };
 }

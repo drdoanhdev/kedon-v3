@@ -1,21 +1,19 @@
 import '../styles/globals.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
-import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { AuthProvider } from '../contexts/AuthContext';
 import Header from '../components/Header';
 import { initializeApiAuthHeaders } from '../lib/apiAuthHeaders';
+
+// Register auth interceptors at module level (before any component effects run)
+initializeApiAuthHeaders();
 
 const noHeaderPages = ['/login', '/register'];
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const showHeader = !noHeaderPages.includes(router.pathname);
-
-  useEffect(() => {
-    initializeApiAuthHeaders();
-  }, []);
   return (
     <AuthProvider>
       <div className="min-h-screen bg-gray-50">

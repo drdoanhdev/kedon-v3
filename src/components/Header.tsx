@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse } from 'lucide-react';
 
 export default function Header() {
   const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole } = useAuth();
@@ -16,7 +16,7 @@ export default function Header() {
     { href: '/don-kinh', label: 'Đơn kính', icon: Glasses },
     { href: '/danh-muc', label: 'Danh mục', icon: List },
     { href: '/bao-cao', label: 'Báo cáo', icon: BarChart },
-    { href: '/pending-faces', label: 'Chờ gán', icon: UserSearch },
+    { href: '/quan-ly-kho', label: 'Kho', icon: Warehouse },
   ];
 
   const isActivePage = (href: string) => router.pathname === href;

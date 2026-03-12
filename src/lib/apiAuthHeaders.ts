@@ -4,9 +4,32 @@ import { supabaseAuth } from './supabaseAuth';
 
 let initialized = false;
 
+// --- Cached session token ---
+let cachedToken: string | null = null;
+let cachedTokenExpiry = 0; // epoch seconds
+const TOKEN_REFRESH_MARGIN = 60; // refresh 60s before expiry
+
 const getCurrentTenantId = (): string | null => {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('currentTenantId');
+};
+
+const getCachedToken = async (): Promise<string | null> => {
+  const now = Math.floor(Date.now() / 1000);
+  // Return cached token if still valid (with margin)
+  if (cachedToken && cachedTokenExpiry > now + TOKEN_REFRESH_MARGIN) {
+    return cachedToken;
+  }
+  // Otherwise fetch fresh session
+  const { data: { session } } = await supabaseAuth.auth.getSession();
+  if (session) {
+    cachedToken = session.access_token;
+    cachedTokenExpiry = session.expires_at ?? 0;
+  } else {
+    cachedToken = null;
+    cachedTokenExpiry = 0;
+  }
+  return cachedToken;
 };
 
 const injectAuthHeaders = async (
@@ -14,11 +37,7 @@ const injectAuthHeaders = async (
 ): Promise<InternalAxiosRequestConfig> => {
   if (typeof window === 'undefined') return config;
 
-  const {
-    data: { session },
-  } = await supabaseAuth.auth.getSession();
-
-  const token = session?.access_token;
+  const token = await getCachedToken();
   const tenantId = getCurrentTenantId();
 
   const headers = (config.headers || {}) as Record<string, string>;
@@ -40,6 +59,17 @@ export const initializeApiAuthHeaders = (): void => {
 
   axios.interceptors.request.use(injectAuthHeaders);
   apiClient.interceptors.request.use(injectAuthHeaders);
+
+  // Proactively update cached token on auth state changes (login, logout, token refresh)
+  supabaseAuth.auth.onAuthStateChange((_event, session) => {
+    if (session) {
+      cachedToken = session.access_token;
+      cachedTokenExpiry = session.expires_at ?? 0;
+    } else {
+      cachedToken = null;
+      cachedTokenExpiry = 0;
+    }
+  });
 
   initialized = true;
 };

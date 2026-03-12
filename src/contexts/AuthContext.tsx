@@ -12,12 +12,6 @@ export const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true
-  },
-  global: {
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache'
-    }
   }
 })
 export const supabase = supabaseAuth // Alias để tương thích
@@ -137,16 +131,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [user])
 
   const signIn = async (email: string, password: string) => {
-    console.log('🔑 AuthContext.signIn called with:', { email, password: '***' })
     try {
       const { data, error } = await supabaseAuth.auth.signInWithPassword({
         email,
         password,
-      })
-      console.log('📡 Supabase signInWithPassword result:', { 
-        success: !error, 
-        error: error?.message,
-        user: data?.user?.email 
       })
       if (!error && data?.user?.id) {
         // Sau khi đăng nhập, tải thông tin tenancy và role
@@ -155,7 +143,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       return { error }
     } catch (exception) {
-      console.error('💥 Exception in signIn:', exception)
       return { error: exception }
     }
   }
@@ -187,17 +174,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .maybeSingle()
       
       if (error) {
-        console.warn('⚠️ Failed to fetch user role:', error.message)
         setUserRole(null)
       } else if (data) {
         const role = data.role?.toLowerCase() as 'admin' | 'doctor' | 'staff' | null
         setUserRole(role)
-        console.log('✅ User role loaded:', role)
       } else {
         setUserRole(null)
       }
     } catch (e) {
-      console.error('❌ Error fetching user role:', e)
       setUserRole(null)
     }
   }, [])
@@ -217,7 +201,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (upErr) throw upErr
         if (up) profile = { ...up, default_tenant_id: up.default_tenant_id } as UserProfile
       } catch (e) {
-        console.warn('⚠️ user_profiles fetch failed, trying userprofile fallback:', (e as any)?.message)
         try {
           const { data: up2, error: upErr2 } = await supabaseAuth
             .from('userprofile')
@@ -240,9 +223,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .eq('user_id', uid)
         if (msErr) throw msErr
         if (ms) membershipRows = ms as TenantMembership[]
-      } catch (e) {
-        console.warn('⚠️ tenantmembership fetch failed:', (e as any)?.message)
-      }
+      } catch (e) {}
+      
       setMemberships(membershipRows)
 
       // 3. Tenants (bảng tenants trước → fallback tenant)
@@ -258,7 +240,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             if (terr) throw terr
             if (tdata) tenantRows = tdata as Tenant[]
           } catch (e) {
-            console.warn('⚠️ tenants fetch failed, trying tenant fallback:', (e as any)?.message)
             try {
               const { data: tdata2, error: terr2 } = await supabaseAuth
                 .from('tenant')
@@ -289,7 +270,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try { localStorage.setItem('currentTenantId', chosen) } catch {}
       }
     } catch (e) {
-      console.error('❌ refreshTenancyInternal error:', e)
+      // silently fail
     } finally {
       setTenancyLoading(false)
     }
@@ -325,15 +306,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return userRole ? roles.includes(userRole) : false
   }, [userRole])
 
-  // Debug log trước khi return Provider (có thể tắt sau)
-  console.log('� AuthContext multi-tenant debug:', {
-    user: user?.email,
-    tenants: tenants.length,
-    memberships: memberships.length,
-    currentTenantId,
-    currentRole,
-    tenancyLoading
-  })
+
 
   const contextValue: AuthContextType = {
     user,

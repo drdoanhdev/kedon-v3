@@ -37,7 +37,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         })
         .select();
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ message: `Hãng tròng "${ten_hang}" đã tồn tại` });
+        throw error;
+      }
       return res.status(200).json(data[0]);
     }
 
@@ -56,7 +59,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .select();
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ message: `Hãng tròng "${ten_hang}" đã tồn tại` });
+        throw error;
+      }
       return res.status(200).json(data[0]);
     }
 

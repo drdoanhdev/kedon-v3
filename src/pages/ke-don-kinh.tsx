@@ -169,6 +169,11 @@ export default function KeDonKinh() {
   const [gongKinhs, setGongKinhs] = useState<GongKinh[]>([]);
   const [mauThiLucs, setMauThiLucs] = useState<MauThiLuc[]>([]);
   const [mauSoKinhs, setMauSoKinhs] = useState<MauSoKinh[]>([]);
+  
+  // Stock status states
+  const [frameStock, setFrameStock] = useState<number | null>(null);
+  const [lensStockMp, setLensStockMp] = useState<{ ton: number | null; trang_thai: string } | null>(null);
+  const [lensStockMt, setLensStockMt] = useState<{ ton: number | null; trang_thai: string } | null>(null);
   const [form, setForm] = useState<Partial<DonKinh>>({
     chandoan: '',
     ngaykham: (() => {
@@ -314,6 +319,57 @@ export default function KeDonKinh() {
 
     fetchCategories();
   }, []);
+
+  // Helper: Check stock for a lens or frame
+  const checkStock = async (hangTrong: string | undefined, sokinh: string | undefined, tenGong: string | undefined) => {
+    try {
+      const params = new URLSearchParams();
+      if (hangTrong) params.set('hang_trong', hangTrong);
+      if (sokinh) params.set('sokinh', sokinh);
+      if (tenGong) params.set('ten_gong', tenGong);
+      if (params.toString()) {
+        const res = await axios.get(`/api/inventory/check-stock?${params.toString()}`);
+        return res.data;
+      }
+    } catch { /* silent */ }
+    return null;
+  };
+
+  // Auto-check stock when lens/frame/sokinh changes
+  useEffect(() => {
+    const checkLensStock = async () => {
+      if (form.hangtrong_mp && form.sokinh_moi_mp) {
+        const data = await checkStock(form.hangtrong_mp, form.sokinh_moi_mp, undefined);
+        if (data?.lens) setLensStockMp({ ton: data.lens.ton_hien_tai, trang_thai: data.lens.trang_thai });
+        else setLensStockMp(null);
+      } else {
+        setLensStockMp(null);
+      }
+      if (form.hangtrong_mt && form.sokinh_moi_mt) {
+        const data = await checkStock(form.hangtrong_mt, form.sokinh_moi_mt, undefined);
+        if (data?.lens) setLensStockMt({ ton: data.lens.ton_hien_tai, trang_thai: data.lens.trang_thai });
+        else setLensStockMt(null);
+      } else {
+        setLensStockMt(null);
+      }
+    };
+    const t = setTimeout(checkLensStock, 300);
+    return () => clearTimeout(t);
+  }, [form.hangtrong_mp, form.hangtrong_mt, form.sokinh_moi_mp, form.sokinh_moi_mt]);
+
+  useEffect(() => {
+    const checkFrameStock = async () => {
+      if (form.ten_gong) {
+        const data = await checkStock(undefined, undefined, form.ten_gong);
+        if (data?.frame) setFrameStock(data.frame.ton_kho);
+        else setFrameStock(null);
+      } else {
+        setFrameStock(null);
+      }
+    };
+    const t = setTimeout(checkFrameStock, 300);
+    return () => clearTimeout(t);
+  }, [form.ten_gong]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -530,6 +586,9 @@ export default function KeDonKinh() {
       const res = await axios.post('/api/don-kinh', payload);
       if (res.status === 200) {
         toast.success('Đã lưu đơn kính');
+        // Show inventory warnings
+        const warnings: string[] = res.data.inventoryWarnings || [];
+        warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
   addHistory(res.data.data);
         resetForm();
       } else {
@@ -579,6 +638,9 @@ export default function KeDonKinh() {
       const res = await axios.put('/api/don-kinh', payload);
       if (res.status === 200) {
         toast.success('Đã cập nhật đơn kính');
+        // Show inventory warnings
+        const warnings: string[] = res.data.inventoryWarnings || [];
+        warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
   updateHistory(res.data.data);
         resetForm();
       } else {
@@ -670,6 +732,10 @@ export default function KeDonKinh() {
     setSotienDaThanhToan(0);
     setSotienDaThanhToanInput('');
     setIsEditing(false);
+    // Reset stock states
+    setFrameStock(null);
+    setLensStockMp(null);
+    setLensStockMt(null);
   };
 
   // Chọn đơn từ lịch sử
@@ -968,96 +1034,111 @@ export default function KeDonKinh() {
               {/* Card 3: Sản phẩm và Thanh toán - Mobile Responsive */}
               <Card>
                 <CardContent className="p-2 space-y-3">
-                  {/* Mobile: Stack vertically, Desktop: 3 columns */}
-                  <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4">
+                  {/* Mobile: Stack vertically, Desktop: 2 cols (or 3 when admin panel open) */}
+                  <div className={`flex flex-col lg:grid gap-4 ${showAdminPanel ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
                     
-                    {/* Cột 1: Chọn sản phẩm */}
-                    <div className="space-y-3">
+                    {/* Cột 1: Chọn sản phẩm - wider */}
+                    <div className={`space-y-3 ${showAdminPanel ? '' : 'lg:col-span-1'}`}>
                       <h3 className="font-semibold text-base">Sản phẩm</h3>
                       
                       {/* Product selection rows: keep labels vertically aligned across breakpoints */}
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <label className="w-full sm:w-28 text-sm font-medium whitespace-nowrap flex-shrink-0">Chọn gọng</label>
-                        <input
-                          list="gongkinh-list"
-                          value={form.ten_gong || ''}
-                          onChange={(e) => handleFrameChange(e.target.value)}
-                          className="h-10 sm:h-8 border rounded px-2 text-sm flex-1 bg-yellow-50 focus:bg-yellow-100"
-                          placeholder="Chọn loại gọng"
-                          data-nav="presc"
-                          data-order="11"
-                        />
+                        <div className="flex-1 flex items-center gap-1">
+                          <input
+                            list="gongkinh-list"
+                            value={form.ten_gong || ''}
+                            onChange={(e) => handleFrameChange(e.target.value)}
+                            className="h-10 sm:h-8 border rounded px-2 text-sm flex-1 bg-yellow-50 focus:bg-yellow-100"
+                            placeholder="Chọn loại gọng"
+                            data-nav="presc"
+                            data-order="11"
+                          />
+                          {frameStock !== null && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
+                              frameStock <= 0 ? 'bg-red-100 text-red-700' : frameStock <= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                            }`}>
+                              {frameStock <= 0 ? 'Hết' : `Tồn: ${frameStock}`}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <label className="w-full sm:w-28 text-sm font-medium whitespace-nowrap flex-shrink-0">Hãng tròng MP</label>
-                        <input 
-                          list="hangtrong-list" 
-                          value={form.hangtrong_mp || ''} 
-                          onChange={(e) => handleRightEyeLensBrandChange(e.target.value)} 
-                          className="h-10 sm:h-8 border rounded px-2 text-sm flex-1 bg-yellow-50 focus:bg-yellow-100" 
-                          placeholder="Chọn hãng tròng MP" 
-                          data-nav="presc"
-                          data-order="12"
-                        />
+                        <div className="flex-1 flex items-center gap-1">
+                          <input 
+                            list="hangtrong-list" 
+                            value={form.hangtrong_mp || ''} 
+                            onChange={(e) => handleRightEyeLensBrandChange(e.target.value)} 
+                            className="h-10 sm:h-8 border rounded px-2 text-sm flex-1 bg-yellow-50 focus:bg-yellow-100" 
+                            placeholder="Chọn hãng tròng MP" 
+                            data-nav="presc"
+                            data-order="12"
+                          />
+                          {lensStockMp && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
+                              lensStockMp.trang_thai === 'HET' || lensStockMp.trang_thai === 'CHUA_CO' ? 'bg-red-100 text-red-700'
+                              : lensStockMp.trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
+                              : lensStockMp.trang_thai === 'DAT_HANG' ? 'bg-blue-100 text-blue-700'
+                              : lensStockMp.trang_thai === 'CHUA_NHAP_DO' ? 'bg-gray-100 text-gray-500'
+                              : 'bg-green-100 text-green-700'
+                            }`}>
+                              {lensStockMp.trang_thai === 'DAT_HANG' ? 'Đặt hàng'
+                              : lensStockMp.trang_thai === 'CHUA_NHAP_DO' ? '...'
+                              : lensStockMp.trang_thai === 'CHUA_CO' ? 'Chưa có'
+                              : lensStockMp.ton !== null ? (lensStockMp.ton <= 0 ? 'Hết' : `Tồn: ${lensStockMp.ton}`) : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <label className="w-full sm:w-28 text-sm font-medium whitespace-nowrap flex-shrink-0">Hãng tròng MT</label>
-                        <input 
-                          list="hangtrong-list" 
-                          value={form.hangtrong_mt || ''} 
-                          onChange={(e) => handleLeftEyeLensBrandChange(e.target.value)} 
-                          className="h-10 sm:h-8 border rounded px-2 text-sm flex-1 bg-yellow-50 focus:bg-yellow-100" 
-                          placeholder="Chọn hãng tròng MT" 
-                          data-nav="presc"
-                          data-order="13"
-                        />
+                        <div className="flex-1 flex items-center gap-1">
+                          <input 
+                            list="hangtrong-list" 
+                            value={form.hangtrong_mt || ''} 
+                            onChange={(e) => handleLeftEyeLensBrandChange(e.target.value)} 
+                            className="h-10 sm:h-8 border rounded px-2 text-sm flex-1 bg-yellow-50 focus:bg-yellow-100" 
+                            placeholder="Chọn hãng tròng MT" 
+                            data-nav="presc"
+                            data-order="13"
+                          />
+                          {lensStockMt && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
+                              lensStockMt.trang_thai === 'HET' || lensStockMt.trang_thai === 'CHUA_CO' ? 'bg-red-100 text-red-700'
+                              : lensStockMt.trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
+                              : lensStockMt.trang_thai === 'DAT_HANG' ? 'bg-blue-100 text-blue-700'
+                              : lensStockMt.trang_thai === 'CHUA_NHAP_DO' ? 'bg-gray-100 text-gray-500'
+                              : 'bg-green-100 text-green-700'
+                            }`}>
+                              {lensStockMt.trang_thai === 'DAT_HANG' ? 'Đặt hàng'
+                              : lensStockMt.trang_thai === 'CHUA_NHAP_DO' ? '...'
+                              : lensStockMt.trang_thai === 'CHUA_CO' ? 'Chưa có'
+                              : lensStockMt.ton !== null ? (lensStockMt.ton <= 0 ? 'Hết' : `Tồn: ${lensStockMt.ton}`) : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Nút toggle admin panel - Mobile friendly */}
-                      <div className="flex justify-end">
+                      {/* Nút toggle admin panel removed from here - moved to Thanh toán header */}
+
+                    </div>
+
+                    {/* Cột 2: Thanh toán */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-base">Thanh toán</h3>
                         <button
                           type="button"
                           onClick={() => setShowAdminPanel(!showAdminPanel)}
-                          className="text-sm text-gray-400 hover:text-gray-600 p-2 touch-manipulation"
+                          className="text-sm text-gray-400 hover:text-gray-600 p-1 touch-manipulation"
                           title="Thông tin kỹ thuật"
                         >
                           ⚙️
                         </button>
                       </div>
-
-                      {/* Admin panel - Mobile optimized */}
-                      {showAdminPanel && (
-                        <div className="border border-gray-200 rounded bg-gray-50 p-3 space-y-3">
-                          <div className="text-xs text-gray-500 mb-2">Thông tin kỹ thuật</div>
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <label className="w-full sm:w-16 text-xs font-medium text-gray-600">Mã Tròng</label>
-                            <Input
-                              type="number"
-                              value={form.gianhap_trong ? (form.gianhap_trong / 1000) : ''}
-                              onChange={(e) => setForm({ ...form, gianhap_trong: e.target.value ? Number(e.target.value) * 1000 : 0 })}
-                              className="h-10 sm:h-7 flex-1 text-xs"
-                              placeholder="0"
-                            />
-                          </div>
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <label className="w-full sm:w-16 text-xs font-medium text-gray-600">Mã Gọng</label>
-                            <Input
-                              type="number"
-                              value={form.gianhap_gong ? (form.gianhap_gong / 1000) : ''}
-                              onChange={(e) => setForm({ ...form, gianhap_gong: e.target.value ? Number(e.target.value) * 1000 : 0 })}
-                              className="h-10 sm:h-7 flex-1 text-xs"
-                              placeholder="0"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Cột 2: Thanh toán */}
-                    <div className="space-y-3">
-                      <h3 className="font-semibold text-base">Thanh toán</h3>
                       
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <label className="w-full sm:w-24 text-sm font-medium">Giá tròng</label>
@@ -1123,35 +1204,59 @@ export default function KeDonKinh() {
                       )}
                     </div>
                     
-                    {/* Cột 3: Các nút hành động - Mobile optimized */}
-                    <div className="space-y-3 flex flex-col justify-between">
-                       <h3 className="font-semibold text-base lg:invisible">Hành động</h3>
-                       
-                       {/* Mobile: Full width buttons, Desktop: Right aligned */}
-                       <div className="flex flex-col sm:flex-row lg:flex-col gap-3 lg:gap-2 lg:items-end lg:h-full lg:justify-end">
-                          {!isEditing && (
-                            <Button className="h-12 sm:h-9 text-base sm:text-sm bg-blue-600 hover:bg-orange-400 touch-manipulation" onClick={luuDonKinh}>Lưu đơn</Button>
-                          )}
-                          {isEditing && form.id && (
-                            <>
-                              <Button className="h-12 sm:h-9 text-base sm:text-sm bg-blue-600 hover:bg-orange-400 touch-manipulation" onClick={handleUpdate}>
-                                <Pencil className="w-5 h-5 sm:w-4 sm:h-4 mr-2" /> Sửa đơn
-                              </Button>
-                              <Button className="h-12 sm:h-9 text-base sm:text-sm bg-gray-500 hover:bg-gray-600 touch-manipulation" onClick={handleCopy}>
-                                <Copy className="w-5 h-5 sm:w-4 sm:h-4 mr-2" /> Sao chép
-                              </Button>
-                            </>
-                          )}
-                          <Button className="h-12 sm:h-9 text-base sm:text-sm bg-green-600 hover:bg-green-700 touch-manipulation" onClick={resetForm}>
-                            <FilePlus className="w-5 h-5 sm:w-4 sm:h-4 mr-2" /> Đơn mới
-                          </Button>
-                          {isEditing && form.id && (
-                            <Button className="h-12 sm:h-9 text-base sm:text-sm bg-red-600 hover:bg-red-700 touch-manipulation" onClick={handleDelete}>
-                              <Trash2 className="w-5 h-5 sm:w-4 sm:h-4 mr-2" /> Xóa đơn
-                            </Button>
-                          )}
-                       </div>
-                    </div>
+                    {/* Cột 3: Thông tin kỹ thuật (admin panel) - chỉ hiện khi bấm ⚙️ */}
+                    {showAdminPanel && (
+                      <div className="space-y-3">
+                        <h3 className="font-semibold text-base">Thông tin kỹ thuật</h3>
+                        <div className="border border-gray-200 rounded bg-gray-50 p-3 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <label className="w-full sm:w-20 text-xs font-medium text-gray-600">Giá nhập tròng</label>
+                            <Input
+                              type="number"
+                              value={form.gianhap_trong ? (form.gianhap_trong / 1000) : ''}
+                              onChange={(e) => setForm({ ...form, gianhap_trong: e.target.value ? Number(e.target.value) * 1000 : 0 })}
+                              className="h-10 sm:h-7 w-24 text-xs"
+                              placeholder="nghìn"
+                            />
+                          </div>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <label className="w-full sm:w-20 text-xs font-medium text-gray-600">Giá nhập gọng</label>
+                            <Input
+                              type="number"
+                              value={form.gianhap_gong ? (form.gianhap_gong / 1000) : ''}
+                              onChange={(e) => setForm({ ...form, gianhap_gong: e.target.value ? Number(e.target.value) * 1000 : 0 })}
+                              className="h-10 sm:h-7 w-24 text-xs"
+                              placeholder="nghìn"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Hàng nút hành động - nằm ngang phía dưới, căn phải */}
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t">
+                    {!isEditing && (
+                      <Button className="h-10 sm:h-9 text-sm bg-blue-600 hover:bg-orange-400 touch-manipulation" onClick={luuDonKinh}>Lưu đơn</Button>
+                    )}
+                    {isEditing && form.id && (
+                      <>
+                        <Button className="h-10 sm:h-9 text-sm bg-blue-600 hover:bg-orange-400 touch-manipulation" onClick={handleUpdate}>
+                          <Pencil className="w-4 h-4 mr-1" /> Sửa đơn
+                        </Button>
+                        <Button className="h-10 sm:h-9 text-sm bg-gray-500 hover:bg-gray-600 touch-manipulation" onClick={handleCopy}>
+                          <Copy className="w-4 h-4 mr-1" /> Sao chép
+                        </Button>
+                      </>
+                    )}
+                    <Button className="h-10 sm:h-9 text-sm bg-green-600 hover:bg-green-700 touch-manipulation" onClick={resetForm}>
+                      <FilePlus className="w-4 h-4 mr-1" /> Đơn mới
+                    </Button>
+                    {isEditing && form.id && (
+                      <Button className="h-10 sm:h-9 text-sm bg-red-600 hover:bg-red-700 touch-manipulation" onClick={handleDelete}>
+                        <Trash2 className="w-4 h-4 mr-1" /> Xóa đơn
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

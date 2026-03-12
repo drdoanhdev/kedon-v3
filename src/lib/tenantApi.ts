@@ -29,6 +29,28 @@ export interface TenantContext {
   supabase: SupabaseClient;
 }
 
+// ===== In-memory cache for auth lookups =====
+
+interface CachedAuth {
+  userId: string;
+  email: string | null;
+  expiry: number;
+}
+
+interface CachedMembership {
+  role: string;
+  active: boolean;
+  expiry: number;
+}
+
+const AUTH_CACHE_TTL = 60_000; // 60s
+const MEMBERSHIP_CACHE_TTL = 60_000; // 60s
+const LOGIN_UPDATE_THROTTLE = 300_000; // 5 min
+
+const authCache = new Map<string, CachedAuth>();
+const membershipCache = new Map<string, CachedMembership>();
+const lastLoginUpdated = new Map<string, number>(); // key -> timestamp
+
 // ===== Helpers =====
 
 function getBearer(req: NextApiRequest): string | null {
@@ -81,11 +103,25 @@ export async function requireTenant(
     return null;
   }
 
-  // 2. Xác thực user
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  if (userError || !userData.user) {
-    res.status(401).json({ message: 'Unauthorized: token không hợp lệ' });
-    return null;
+  // 2. Xác thực user (cached)
+  const now = Date.now();
+  let userId: string;
+  let email: string | null;
+
+  const cachedAuth = authCache.get(token);
+  if (cachedAuth && cachedAuth.expiry > now) {
+    userId = cachedAuth.userId;
+    email = cachedAuth.email;
+  } else {
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError || !userData.user) {
+      authCache.delete(token);
+      res.status(401).json({ message: 'Unauthorized: token không hợp lệ' });
+      return null;
+    }
+    userId = userData.user.id;
+    email = userData.user.email ?? null;
+    authCache.set(token, { userId, email, expiry: now + AUTH_CACHE_TTL });
   }
 
   // 3. Tenant ID
@@ -100,25 +136,44 @@ export async function requireTenant(
     return null;
   }
 
-  // 4. Kiểm tra membership
-  const { data: membership, error: memErr } = await supabaseAdmin
-    .from('tenantmembership')
-    .select('role, active')
-    .eq('user_id', userData.user.id)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
+  // 4. Kiểm tra membership (cached)
+  const memCacheKey = `${userId}:${tenantId}`;
+  let membershipRole: string;
+  let membershipActive: boolean;
 
-  if (memErr) {
-    res.status(500).json({ message: 'Lỗi kiểm tra quyền: ' + memErr.message });
-    return null;
+  const cachedMem = membershipCache.get(memCacheKey);
+  if (cachedMem && cachedMem.expiry > now) {
+    membershipRole = cachedMem.role;
+    membershipActive = cachedMem.active;
+  } else {
+    const { data: membership, error: memErr } = await supabaseAdmin
+      .from('tenantmembership')
+      .select('role, active')
+      .eq('user_id', userId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+
+    if (memErr) {
+      res.status(500).json({ message: 'Lỗi kiểm tra quyền: ' + memErr.message });
+      return null;
+    }
+
+    if (!membership) {
+      res.status(403).json({ message: 'Bạn không phải thành viên của phòng khám này' });
+      return null;
+    }
+
+    membershipRole = membership.role || 'staff';
+    membershipActive = membership.active !== false;
+    membershipCache.set(memCacheKey, { role: membershipRole, active: membershipActive, expiry: now + MEMBERSHIP_CACHE_TTL });
   }
 
-  if (!membership || membership.active === false) {
+  if (!membershipActive) {
     res.status(403).json({ message: 'Bạn không phải thành viên của phòng khám này' });
     return null;
   }
 
-  const role = (membership.role || 'staff').toLowerCase() as TenantRole;
+  const role = membershipRole.toLowerCase() as TenantRole;
   const isOwner = role === 'owner' || role === 'admin';
 
   // 5. Kiểm tra quyền
@@ -132,17 +187,21 @@ export async function requireTenant(
     return null;
   }
 
-  // 6. Cập nhật last_login_at (non-blocking)
-  supabaseAdmin
-    .from('tenantmembership')
-    .update({ last_login_at: new Date().toISOString() })
-    .eq('user_id', userData.user.id)
-    .eq('tenant_id', tenantId)
-    .then(() => {});
+  // 6. Cập nhật last_login_at (throttled: tối đa 1 lần / 5 phút / user+tenant)
+  const lastUpdated = lastLoginUpdated.get(memCacheKey) || 0;
+  if (now - lastUpdated > LOGIN_UPDATE_THROTTLE) {
+    lastLoginUpdated.set(memCacheKey, now);
+    supabaseAdmin
+      .from('tenantmembership')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('tenant_id', tenantId)
+      .then(() => {});
+  }
 
   return {
-    userId: userData.user.id,
-    email: userData.user.email ?? null,
+    userId,
+    email,
     tenantId,
     role,
     isOwner,
