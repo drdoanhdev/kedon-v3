@@ -56,8 +56,8 @@ interface AuthContextType {
   tenancyLoading: boolean
   userProfile: UserProfile | null
   // Role-based access control
-  userRole: 'admin' | 'doctor' | 'staff' | null
-  hasRole: (role: 'admin' | 'doctor' | 'staff') => boolean
+  userRole: 'superadmin' | 'admin' | 'doctor' | 'staff' | null
+  hasRole: (role: 'superadmin' | 'admin' | 'doctor' | 'staff') => boolean
   hasAnyRole: (roles: string[]) => boolean
 }
 
@@ -81,22 +81,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [tenancyLoading, setTenancyLoading] = useState(false)
   // Role-based access control
-  const [userRole, setUserRole] = useState<'admin' | 'doctor' | 'staff' | null>(null)
+  const [userRole, setUserRole] = useState<'superadmin' | 'admin' | 'doctor' | 'staff' | null>(null)
   // Auto-logout timer
   const sessionTimeout = Number(process.env.NEXT_PUBLIC_SESSION_TIMEOUT) || 1800000 // default 30min
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const userRef = useRef<User | null>(null)
+  const signOutRef = useRef<() => Promise<void>>(() => Promise.resolve())
 
-  // Helper to clear and restart timer
-  const resetLogoutTimer = () => {
+  // Đồng bộ ref với state mới nhất
+  useEffect(() => { userRef.current = user }, [user])
+
+  // Reset timer — dùng ref để tránh stale closure
+  const resetLogoutTimer = useCallback(() => {
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current)
-    if (user) {
+    if (userRef.current) {
       logoutTimerRef.current = setTimeout(() => {
-        signOut()
+        signOutRef.current()
       }, sessionTimeout)
     }
-  }
+  }, [sessionTimeout])
 
-  // Listen for user activity
+  // Auth state + activity listener
   useEffect(() => {
     // Lấy session hiện tại
     supabaseAuth.auth.getSession().then(({ data: { session } }) => {
@@ -106,29 +111,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Lắng nghe thay đổi auth state
     const { data: { subscription } } = supabaseAuth.auth.onAuthStateChange(
-      async (event, session) => {
+      async (_event, session) => {
         setUser(session?.user ?? null)
         setLoading(false)
       }
     )
 
-    // Activity events
-    const activityEvents = ['mousemove', 'keydown', 'mousedown', 'touchstart']
+    // Activity events — bỏ mousemove (fire quá nhiều), chỉ giữ các sự kiện có ý nghĩa
+    const activityEvents = ['keydown', 'mousedown', 'touchstart']
     const handleActivity = () => resetLogoutTimer()
-    activityEvents.forEach(evt => window.addEventListener(evt, handleActivity))
+    activityEvents.forEach(evt =>
+      window.addEventListener(evt, handleActivity, { passive: true })
+    )
 
     return () => {
       subscription.unsubscribe()
       activityEvents.forEach(evt => window.removeEventListener(evt, handleActivity))
       if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current)
     }
-  }, [])
+  }, [resetLogoutTimer])
 
-  // Reset timer when user changes
+  // Reset timer khi user thay đổi (đăng nhập / đăng xuất)
   useEffect(() => {
     resetLogoutTimer()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  }, [user, resetLogoutTimer])
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -147,16 +153,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }
 
-  const signOut = async () => {
-    await supabaseAuth.auth.signOut()
+  const signOut = useCallback(async () => {
+    // Luôn reset local state trước — đảm bảo đăng xuất ngay cả khi network lỗi
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current)
-    // Reset tenancy state
+    setUser(null)
     setTenants([])
     setMemberships([])
     setCurrentTenantId(null)
     setUserProfile(null)
     setUserRole(null)
-  }
+    try { localStorage.removeItem('currentTenantId') } catch {}
+
+    try {
+      // scope: 'local' — chỉ xóa session local, không gọi API revoke (tránh lỗi mạng block đăng xuất)
+      await supabaseAuth.auth.signOut({ scope: 'local' })
+    } catch (e) {
+      // Nếu signOut Supabase lỗi, local state đã được xóa rồi → user vẫn đăng xuất thành công
+      console.warn('signOut error (ignored):', e)
+    }
+
+    // Chuyển về trang login
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login'
+    }
+  }, [])
+
+  // Cập nhật signOutRef mỗi khi signOut thay đổi
+  useEffect(() => { signOutRef.current = signOut }, [signOut])
 
   // --- Helper: chọn tenant ---
   const switchTenant = useCallback((tenantId: string) => {
@@ -176,7 +199,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) {
         setUserRole(null)
       } else if (data) {
-        const role = data.role?.toLowerCase() as 'admin' | 'doctor' | 'staff' | null
+        const role = data.role?.toLowerCase() as 'superadmin' | 'admin' | 'doctor' | 'staff' | null
         setUserRole(role)
       } else {
         setUserRole(null)
@@ -298,7 +321,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const currentRole = memberships.find(m => m.tenant_id === currentTenantId)?.role || null
 
   // Helper functions for role checking
-  const hasRole = useCallback((role: 'admin' | 'doctor' | 'staff') => {
+  const hasRole = useCallback((role: 'superadmin' | 'admin' | 'doctor' | 'staff') => {
     return userRole === role
   }, [userRole])
 

@@ -23,13 +23,7 @@ interface Thuoc {
   gianhap: number;
   tonkho: number;
   soluongmacdinh: number;
-  nhomthuocs: number[];
   la_thu_thuat: boolean;
-}
-
-interface NhomThuoc {
-  id: number;
-  ten: string;
 }
 
 interface DonThuocMau {
@@ -107,13 +101,9 @@ function DanhMucPage() {
 
   // States cho thuốc
   const [thuocs, setThuocs] = useState<Thuoc[]>([]);
-  const [nhomThuocs, setNhomThuocs] = useState<NhomThuoc[]>([]);
   const [searchThuoc, setSearchThuoc] = useState('');
-  const [selectedNhom, setSelectedNhom] = useState<number | null>(null);
   const [openThuoc, setOpenThuoc] = useState(false);
   const [isEditingThuoc, setIsEditingThuoc] = useState(false);
-  const [editingNhom, setEditingNhom] = useState<NhomThuoc | null>(null);
-  const [tenNhomMoi, setTenNhomMoi] = useState('');
   const [thuocForm, setThuocForm] = useState<Thuoc>({
     mathuoc: '',
     tenthuoc: '',
@@ -124,7 +114,6 @@ function DanhMucPage() {
     gianhap: 0,
     tonkho: 0,
     soluongmacdinh: 1,
-    nhomthuocs: [],
     la_thu_thuat: false,
   });
 
@@ -197,24 +186,14 @@ function DanhMucPage() {
       // Thêm cache-busting parameters
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(7);
-      const [thuocRes, nhomRes] = await Promise.all([
-        axios.get(`/api/thuoc?_t=${timestamp}&_r=${random}`, {
+      const thuocRes = await axios.get(`/api/thuoc?_t=${timestamp}&_r=${random}`, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
           }
-        }),
-        axios.get(`/api/nhom-thuoc?_t=${timestamp}&_r=${random}`, {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        })
-      ]);
+        });
       setThuocs(thuocRes.data.data || []);
-      setNhomThuocs(nhomRes.data.data || []);
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
         ? error.response?.data?.message || error.message
@@ -297,8 +276,8 @@ function DanhMucPage() {
       return;
     }
     try {
-      // Chuyển đổi nhomthuocs array thành string để phù hợp với database schema
-      const { nhomthuocs, id, ...basePayload } = thuocForm;
+      // Chuyển đổi dữ liệu gửi đi
+      const { id, ...basePayload } = thuocForm;
       
       // Làm sạch và chuẩn hóa dữ liệu
       const payload: any = { 
@@ -307,7 +286,6 @@ function DanhMucPage() {
         donvitinh: thuocForm.donvitinh?.trim() || '',
         cachdung: thuocForm.cachdung?.trim() || '',
         hoatchat: thuocForm.hoatchat?.trim() || '',
-        nhomthuoc: thuocForm.nhomthuocs.length > 0 ? thuocForm.nhomthuocs.join(',') : '',
         giaban: Number(thuocForm.giaban) || 0,
         gianhap: Number(thuocForm.gianhap) || 0,
         tonkho: Number(thuocForm.tonkho) || 0,
@@ -354,59 +332,6 @@ function DanhMucPage() {
     setThuocForm(t);
     setIsEditingThuoc(true);
     setOpenThuoc(true);
-  };
-
-  const toggleNhomThuoc = (id: number) => {
-    setThuocForm((prev) => ({
-      ...prev,
-      nhomthuocs: prev.nhomthuocs.includes(id)
-        ? prev.nhomthuocs.filter((n) => n !== id)
-        : [...prev.nhomthuocs, id],
-    }));
-  };
-
-  const handleAddNhom = async () => {
-    if (!tenNhomMoi.trim()) {
-      toast.error('Vui lòng nhập tên nhóm thuốc');
-      return;
-    }
-    try {
-      if (editingNhom?.id === 0) {
-        await axios.post('/api/nhom-thuoc', { ten: tenNhomMoi });
-        toast.success('Đã thêm nhóm thuốc');
-      } else {
-        await axios.put('/api/nhom-thuoc', { id: editingNhom?.id, ten: tenNhomMoi });
-        toast.success('Đã cập nhật nhóm thuốc');
-      }
-      setEditingNhom(null);
-      setTenNhomMoi('');
-      fetchThuocs();
-    } catch (error: unknown) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || error.message
-        : error instanceof Error
-          ? error.message
-          : String(error);
-      toast.error('Lỗi khi lưu nhóm thuốc: ' + message);
-    }
-  };
-
-  const handleDeleteNhom = async () => {
-    if (!editingNhom) return;
-    try {
-      await axios.delete(`/api/nhom-thuoc?id=${editingNhom.id}`);
-      toast.success('Đã xoá nhóm thuốc');
-      setEditingNhom(null);
-      setTenNhomMoi('');
-      fetchThuocs();
-    } catch (error: unknown) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || error.message
-        : error instanceof Error
-          ? error.message
-          : String(error);
-      toast.error('Lỗi khi xoá nhóm thuốc: ' + message);
-    }
   };
 
   const deleteThuoc = async (id: number) => {
@@ -799,56 +724,12 @@ function DanhMucPage() {
   // Tab content components
   const renderThuocTab = () => {
     const filtered = thuocs.filter((t) => {
-      const matchTen = t.tenthuoc.toLowerCase().includes(searchThuoc.toLowerCase());
-      const matchNhom = selectedNhom ? t.nhomthuocs.includes(selectedNhom) : true;
-      return matchTen && matchNhom;
+      return t.tenthuoc.toLowerCase().includes(searchThuoc.toLowerCase());
     });
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:gap-6">
-        <div className="col-span-full md:col-span-1 space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold">Nhóm thuốc</h2>
-            <button
-              onClick={() => {
-                setEditingNhom({ id: 0, ten: '' });
-                setTenNhomMoi('');
-              }}
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-          <ul className="space-y-1">
-            <li
-              className={`px-2 py-1 rounded cursor-pointer ${selectedNhom === null ? 'bg-blue-100' : ''}`}
-              onClick={() => setSelectedNhom(null)}
-            >
-              Tất cả
-            </li>
-            {nhomThuocs.map((n) => (
-              <li
-                key={n.id}
-                className={`flex justify-between items-center group hover:bg-gray-100 px-2 py-1 rounded cursor-pointer ${selectedNhom === n.id ? 'bg-blue-100' : ''}`}
-                onClick={() => setSelectedNhom(n.id)}
-              >
-                <span>{n.ten}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingNhom(n);
-                    setTenNhomMoi(n.ten);
-                  }}
-                  className="invisible group-hover:visible"
-                >
-                  <Pencil className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="col-span-full md:col-span-4 space-y-4">
-          <div className="flex justify-between items-center">
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
             <h1 className="text-xl md:text-2xl font-semibold">Danh sách thuốc</h1>
             <Button
               onClick={() => {
@@ -863,7 +744,6 @@ function DanhMucPage() {
                   gianhap: 0,
                   tonkho: 0,
                   soluongmacdinh: 1,
-                  nhomthuocs: [],
                   la_thu_thuat: false,
                 });
                 setOpenThuoc(true);
@@ -887,7 +767,6 @@ function DanhMucPage() {
                   <tr>
                     <th className="px-2 py-1">Mã</th>
                     <th className="px-2 py-1">Tên</th>
-                    <th className="px-2 py-1">Nhóm</th>
                     <th className="px-2 py-1">Hoạt chất</th>
                     <th className="px-2 py-1">Cách dùng</th>
                     <th className="px-2 py-1">Giá bán</th>
@@ -901,12 +780,6 @@ function DanhMucPage() {
                     <tr key={t.id} className="border-b hover:bg-gray-50">
                       <td className="px-2 py-1 font-mono">{t.mathuoc}</td>
                       <td className="px-2 py-1">{t.tenthuoc}</td>
-                      <td className="px-2 py-1">
-                        {nhomThuocs
-                          .filter((n) => t.nhomthuocs.includes(n.id))
-                          .map((n) => n.ten)
-                          .join(', ')}
-                      </td>
                       <td className="px-2 py-1">{t.hoatchat}</td>
                       <td className="px-2 py-1">{t.cachdung}</td>
                       <td className="px-2 py-1">{t.giaban.toLocaleString()}</td>
@@ -928,7 +801,6 @@ function DanhMucPage() {
               </table>
             </CardContent>
           </Card>
-        </div>
       </div>
     );
   };
@@ -1597,35 +1469,6 @@ function DanhMucPage() {
           </div>
         </div>
 
-        {/* Dialog sửa nhóm */}
-        <Dialog open={!!editingNhom} onOpenChange={() => setEditingNhom(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingNhom?.id ? 'Sửa nhóm thuốc' : 'Thêm nhóm thuốc'}</DialogTitle>
-            </DialogHeader>
-            <Input
-              placeholder="Tên nhóm"
-              value={tenNhomMoi}
-              onChange={(e) => setTenNhomMoi(e.target.value)}
-            />
-            <DialogFooter>
-              <div className="flex justify-between w-full">
-                {editingNhom?.id !== 0 && (
-                  <Button variant="destructive" onClick={handleDeleteNhom}>
-                    Xoá
-                  </Button>
-                )}
-                <div className="space-x-2">
-                  <Button variant="outline" onClick={() => setEditingNhom(null)}>
-                    Huỷ
-                  </Button>
-                  <Button onClick={handleAddNhom}>Lưu</Button>
-                </div>
-              </div>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         {/* Dialog thêm/sửa thuốc */}
         <Dialog open={openThuoc} onOpenChange={setOpenThuoc}>
           <DialogContent>
@@ -1684,19 +1527,6 @@ function DanhMucPage() {
                 onChange={(e) => setThuocForm({ ...thuocForm, la_thu_thuat: e.target.checked })}
                 className="w-4 h-4 border-gray-300 rounded focus:ring-blue-500"
               />
-              <Label>Nhóm thuốc</Label>
-              <div className="flex flex-wrap gap-2">
-                {nhomThuocs.map((n) => (
-                  <label key={n.id} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={thuocForm.nhomthuocs.includes(n.id)}
-                      onChange={() => toggleNhomThuoc(n.id)}
-                    />
-                    <span>{n.ten}</span>
-                  </label>
-                ))}
-              </div>
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setOpenThuoc(false)}>

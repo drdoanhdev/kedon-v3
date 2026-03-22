@@ -6,5 +6,33 @@
     "**/.next": true,
     "**/out": true,
     "**/.vscode": false
-  }
+  },
+  "mcp": {
+    "servers": {
+      "supabase": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@supabase/mcp-server-supabase@latest",
+          "--access-token",
+          "sbp_9a658c03197a9adfd84df2a967d68491faacc548",
+          "--project-ref",
+          "nhoywhaintnmqlcgfduw"
+        ]
+      }
+    }
+  },
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "db.nhoywhaintnmqlcgfduw.supabase.co",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "sangmat",
+      "database": "postgres",
+      "username": "postgres",
+      "password": "kedon_sangmat_2026"
+    }
+  ]
 }

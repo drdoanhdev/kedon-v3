@@ -1,22 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield } from 'lucide-react';
 
 export default function Header() {
-  const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole } = useAuth();
+  const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole, userRole } = useAuth();
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isAvatarOpen, setIsAvatarOpen] = useState(false);
+  const avatarRef = useRef<HTMLDivElement>(null);
 
-  const menuItems = [
+  // Main navigation items (always visible in nav bar)
+  const mainMenuItems = [
     { href: '/', label: 'Trang chủ', icon: Home },
     { href: '/benh-nhan', label: 'Bệnh nhân', icon: Users },
     { href: '/don-thuoc', label: 'Đơn thuốc', icon: FileText },
     { href: '/don-kinh', label: 'Đơn kính', icon: Glasses },
+    { href: '/quan-ly-kho', label: 'Kho kính', icon: Warehouse },
+    { href: '/quan-ly-kho-thuoc', label: 'Kho thuốc', icon: Pill },
+  ];
+
+  // Items inside avatar dropdown
+  const avatarMenuItems = [
     { href: '/danh-muc', label: 'Danh mục', icon: List },
     { href: '/bao-cao', label: 'Báo cáo', icon: BarChart },
-    { href: '/quan-ly-kho', label: 'Kho', icon: Warehouse },
   ];
 
   const isActivePage = (href: string) => router.pathname === href;
@@ -25,81 +33,156 @@ export default function Header() {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
 
-  return (
-    <header className="bg-blue-900 text-white shadow-lg relative">
-      <div className="container mx-auto px-4">
-  {/* Desktop Header (md and up) */}
-  <div className="hidden md:flex items-center justify-between py-2">
-          <nav className="flex space-x-1">
-            {menuItems.map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className={`px-3 py-1 text-sm transition-colors rounded ${
-                  isActivePage(href)
-                    ? 'bg-white text-black'
-                    : 'bg-blue-800 hover:bg-white hover:text-black'
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
+  // Close avatar dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
+        setIsAvatarOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-          <div className="flex items-center space-x-4">
-            {/* Tenant selector */}
-            {tenants.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <Building2 className="w-4 h-4 text-blue-200" />
-                {tenants.length === 1 ? (
-                  <span className="text-sm text-blue-100">{currentTenant?.name || 'Phòng khám'}</span>
-                ) : (
-                  <select
-                    className="bg-blue-800 text-white text-sm rounded px-2 py-1 border border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                    value={currentTenantId || ''}
-                    onChange={e => switchTenant(e.target.value)}
-                  >
-                    {tenants.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
+  const userInitial = (user?.email?.[0] || 'U').toUpperCase();
+
+  return (
+    <header className="fixed top-0 w-full z-50 bg-white/85 backdrop-blur-md border-b border-emerald-50/10 shadow-sm">
+      <div className="px-6 lg:px-8">
+        {/* Desktop Header (md and up) */}
+        <div className="hidden md:flex items-center justify-between h-10">
+          <div className="flex items-center gap-8">
+            <nav className="flex gap-1 items-end h-full">
+              {mainMenuItems.map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`text-[13px] font-medium px-3 pb-1.5 pt-1 transition-all ${
+                    isActivePage(href)
+                      ? 'text-emerald-700 border-b-2 border-emerald-700'
+                      : 'text-gray-500 hover:text-emerald-600 hover:border-b-2 hover:border-emerald-300'
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+
+          {/* Avatar dropdown */}
+          <div className="relative" ref={avatarRef}>
+            <button
+              onClick={() => setIsAvatarOpen(!isAvatarOpen)}
+              className="flex items-center space-x-2 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-sm font-bold text-emerald-700 border border-emerald-200">
+                {userInitial}
+              </div>
+              <span className="text-sm text-gray-600 max-w-[120px] truncate">{user?.email?.split('@')[0] || 'Guest'}</span>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isAvatarOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isAvatarOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-100 z-50 py-1 overflow-hidden">
+                {/* Tenant selector (multi-tenant only) */}
+                {tenants.length > 1 && (
+                  <div className="px-4 py-3 border-b border-gray-100 bg-emerald-50/40">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Building2 className="w-4 h-4 text-emerald-600" />
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Chuyển phòng khám</span>
+                    </div>
+                    <select
+                      className="w-full text-sm rounded-lg px-2 py-1 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-200 bg-white"
+                      value={currentTenantId || ''}
+                      onChange={e => switchTenant(e.target.value)}
+                    >
+                      {tenants.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 )}
+
+                {/* User email */}
+                <div className="px-4 py-2 border-b border-gray-100">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Đăng nhập</p>
+                  <p className="text-sm font-medium text-gray-700 truncate">{user?.email || 'Guest'}</p>
+                </div>
+
+                {/* Menu items in dropdown */}
+                {avatarMenuItems.map(({ href, label, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage(href) ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{label}</span>
+                  </Link>
+                ))}
+
+                {/* Settings - only for owner/admin */}
                 {(currentRole === 'owner' || currentRole === 'admin') && (
                   <Link
                     href="/quan-ly-phong-kham"
-                    className="p-1 rounded hover:bg-blue-700 transition-colors"
-                    title="Quản lý phòng khám"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/quan-ly-phong-kham') ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
                   >
-                    <Settings className="w-4 h-4 text-blue-200" />
+                    <Settings className="w-4 h-4" />
+                    <span>Cài đặt phòng khám</span>
                   </Link>
                 )}
+
+                {/* Platform Admin - only for superadmin */}
+                {userRole === 'superadmin' && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/admin') ? 'bg-red-50 text-red-700 font-medium' : 'hover:bg-red-50 text-red-600'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4" />
+                    <span>Quản trị nền tảng</span>
+                  </Link>
+                )}
+
+                {/* Logout */}
+                <div className="border-t border-gray-100 mt-1">
+                  <button
+                    onClick={async () => {
+                      setIsAvatarOpen(false);
+                      await signOut();
+                    }}
+                    className="flex items-center space-x-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 w-full transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Đăng xuất</span>
+                  </button>
+                </div>
               </div>
             )}
-            <span className="text-sm">
-              Chào {user?.email || 'Guest'}
-            </span>
-            <button
-              onClick={() => signOut()}
-              className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition-colors"
-            >
-              Đăng xuất
-            </button>
           </div>
         </div>
 
         {/* Mobile Header */}
-  <div className="md:hidden flex items-center justify-between py-3">
+        <div className="md:hidden flex items-center justify-between h-10">
           <div className="flex items-center space-x-3">
-            <h1 className="text-lg font-semibold">Phòng khám</h1>
+            <span className="text-base font-extrabold text-emerald-900 tracking-tight">OcularCare</span>
           </div>
           
           <div className="flex items-center space-x-3">
-            <span className="text-sm hidden sm:block">
+            <span className="text-sm text-gray-500 hidden sm:block">
               {user?.email?.split('@')[0] || 'Guest'}
             </span>
             <button
               onClick={toggleMobileMenu}
-              className="p-2 rounded-md hover:bg-blue-800 transition-colors"
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
             >
               {isMobileMenuOpen ? (
                 <X className="w-6 h-6" />
@@ -112,17 +195,17 @@ export default function Header() {
 
         {/* Mobile Menu Dropdown */}
         {isMobileMenuOpen && (
-          <div className="md:hidden absolute top-full left-0 right-0 bg-blue-900 border-t border-blue-700 shadow-lg z-50">
+          <div className="md:hidden absolute top-full left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-100 shadow-lg z-50">
             <nav className="px-4 py-2 space-y-1">
-              {menuItems.map(({ href, label, icon: Icon }) => (
+              {[...mainMenuItems, ...avatarMenuItems].map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className={`flex items-center space-x-3 px-3 py-3 rounded-md transition-colors ${
+                  className={`flex items-center space-x-3 px-3 py-3 rounded-xl transition-colors ${
                     isActivePage(href)
-                      ? 'bg-white text-blue-900'
-                      : 'hover:bg-blue-800'
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
                   <Icon className="w-5 h-5" />
@@ -130,55 +213,54 @@ export default function Header() {
                 </Link>
               ))}
               
-              <div className="border-t border-blue-700 my-2"></div>
+              <div className="border-t border-gray-100 my-2"></div>
               
               {/* Mobile tenant selector */}
-              {tenants.length > 0 && (
+              {tenants.length > 1 && (
                 <div className="px-3 py-2">
-                  <p className="text-xs text-blue-200 mb-1 flex items-center space-x-1">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-1 flex items-center space-x-1">
                     <Building2 className="w-3 h-3" />
-                    <span>Phòng khám</span>
+                    <span>Chuyển phòng khám</span>
                   </p>
-                  {tenants.length === 1 ? (
-                    <p className="text-sm font-medium">{currentTenant?.name}</p>
-                  ) : (
-                    <select
-                      className="w-full bg-blue-800 text-white text-sm rounded px-2 py-2 border border-blue-600"
-                      value={currentTenantId || ''}
-                      onChange={e => switchTenant(e.target.value)}
-                    >
-                      {tenants.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {(currentRole === 'owner' || currentRole === 'admin') && (
-                    <Link
-                      href="/quan-ly-phong-kham"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="flex items-center space-x-2 mt-2 px-3 py-2 rounded-md hover:bg-blue-800 transition-colors text-sm"
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span>Quản lý phòng khám</span>
-                    </Link>
-                  )}
+                  <select
+                    className="w-full bg-gray-50 text-gray-800 text-sm rounded-lg px-2 py-2 border border-gray-200"
+                    value={currentTenantId || ''}
+                    onChange={e => switchTenant(e.target.value)}
+                  >
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
 
-              <div className="border-t border-blue-700 my-2"></div>
+              {(currentRole === 'owner' || currentRole === 'admin') && (
+                <div className="px-3 py-1">
+                  <Link
+                    href="/quan-ly-phong-kham"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-sm text-gray-600"
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>Cài đặt phòng khám</span>
+                  </Link>
+                </div>
+              )}
+
+              <div className="border-t border-gray-100 my-2"></div>
               <div className="px-3 py-2">
-                <p className="text-xs text-blue-200 mb-2">
+                <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-2">
                   Đăng nhập: {user?.email || 'Guest'}
                 </p>
                 <button
-                  onClick={() => {
-                    signOut();
+                  onClick={async () => {
                     setIsMobileMenuOpen(false);
+                    await signOut();
                   }}
-                  className="flex items-center space-x-3 w-full px-3 py-2 bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+                  className="flex items-center space-x-3 w-full px-3 py-2.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span className="text-sm">Đăng xuất</span>
+                  <span className="text-sm font-medium">Đăng xuất</span>
                 </button>
               </div>
             </nav>

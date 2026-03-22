@@ -2,13 +2,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
-type NhomThuoc = { id: number };
-type Thuoc = {
-  id: number;
-  [key: string]: unknown;
-  nhomthuocs: NhomThuoc[];
-};
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -28,12 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .order('id', { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
 
-      // Chuyển đổi nhomthuoc string thành array để frontend sử dụng
-      const parsed = data.map((item: any) => ({
-        ...item,
-        nhomthuocs: item.nhomthuoc ? item.nhomthuoc.split(',').map((id: string) => parseInt(id.trim())).filter((id: number) => !isNaN(id)) : [],
-      }));
-      return res.status(200).json({ data: parsed });
+      return res.status(200).json({ data });
     }
 
     if (method === 'POST') {

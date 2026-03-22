@@ -14,14 +14,9 @@ import {
   DialogFooter,
 } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
-import { Pencil, Trash2, Plus } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
-
-interface NhomThuoc {
-  id: number;
-  ten: string;
-}
 
 interface Thuoc {
   id?: number;
@@ -34,19 +29,14 @@ interface Thuoc {
   gianhap: number;
   tonkho: number;
   soluongmacdinh: number;
-  nhomthuocs: number[];
   la_thu_thuat: boolean;
 }
 
 export default function ThuocPage() {
   const [thuocs, setThuocs] = useState<Thuoc[]>([]);
-  const [nhomThuocs, setNhomThuocs] = useState<NhomThuoc[]>([]);
   const [search, setSearch] = useState('');
-  const [selectedNhom, setSelectedNhom] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingNhom, setEditingNhom] = useState<NhomThuoc | null>(null);
-  const [tenNhomMoi, setTenNhomMoi] = useState('');
   const [form, setForm] = useState<Thuoc>({
     mathuoc: '',
     tenthuoc: '',
@@ -57,7 +47,6 @@ export default function ThuocPage() {
     gianhap: 0,
     tonkho: 0,
     soluongmacdinh: 1,
-    nhomthuocs: [],
     la_thu_thuat: false,
   });
 
@@ -77,15 +66,7 @@ export default function ThuocPage() {
           'Expires': '0'
         }
       });
-      const res2 = await axios.get(`/api/nhom-thuoc?_t=${timestamp}&_r=${random}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
       setThuocs(res1.data.data || []);
-      setNhomThuocs(res2.data.data || []);
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
         ? error.response?.data?.message || error.message
@@ -155,112 +136,16 @@ export default function ThuocPage() {
     setOpen(true);
   };
 
-  const toggleNhomThuoc = (id: number) => {
-    setForm((prev) => ({
-      ...prev,
-      nhomthuocs: prev.nhomthuocs.includes(id)
-        ? prev.nhomthuocs.filter((n) => n !== id)
-        : [...prev.nhomthuocs, id],
-    }));
-  };
-
-  const handleAddNhom = async () => {
-    if (!tenNhomMoi.trim()) {
-      toast.error('Vui lòng nhập tên nhóm thuốc');
-      return;
-    }
-    try {
-      if (editingNhom?.id === 0) {
-        await axios.post('/api/nhom-thuoc', { ten: tenNhomMoi });
-        toast.success('Đã thêm nhóm thuốc');
-      } else {
-        await axios.put('/api/nhom-thuoc', { id: editingNhom?.id, ten: tenNhomMoi });
-        toast.success('Đã cập nhật nhóm thuốc');
-      }
-      setEditingNhom(null);
-      setTenNhomMoi('');
-      fetchAll();
-    } catch (error: unknown) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || error.message
-        : error instanceof Error
-          ? error.message
-          : String(error);
-      toast.error('Lỗi khi lưu nhóm thuốc: ' + message);
-    }
-  };
-
-  const handleDeleteNhom = async () => {
-    if (!editingNhom) return;
-    try {
-      await axios.delete(`/api/nhom-thuoc?id=${editingNhom.id}`);
-      toast.success('Đã xoá nhóm thuốc');
-      setEditingNhom(null);
-      setTenNhomMoi('');
-      fetchAll();
-    } catch (error: unknown) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || error.message
-        : error instanceof Error
-          ? error.message
-          : String(error);
-      toast.error('Lỗi khi xoá nhóm thuốc: ' + message);
-    }
-  };
-
   const filtered = thuocs.filter((t) => {
-    const matchTen = t.tenthuoc.toLowerCase().includes(search.toLowerCase());
-    const matchNhom = selectedNhom ? t.nhomthuocs.includes(selectedNhom) : true;
-    return matchTen && matchNhom;
+    return t.tenthuoc.toLowerCase().includes(search.toLowerCase());
   });
 
   return (
     <ProtectedRoute>
-      <div className="p-6 grid grid-cols-5 gap-6">
+      <div className="p-6 space-y-4">
         <Toaster position="top-right" />
-        <div className="col-span-1 space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold">Nhóm thuốc</h2>
-            <button
-              onClick={() => {
-                setEditingNhom({ id: 0, ten: '' });
-                setTenNhomMoi('');
-              }}
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-          <ul className="space-y-1">
-            <li
-              className={`px-2 py-1 rounded cursor-pointer ${selectedNhom === null ? 'bg-blue-100' : ''}`}
-              onClick={() => setSelectedNhom(null)}
-            >
-              Tất cả
-            </li>
-            {nhomThuocs.map((n) => (
-              <li
-                key={n.id}
-                className={`flex justify-between items-center group hover:bg-gray-100 px-2 py-1 rounded cursor-pointer ${selectedNhom === n.id ? 'bg-blue-100' : ''}`}
-                onClick={() => setSelectedNhom(n.id)}
-              >
-                <span>{n.ten}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingNhom(n);
-                    setTenNhomMoi(n.ten);
-                  }}
-                  className="invisible group-hover:visible"
-                >
-                  <Pencil className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
 
-        <div className="col-span-4 space-y-4">
-          <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center">
             <h1 className="text-2xl font-semibold">Danh sách thuốc</h1>
             <Button
               onClick={() => {
@@ -275,7 +160,6 @@ export default function ThuocPage() {
                   gianhap: 0,
                   tonkho: 0,
                   soluongmacdinh: 1,
-                  nhomthuocs: [],
                   la_thu_thuat: false,
                 });
                 setOpen(true);
@@ -299,7 +183,6 @@ export default function ThuocPage() {
                   <tr>
                     <th className="px-2 py-1">Mã</th>
                     <th className="px-2 py-1">Tên</th>
-                    <th className="px-2 py-1">Nhóm</th>
                     <th className="px-2 py-1">Hoạt chất</th>
                     <th className="px-2 py-1">Giá bán</th>
                     <th className="px-2 py-1">Tồn</th>
@@ -312,12 +195,6 @@ export default function ThuocPage() {
                     <tr key={t.id} className="border-b hover:bg-gray-50">
                       <td className="px-2 py-1 font-mono">{t.mathuoc}</td>
                       <td className="px-2 py-1">{t.tenthuoc}</td>
-                      <td className="px-2 py-1">
-                        {nhomThuocs
-                          .filter((n) => t.nhomthuocs.includes(n.id))
-                          .map((n) => n.ten)
-                          .join(', ')}
-                      </td>
                       <td className="px-2 py-1">{t.hoatchat}</td>
                       <td className="px-2 py-1">{t.giaban.toLocaleString()}</td>
                       <td className="px-2 py-1">{t.tonkho}</td>
@@ -336,36 +213,6 @@ export default function ThuocPage() {
               </table>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Dialog sửa nhóm */}
-        <Dialog open={!!editingNhom} onOpenChange={() => setEditingNhom(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingNhom?.id ? 'Sửa nhóm thuốc' : 'Thêm nhóm thuốc'}</DialogTitle>
-            </DialogHeader>
-            <Input
-              placeholder="Tên nhóm"
-              value={tenNhomMoi}
-              onChange={(e) => setTenNhomMoi(e.target.value)}
-            />
-            <DialogFooter>
-              <div className="flex justify-between w-full">
-                {editingNhom?.id !== 0 && (
-                  <Button variant="destructive" onClick={handleDeleteNhom}>
-                    Xoá
-                  </Button>
-                )}
-                <div className="space-x-2">
-                  <Button variant="outline" onClick={() => setEditingNhom(null)}>
-                    Huỷ
-                  </Button>
-                  <Button onClick={handleAddNhom}>Lưu</Button>
-                </div>
-              </div>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         {/* Dialog thêm/sửa thuốc */}
         <Dialog open={open} onOpenChange={setOpen}>
@@ -425,19 +272,6 @@ export default function ThuocPage() {
                 onChange={(e) => setForm({ ...form, la_thu_thuat: e.target.checked })}
                 className="w-4 h-4 border-gray-300 rounded focus:ring-blue-500"
               />
-              <Label>Nhóm thuốc</Label>
-              <div className="flex flex-wrap gap-2">
-                {nhomThuocs.map((n) => (
-                  <label key={n.id} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={form.nhomthuocs.includes(n.id)}
-                      onChange={() => toggleNhomThuoc(n.id)}
-                    />
-                    <span>{n.ten}</span>
-                  </label>
-                ))}
-              </div>
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setOpen(false)}>

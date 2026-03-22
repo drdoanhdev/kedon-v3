@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { requireTenant, supabaseAdmin } from '../../../lib/tenantApi';
 
-type RoleType = 'admin' | 'doctor' | 'staff'
+type RoleType = 'superadmin' | 'admin' | 'doctor' | 'staff'
 
 interface UserWithRole {
   id: string
@@ -19,9 +19,26 @@ export default async function handler(
   if (!tenant) return;
   const supabase = supabaseAdmin;
 
+  // Kiểm tra global role — chỉ superadmin mới được liệt kê/xóa TẤT CẢ users
+  const { data: callerRole } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', tenant.userId)
+    .maybeSingle();
+
+  const isSuperAdmin = callerRole?.role === 'superadmin';
+
   // GET: Lấy danh sách users
   if (req.method === 'GET') {
     try {
+      if (!isSuperAdmin) {
+        // Tenant owner/admin chỉ thấy thành viên phòng khám mình → redirect dùng /api/tenants/members
+        return res.status(403).json({
+          error: 'Bạn chỉ có thể xem thành viên phòng khám qua Quản lý phòng khám',
+          redirect: '/quan-ly-phong-kham',
+        });
+      }
+
       // Lấy tất cả users từ auth
       const { data: users, error: usersError } = await supabase.auth.admin.listUsers()
       
@@ -63,8 +80,12 @@ export default async function handler(
     }
   }
 
-  // PUT: Cập nhật role của user
+  // PUT: Cập nhật role của user (chỉ superadmin)
   if (req.method === 'PUT') {
+    if (!isSuperAdmin) {
+      return res.status(403).json({ error: 'Chỉ superadmin mới được cập nhật global role. Dùng Quản lý phòng khám để đổi role thành viên.' });
+    }
+
     const { userId, role } = req.body
 
     if (!userId || !role) {
@@ -124,8 +145,12 @@ export default async function handler(
     }
   }
 
-  // DELETE: Xóa user
+  // DELETE: Xóa user (chỉ superadmin)
   if (req.method === 'DELETE') {
+    if (!isSuperAdmin) {
+      return res.status(403).json({ error: 'Chỉ superadmin mới được xóa user' });
+    }
+
     const { userId } = req.query
 
     if (!userId) {

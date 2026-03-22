@@ -34,8 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               tenthuoc,
               donvitinh,
               cachdung,
-              giaban,
-              nhomthuoc
+              giaban
             )
           )
         `)
@@ -59,7 +58,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         giaban: item.thuoc.giaban,
         donvitinh: item.thuoc.donvitinh,
         cachdung: item.thuoc.cachdung || '',
-        nhomthuoc: item.thuoc.nhomthuoc,
         ghi_chu: item.ghi_chu
       })) || [];
 

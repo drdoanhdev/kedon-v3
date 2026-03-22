@@ -1,4 +1,4 @@
-// API: Cảnh báo tồn kho thấp (tổng hợp tất cả loại hàng)
+// API: Cảnh báo tồn kho thấp (kho kính: tròng + gọng)
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
@@ -53,47 +53,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         muc_toi_thieu: item.muc_ton_toi_thieu ?? 2,
         can_nhap: Math.max((item.muc_ton_toi_thieu ?? 2) - (item.ton_kho ?? 0), 0),
         trang_thai: (item.ton_kho ?? 0) <= 0 ? 'HET' : 'SAP_HET',
-      });
-    });
-
-    // Thuốc sắp hết
-    const { data: medAlerts } = await supabase
-      .from('Thuoc')
-      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_toi_thieu')
-      .eq('tenant_id', tenantId);
-
-    (medAlerts || []).filter((m: any) =>
-      (m.tonkho ?? 0) <= (m.muc_ton_toi_thieu ?? 10)
-    ).forEach((item: any) => {
-      alerts.push({
-        loai_hang: 'thuoc',
-        ten: item.tenthuoc,
-        chi_tiet: item.donvitinh || '',
-        ton_kho: item.tonkho ?? 0,
-        muc_toi_thieu: item.muc_ton_toi_thieu ?? 10,
-        can_nhap: Math.max((item.muc_ton_toi_thieu ?? 10) - (item.tonkho ?? 0), 0),
-        trang_thai: (item.tonkho ?? 0) <= 0 ? 'HET' : 'SAP_HET',
-      });
-    });
-
-    // Vật tư sắp hết
-    const { data: supplyAlerts } = await supabase
-      .from('medical_supply')
-      .select('id, ten_vat_tu, don_vi_tinh, ton_kho, muc_ton_toi_thieu')
-      .eq('tenant_id', tenantId)
-      .eq('trang_thai', 'active');
-
-    (supplyAlerts || []).filter((s: any) =>
-      s.ton_kho <= s.muc_ton_toi_thieu
-    ).forEach((item: any) => {
-      alerts.push({
-        loai_hang: 'vat_tu',
-        ten: item.ten_vat_tu,
-        chi_tiet: item.don_vi_tinh || '',
-        ton_kho: item.ton_kho,
-        muc_toi_thieu: item.muc_ton_toi_thieu,
-        can_nhap: Math.max(item.muc_ton_toi_thieu - item.ton_kho, 0),
-        trang_thai: item.ton_kho <= 0 ? 'HET' : 'SAP_HET',
       });
     });
 

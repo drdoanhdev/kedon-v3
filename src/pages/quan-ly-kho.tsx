@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Plus, AlertTriangle, Package, Eye, Frame, Pill, ArrowDownToLine, ArrowUpFromLine, Ban, Truck, RefreshCw, Pencil, Upload, Download, ClipboardCopy } from 'lucide-react';
+import { Plus, AlertTriangle, Package, Eye, Frame, ArrowDownToLine, ArrowUpFromLine, Ban, Truck, RefreshCw, Pencil, Upload, Download, ClipboardCopy } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
@@ -446,8 +446,8 @@ export default function QuanLyKho() {
         <main className="max-w-7xl mx-auto py-6 px-4">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Quản lý kho</h1>
-              <p className="text-gray-500 text-sm mt-1">Tồn kho tròng kính, gọng kính, thuốc, vật tư</p>
+              <h1 className="text-2xl font-bold text-gray-900">Quản lý kho kính</h1>
+              <p className="text-gray-500 text-sm mt-1">Tồn kho tròng kính, gọng kính</p>
             </div>
             <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); }} variant="outline" size="sm">
               <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
@@ -539,7 +539,7 @@ export default function QuanLyKho() {
                                 <tr key={i} className="border-b last:border-0">
                                   <td className="py-2">
                                     <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                                      {a.loai_hang === 'trong_kinh' ? 'Tròng' : a.loai_hang === 'gong_kinh' ? 'Gọng' : a.loai_hang === 'thuoc' ? 'Thuốc' : 'Vật tư'}
+                                      {a.loai_hang === 'trong_kinh' ? 'Tròng' : 'Gọng'}
                                     </span>
                                   </td>
                                   <td className="py-2 font-medium">{a.ten}</td>
@@ -562,7 +562,7 @@ export default function QuanLyKho() {
                   ) : (
                     <Card>
                       <CardContent className="py-12 text-center text-gray-500">
-                        ✅ Tất cả hàng hóa đều đủ tồn kho
+                        ✅ Tất cả tròng và gọng đều đủ tồn kho
                       </CardContent>
                     </Card>
                   )}

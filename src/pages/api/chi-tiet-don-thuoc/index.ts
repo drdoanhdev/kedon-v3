@@ -44,8 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             cachdung,
             giaban,
             gianhap,
-            soluongmacdinh,
-            nhomthuoc
+            soluongmacdinh
           )
         `)
         .eq("donthuocid", donthuocid);

@@ -34,7 +34,6 @@ interface Thuoc {
   donvitinh: string;
   cachdung: string;
   giaban: number;
-  nhomthuoc: string;
 }
 
 interface ThuocMau {
