@@ -39,46 +39,29 @@ interface PaymentData {
   transferContent: string;
 }
 
-const plans = [
+interface Plan {
+  name: string;
+  key: string;
+  price: string;
+  priceNum: number;
+  period: string;
+  features: string[];
+  popular?: boolean;
+}
+
+const FALLBACK_PLANS: Plan[] = [
   {
-    name: 'Dùng thử',
-    key: 'trial',
-    price: 'Miễn phí',
-    priceNum: 0,
+    name: 'Dùng thử', key: 'trial', price: 'Miễn phí', priceNum: 0,
     period: '3 tháng hoặc 1.000 đơn',
-    features: [
-      'Quản lý bệnh nhân',
-      'Kê đơn thuốc & kính',
-      'Báo cáo cơ bản',
-      '1 người dùng',
-    ],
+    features: ['Quản lý bệnh nhân', 'Kê đơn thuốc & kính', 'Báo cáo cơ bản', '1 người dùng'],
   },
   {
-    name: 'Cơ bản',
-    key: 'basic',
-    price: '299.000đ',
-    priceNum: 299000,
-    period: '/tháng',
-    features: [
-      'Tất cả tính năng Trial',
-      'Đơn thuốc không giới hạn',
-      'Tối đa 3 người dùng',
-      'Hỗ trợ email',
-    ],
+    name: 'Cơ bản', key: 'basic', price: '299.000đ', priceNum: 299000, period: '/tháng',
+    features: ['Tất cả tính năng Trial', 'Đơn thuốc không giới hạn', 'Tối đa 3 người dùng', 'Hỗ trợ email'],
   },
   {
-    name: 'Chuyên nghiệp',
-    key: 'pro',
-    price: '599.000đ',
-    priceNum: 599000,
-    period: '/tháng',
-    features: [
-      'Tất cả tính năng Cơ bản',
-      'Nhân viên không giới hạn',
-      'Báo cáo nâng cao',
-      'Nhận diện khuôn mặt',
-      'Hỗ trợ ưu tiên',
-    ],
+    name: 'Chuyên nghiệp', key: 'pro', price: '599.000đ', priceNum: 599000, period: '/tháng',
+    features: ['Tất cả tính năng Cơ bản', 'Nhân viên không giới hạn', 'Báo cáo nâng cao', 'Nhận diện khuôn mặt', 'Hỗ trợ ưu tiên'],
     popular: true,
   },
 ];
@@ -91,6 +74,7 @@ export default function BillingPage() {
   const router = useRouter();
   const [trial, setTrial] = useState<TrialInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState<Plan[]>(FALLBACK_PLANS);
   const [paymentHistory, setPaymentHistory] = useState<PaymentOrder[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [selectedMonths, setSelectedMonths] = useState(1);
@@ -99,6 +83,26 @@ export default function BillingPage() {
   const sepayFormRef = useRef<HTMLFormElement>(null);
   const [sepayCheckout, setSepayCheckout] = useState<{ url: string; fields: Record<string, string> } | null>(null);
   const { currentTenantId, currentTenant } = useAuth();
+
+  const fetchPlans = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tenants/plans');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.data?.length) {
+          setPlans(data.data.map((p: any) => ({
+            name: p.name,
+            key: p.plan_key,
+            price: p.price === 0 ? 'Miễn phí' : formatVND(p.price),
+            priceNum: p.price,
+            period: p.period_label,
+            features: p.features || [],
+            popular: p.is_popular,
+          })));
+        }
+      }
+    } catch {}
+  }, []);
 
   const fetchTrial = useCallback(async () => {
     if (!currentTenantId) return;
@@ -123,8 +127,8 @@ export default function BillingPage() {
   }, [currentTenantId]);
 
   useEffect(() => {
-    Promise.all([fetchTrial(), fetchPayments()]).finally(() => setLoading(false));
-  }, [fetchTrial, fetchPayments]);
+    Promise.all([fetchTrial(), fetchPayments(), fetchPlans()]).finally(() => setLoading(false));
+  }, [fetchTrial, fetchPayments, fetchPlans]);
 
   const handleUpgrade = async (planKey: string) => {
     setSelectedPlan(planKey);

@@ -28,6 +28,7 @@ interface Thuoc {
   la_thu_thuat: boolean;
   cachdung: string;
   hoatchat: string;
+  tonkho?: number;
 }
 
 interface ChiTietDonThuoc {
@@ -99,6 +100,9 @@ export default function KeDon() {
   // Edit patient dialog state
   const [openEditPatient, setOpenEditPatient] = useState(false);
   const [patientForm, setPatientForm] = useState<BenhNhan | null>(null);
+
+  // Tồn kho thuốc: thuoc_id → { tonkho, trang_thai }
+  const [thuocStockMap, setThuocStockMap] = useState<Record<number, { tonkho: number; trang_thai: string }>>({});
   
   // States cho đơn thuốc mẫu
   const [showMauDialog, setShowMauDialog] = useState(false);
@@ -271,6 +275,19 @@ export default function KeDon() {
   );
   const sotienConNo = useMemo(() => Math.max(0, tongTien - sotienDaThanhToan), [tongTien, sotienDaThanhToan]);
   const tienTraLai = useMemo(() => Math.max(0, tienKhachDua - tongTien), [tienKhachDua, tongTien]);
+
+  // Fetch tồn kho thuốc khi dsChon thay đổi (debounce)
+  useEffect(() => {
+    const ids = dsChon.map(i => i.thuoc.id).filter(id => !dsChon.find(c => c.thuoc.id === id)?.thuoc.la_thu_thuat);
+    if (ids.length === 0) { setThuocStockMap({}); return; }
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await axios.get(`/api/inventory/check-thuoc-stock?thuoc_ids=${ids.join(',')}`);
+        setThuocStockMap(data || {});
+      } catch { /* silent */ }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [dsChon]);
 
   const danhSachThuocDonDangKe = useMemo(() => {
     return dsThuoc.filter((t) => searchByStartsWith(t.tenthuoc, timThuocDonDangKe));
@@ -508,6 +525,9 @@ export default function KeDon() {
       if (res.ok) {
         saveChandoanToHistory(chandoan);
         toast.success(`Đã ${editDonThuocId ? 'cập nhật' : 'lưu'} đơn thuốc: ${data.data.madonthuoc}`);
+        // Hiển thị cảnh báo tồn kho
+        const warnings: string[] = data.inventoryWarnings || [];
+        warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
         if (!editDonThuocId) {
           const newId = data.data.id;
           setDsDonCu((prev) => [data.data, ...prev]);
@@ -803,10 +823,19 @@ export default function KeDon() {
                     {danhSachThuocDonDangKe.map((t, index) => (
                       <li
                         key={t.id}
-                        className={`cursor-pointer px-3 py-2 ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
+                        className={`cursor-pointer px-3 py-2 flex items-center justify-between ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
                         onClick={() => themThuoc(t)}
                       >
-                        {dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}
+                        <span>{dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}</span>
+                        {!t.la_thu_thuat && t.tonkho !== undefined && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-2 ${
+                            (t.tonkho ?? 0) <= 0 ? 'bg-red-100 text-red-700'
+                            : (t.tonkho ?? 0) <= 10 ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-green-100 text-green-700'
+                          }`}>
+                            {(t.tonkho ?? 0) <= 0 ? 'Hết' : `${t.tonkho}`}
+                          </span>
+                        )}
                       </li>
                     ))}
                     {danhSachThuocDonDangKe.length === 0 && (
@@ -878,7 +907,18 @@ export default function KeDon() {
                     {dsChon.map((item, idx) => (
                       <div key={item.thuoc.id} className={`bg-white rounded-xl border p-3 flex items-center gap-3 ${item.thuoc.donvitinh.toLowerCase().includes('lần') ? 'border-amber-200 bg-amber-50/40' : 'border-gray-100'}`}>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-gray-900 text-[15px] leading-tight">{item.thuoc.tenthuoc}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-gray-900 text-[15px] leading-tight">{item.thuoc.tenthuoc}</p>
+                            {!item.thuoc.la_thu_thuat && thuocStockMap[item.thuoc.id] && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                                thuocStockMap[item.thuoc.id].trang_thai === 'HET' ? 'bg-red-100 text-red-700'
+                                : thuocStockMap[item.thuoc.id].trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-green-100 text-green-700'
+                              }`}>
+                                {thuocStockMap[item.thuoc.id].tonkho <= 0 ? 'Hết' : `Tồn: ${thuocStockMap[item.thuoc.id].tonkho}`}
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-0.5">
                             <Input
                               className="bg-blue-50 border-none focus:ring-0 px-2 py-1 rounded-lg h-auto text-sm text-gray-500 w-full placeholder:text-gray-400"
@@ -1489,10 +1529,19 @@ export default function KeDon() {
                   {danhSachThuocDonDangKe.map((t, index) => (
                     <li
                       key={t.id}
-                      className={`cursor-pointer px-4 py-2 ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
+                      className={`cursor-pointer px-4 py-2 flex items-center justify-between ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
                       onClick={() => themThuoc(t)}
                     >
-                      {dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}
+                      <span>{dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}</span>
+                      {!t.la_thu_thuat && t.tonkho !== undefined && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-2 ${
+                          (t.tonkho ?? 0) <= 0 ? 'bg-red-100 text-red-700'
+                          : (t.tonkho ?? 0) <= 10 ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-green-100 text-green-700'
+                        }`}>
+                          {(t.tonkho ?? 0) <= 0 ? 'Hết' : `${t.tonkho}`}
+                        </span>
+                      )}
                     </li>
                   ))}
                   {danhSachThuocDonDangKe.length === 0 && (
@@ -1576,7 +1625,18 @@ export default function KeDon() {
                   >
                     <td className="px-2 py-1.5 text-xs text-gray-500 text-center">{idx + 1}</td>
                     <td className="px-2 py-1.5">
-                      <p className="text-sm font-semibold text-blue-800">{item.thuoc.tenthuoc}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-blue-800">{item.thuoc.tenthuoc}</p>
+                        {!item.thuoc.la_thu_thuat && thuocStockMap[item.thuoc.id] && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                            thuocStockMap[item.thuoc.id].trang_thai === 'HET' ? 'bg-red-100 text-red-700'
+                            : thuocStockMap[item.thuoc.id].trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-green-100 text-green-700'
+                          }`}>
+                            {thuocStockMap[item.thuoc.id].tonkho <= 0 ? 'Hết' : `Tồn: ${thuocStockMap[item.thuoc.id].tonkho}`}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-1.5">
                       <Input

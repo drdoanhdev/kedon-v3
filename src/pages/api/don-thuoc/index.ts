@@ -3,6 +3,88 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { withDebtFields, calcDebt } from '../../../lib/debt';
 
+// === INVENTORY HELPERS ===
+
+/** Xuất kho thuốc khi tạo/sửa đơn thuốc. Trừ tonkho trên bảng Thuoc. */
+async function processThuocInventory(
+  tenantId: string,
+  donThuocId: number,
+  thuocs: { id: number; soluong: number }[]
+): Promise<string[]> {
+  const warnings: string[] = [];
+
+  for (const t of thuocs) {
+    // Lấy tonkho hiện tại
+    const { data: thuoc } = await supabase
+      .from('Thuoc')
+      .select('tonkho, tenthuoc, la_thu_thuat')
+      .eq('id', t.id)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    // Thủ thuật không cần quản lý tồn kho
+    if (thuoc?.la_thu_thuat) continue;
+
+    const tonTruoc = thuoc?.tonkho ?? 0;
+    if (tonTruoc <= 0) {
+      warnings.push(`⚠️ ${thuoc?.tenthuoc || `#${t.id}`}: HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất kho, tồn sẽ âm.`);
+    } else if (tonTruoc < t.soluong) {
+      warnings.push(`⚠️ ${thuoc?.tenthuoc || `#${t.id}`}: Không đủ tồn (cần ${t.soluong}, tồn ${tonTruoc}). Vẫn xuất kho.`);
+    }
+
+    // Ghi phiếu xuất
+    const { error: expErr } = await supabase.from('thuoc_xuat_don').insert({
+      tenant_id: tenantId,
+      don_thuoc_id: donThuocId,
+      thuoc_id: t.id,
+      so_luong: t.soluong,
+    });
+
+    if (expErr) {
+      // Bảng chưa tồn tại hoặc lỗi → trừ kho trực tiếp
+      console.log(`📦 thuoc_xuat_don INSERT lỗi (${expErr.message}), trừ kho trực tiếp`);
+      await supabase.from('Thuoc').update({
+        tonkho: tonTruoc - t.soluong,
+      }).eq('id', t.id).eq('tenant_id', tenantId);
+    } else {
+      // Verify trigger đã trừ
+      const { data: after } = await supabase
+        .from('Thuoc').select('tonkho').eq('id', t.id).single();
+      if (after && (after.tonkho ?? 0) >= tonTruoc) {
+        // Trigger chưa fire → trừ trực tiếp
+        await supabase.from('Thuoc').update({
+          tonkho: tonTruoc - t.soluong,
+        }).eq('id', t.id).eq('tenant_id', tenantId);
+      }
+    }
+  }
+  return warnings;
+}
+
+/** Hoàn kho thuốc khi sửa/xóa đơn thuốc. Cộng lại tonkho trên bảng Thuoc. */
+async function reverseThuocInventory(tenantId: string, donThuocId: number) {
+  const { data: exports } = await supabase
+    .from('thuoc_xuat_don')
+    .select('id, thuoc_id, so_luong')
+    .eq('tenant_id', tenantId)
+    .eq('don_thuoc_id', donThuocId);
+
+  if (exports && exports.length > 0) {
+    for (const exp of exports) {
+      const { data: thuoc } = await supabase
+        .from('Thuoc').select('tonkho').eq('id', exp.thuoc_id).single();
+      if (thuoc) {
+        await supabase.from('Thuoc').update({
+          tonkho: (thuoc.tonkho ?? 0) + exp.so_luong,
+        }).eq('id', exp.thuoc_id).eq('tenant_id', tenantId);
+      }
+    }
+    await supabase.from('thuoc_xuat_don').delete()
+      .eq('tenant_id', tenantId).eq('don_thuoc_id', donThuocId);
+    console.log(`🔄 Hoàn kho ${exports.length} dòng thuốc cho đơn #${donThuocId}`);
+  }
+}
+
 type ThuocInput = {
   id: number;
   soluong: number;
@@ -267,7 +349,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       console.log('✅ ChiTietDonThuoc inserted successfully');
-  return res.status(200).json({ message: "Đã tạo đơn thuốc", data: withDebtFields(donthuoc) });
+
+      // === INVENTORY: Trừ tồn kho thuốc ===
+      let inventoryWarnings: string[] = [];
+      try {
+        inventoryWarnings = await processThuocInventory(
+          tenantId,
+          donthuoc.id,
+          (thuocs as ThuocInput[]).filter(t => t.soluong > 0).map(t => ({ id: t.id, soluong: t.soluong })),
+        );
+      } catch (invErr) {
+        console.error('⚠️ POST thuoc inventory error:', invErr);
+        inventoryWarnings.push('Lỗi xử lý kho: ' + (invErr instanceof Error ? invErr.message : String(invErr)));
+      }
+
+  return res.status(200).json({ message: "Đã tạo đơn thuốc", data: withDebtFields(donthuoc), inventoryWarnings });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: "Lỗi server", error: message });
@@ -376,7 +472,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: "Lỗi khi cập nhật chi tiết đơn thuốc", error: chiTietError.message });
       }
 
-      return res.status(200).json({ message: "Đã cập nhật đơn thuốc", data: withDebtFields(donthuoc) });
+      // === INVENTORY: Hoàn kho cũ → trừ kho mới ===
+      let inventoryWarnings: string[] = [];
+      try {
+        await reverseThuocInventory(tenantId, id);
+        inventoryWarnings = await processThuocInventory(
+          tenantId,
+          id,
+          (thuocs as ThuocInput[]).filter(t => t.soluong > 0).map(t => ({ id: t.id, soluong: t.soluong })),
+        );
+      } catch (invErr) {
+        console.error('⚠️ PUT thuoc inventory error:', invErr);
+        inventoryWarnings.push('Lỗi xử lý kho khi sửa đơn: ' + (invErr instanceof Error ? invErr.message : String(invErr)));
+      }
+
+      return res.status(200).json({ message: "Đã cập nhật đơn thuốc", data: withDebtFields(donthuoc), inventoryWarnings });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: "Lỗi server", error: message });
@@ -445,6 +555,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ message: "Thiếu ID đơn thuốc" });
       }
+
+      // === INVENTORY: Hoàn kho trước khi xóa đơn ===
+      try {
+        await reverseThuocInventory(tenantId, Number(id));
+      } catch (invErr) {
+        console.error('⚠️ DELETE thuoc reverse inventory error:', invErr);
+      }
+
       await supabase.from("NoBenhNhan").delete().eq("donthuocid", id);
       await supabase.from("ChiTietDonThuoc").delete().eq("donthuocid", id);
       const { error } = await supabase.from("DonThuoc").delete().eq("id", id).eq("tenant_id", tenantId);

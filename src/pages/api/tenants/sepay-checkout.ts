@@ -3,10 +3,23 @@ import { requireTenant, setNoCacheHeaders } from '../../../lib/tenantApi';
 // @ts-ignore - sepay-pg-node may not have types
 import { SePayPgClient } from 'sepay-pg-node';
 
-const PLAN_PRICES: Record<string, number> = {
+const FALLBACK_PRICES: Record<string, number> = {
   basic: 299000,
   pro: 599000,
 };
+
+async function getPlanPrice(supabase: any, planKey: string): Promise<number | null> {
+  try {
+    const { data } = await supabase
+      .from('subscription_plans')
+      .select('price')
+      .eq('plan_key', planKey)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (data) return data.price;
+  } catch {}
+  return FALLBACK_PRICES[planKey] ?? null;
+}
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://kedon.pro.vn';
 
@@ -40,12 +53,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { supabase, tenantId, userId } = tenant;
   const { plan, months = 1 } = req.body;
 
-  if (!plan || !PLAN_PRICES[plan]) {
+  const planPrice = await getPlanPrice(supabase, plan);
+  if (!plan || planPrice === null) {
     return res.status(400).json({ error: 'Gói không hợp lệ. Chọn: basic hoặc pro' });
   }
 
   const monthCount = Math.min(Math.max(parseInt(months) || 1, 1), 12);
-  const amount = PLAN_PRICES[plan] * monthCount;
+  const amount = planPrice * monthCount;
 
   // Hủy các đơn pending cũ
   await supabase

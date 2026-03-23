@@ -34,7 +34,16 @@ export default function Login() {
       
       if (error) {
         console.error('❌ Login failed:', error)
-        toast.error(error.message || 'Đăng nhập thất bại')
+        const msg = error.message || ''
+        if (msg.includes('Invalid login credentials')) {
+          toast.error('Email hoặc mật khẩu không đúng')
+        } else if (msg.includes('Email not confirmed')) {
+          toast.error('Email chưa được xác nhận. Vui lòng kiểm tra hộp thư.')
+        } else if (msg.includes('Too many requests')) {
+          toast.error('Đăng nhập quá nhiều lần. Vui lòng thử lại sau.')
+        } else {
+          toast.error(msg || 'Đăng nhập thất bại')
+        }
       } else {
         console.log('✅ Login successful')
         toast.success('Đăng nhập thành công!')

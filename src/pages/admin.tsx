@@ -9,7 +9,7 @@ import { getAuthHeaders } from '../lib/fetchWithAuth';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
 
-type Tab = 'stats' | 'tenants' | 'payments' | 'users';
+type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans';
 
 // ========== Thống kê tổng quan ==========
 function StatsTab() {
@@ -482,6 +482,285 @@ function UsersTab() {
   );
 }
 
+// ========== Quản lý gói dịch vụ ==========
+function PlansTab() {
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editPlan, setEditPlan] = useState<any | null>(null);
+  const [featureInput, setFeatureInput] = useState('');
+
+  const fetchPlans = useCallback(async () => {
+    setLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/plans', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setPlans(data.data || []);
+      }
+    } catch { toast.error('Lỗi kết nối'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchPlans(); }, [fetchPlans]);
+
+  const openEdit = (plan: any) => {
+    setEditPlan({ ...plan, features: [...(plan.features || [])] });
+    setFeatureInput('');
+  };
+
+  const handleSave = async () => {
+    if (!editPlan) return;
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/plans', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(editPlan),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setEditPlan(null);
+        fetchPlans();
+      } else {
+        toast.error(data.message || 'Lỗi cập nhật');
+      }
+    } catch { toast.error('Lỗi kết nối'); }
+  };
+
+  const addFeature = () => {
+    if (!featureInput.trim() || !editPlan) return;
+    setEditPlan({ ...editPlan, features: [...editPlan.features, featureInput.trim()] });
+    setFeatureInput('');
+  };
+
+  const removeFeature = (idx: number) => {
+    if (!editPlan) return;
+    const f = [...editPlan.features];
+    f.splice(idx, 1);
+    setEditPlan({ ...editPlan, features: f });
+  };
+
+  if (loading) return <div className="text-center py-12 text-gray-400">Đang tải...</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Danh sách gói */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {plans.map((plan) => (
+          <div
+            key={plan.id}
+            className={`bg-white rounded-xl border-2 p-5 relative ${
+              plan.is_popular ? 'border-purple-400 ring-2 ring-purple-100' : 'border-gray-200'
+            } ${!plan.is_active ? 'opacity-50' : ''}`}
+          >
+            {plan.is_popular && (
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-purple-600 text-white text-xs rounded-full font-medium">
+                Phổ biến
+              </span>
+            )}
+            {!plan.is_active && (
+              <span className="absolute -top-3 right-3 px-2 py-0.5 bg-gray-500 text-white text-xs rounded-full">
+                Đã ẩn
+              </span>
+            )}
+            <div className="text-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">{plan.name}</h3>
+              <p className="text-xs text-gray-500 font-mono">{plan.plan_key}</p>
+              <div className="mt-2">
+                <span className="text-2xl font-bold text-blue-700">
+                  {plan.price === 0 ? 'Miễn phí' : formatVND(plan.price)}
+                </span>
+                {plan.price > 0 && <span className="text-sm text-gray-500">{plan.period_label}</span>}
+              </div>
+            </div>
+            <ul className="space-y-1.5 mb-4">
+              {(plan.features || []).map((f: string, i: number) => (
+                <li key={i} className="text-sm text-gray-600 flex items-start gap-1.5">
+                  <span className="text-green-500 mt-0.5">✓</span> {f}
+                </li>
+              ))}
+            </ul>
+            <div className="text-xs text-gray-400 space-y-0.5 mb-3">
+              {plan.max_users && <div>Tối đa: {plan.max_users} user</div>}
+              {plan.trial_days && <div>Trial: {plan.trial_days} ngày</div>}
+              {plan.trial_max_prescriptions && <div>Giới hạn: {plan.trial_max_prescriptions} đơn</div>}
+            </div>
+            <button
+              onClick={() => openEdit(plan)}
+              className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              ✏️ Chỉnh sửa
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Modal chỉnh sửa */}
+      {editPlan && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              Chỉnh sửa gói: {editPlan.name} ({editPlan.plan_key})
+            </h3>
+
+            <div className="space-y-4">
+              {/* Tên gói */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">Tên gói hiển thị</label>
+                <input
+                  value={editPlan.name}
+                  onChange={(e) => setEditPlan({ ...editPlan, name: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Giá */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Giá (VND/tháng)</label>
+                  <input
+                    type="number"
+                    value={editPlan.price}
+                    onChange={(e) => setEditPlan({ ...editPlan, price: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Nhãn chu kỳ</label>
+                  <input
+                    value={editPlan.period_label}
+                    onChange={(e) => setEditPlan({ ...editPlan, period_label: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    placeholder="/tháng"
+                  />
+                </div>
+              </div>
+
+              {/* Giới hạn */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Max users</label>
+                  <input
+                    type="number"
+                    value={editPlan.max_users || ''}
+                    onChange={(e) => setEditPlan({ ...editPlan, max_users: e.target.value || null })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    placeholder="∞"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Trial ngày</label>
+                  <input
+                    type="number"
+                    value={editPlan.trial_days || ''}
+                    onChange={(e) => setEditPlan({ ...editPlan, trial_days: e.target.value || null })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Max đơn trial</label>
+                  <input
+                    type="number"
+                    value={editPlan.trial_max_prescriptions || ''}
+                    onChange={(e) => setEditPlan({ ...editPlan, trial_max_prescriptions: e.target.value || null })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    placeholder="—"
+                  />
+                </div>
+              </div>
+
+              {/* Tính năng */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">Tính năng hiển thị</label>
+                <div className="mt-1 space-y-1.5">
+                  {(editPlan.features || []).map((f: string, i: number) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="flex-1 text-sm bg-gray-50 px-3 py-1.5 rounded border">{f}</span>
+                      <button
+                        onClick={() => removeFeature(i)}
+                        className="text-red-400 hover:text-red-600 text-sm px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <input
+                      value={featureInput}
+                      onChange={(e) => setFeatureInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addFeature())}
+                      placeholder="Thêm tính năng..."
+                      className="flex-1 px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                    />
+                    <button
+                      onClick={addFeature}
+                      className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200"
+                    >
+                      + Thêm
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Switches */}
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editPlan.is_popular}
+                    onChange={(e) => setEditPlan({ ...editPlan, is_popular: e.target.checked })}
+                    className="w-4 h-4 rounded text-purple-600"
+                  />
+                  <span className="text-sm text-gray-700">⭐ Phổ biến</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editPlan.is_active}
+                    onChange={(e) => setEditPlan({ ...editPlan, is_active: e.target.checked })}
+                    className="w-4 h-4 rounded text-green-600"
+                  />
+                  <span className="text-sm text-gray-700">✅ Hiển thị</span>
+                </label>
+              </div>
+
+              {/* Thứ tự */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">Thứ tự hiển thị</label>
+                <input
+                  type="number"
+                  value={editPlan.sort_order}
+                  onChange={(e) => setEditPlan({ ...editPlan, sort_order: e.target.value })}
+                  className="mt-1 w-24 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSave}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+              >
+                💾 Lưu thay đổi
+              </button>
+              <button
+                onClick={() => setEditPlan(null)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ========== Helpers ==========
 function formatVND(amount: number): string {
   return amount.toLocaleString('vi-VN') + 'đ';
@@ -493,6 +772,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'tenants', label: 'Phòng khám', icon: '🏥' },
   { key: 'payments', label: 'Thanh toán', icon: '💳' },
   { key: 'users', label: 'Người dùng', icon: '👥' },
+  { key: 'plans', label: 'Gói dịch vụ', icon: '💎' },
 ];
 
 export default function AdminPage() {
@@ -551,6 +831,7 @@ export default function AdminPage() {
         {tab === 'tenants' && <TenantsTab />}
         {tab === 'payments' && <PaymentsTab />}
         {tab === 'users' && <UsersTab />}
+        {tab === 'plans' && <PlansTab />}
       </div>
     </ProtectedRoute>
   );

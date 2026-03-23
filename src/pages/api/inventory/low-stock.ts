@@ -14,9 +14,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    // type: 'kinh' = chỉ tròng+gọng, 'thuoc' = chỉ thuốc, undefined = tất cả
+    const { type } = req.query;
     const alerts: any[] = [];
 
     // Tròng kính sắp hết
+    if (type !== 'thuoc') {
     const { data: lensAlerts } = await supabase
       .from('lens_stock')
       .select('id, sph, cyl, add_power, ton_hien_tai, muc_ton_toi_thieu, muc_nhap_goi_y, trang_thai_ton, HangTrong(ten_hang)')
@@ -34,8 +37,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         trang_thai: item.trang_thai_ton,
       });
     });
+    }
 
     // Gọng kính sắp hết
+    if (type !== 'thuoc') {
     const { data: frameAlerts } = await supabase
       .from('GongKinh')
       .select('id, ten_gong, mau_sac, ton_kho, muc_ton_toi_thieu')
@@ -55,6 +60,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         trang_thai: (item.ton_kho ?? 0) <= 0 ? 'HET' : 'SAP_HET',
       });
     });
+    }
+
+    // Thuốc sắp hết / đã hết
+    if (type !== 'kinh') {
+    const { data: thuocAlerts } = await supabase
+      .from('Thuoc')
+      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_toi_thieu')
+      .eq('tenant_id', tenantId)
+      .or('la_thu_thuat.is.null,la_thu_thuat.eq.false');
+
+    (thuocAlerts || []).filter((t: any) =>
+      (t.tonkho ?? 0) <= (t.muc_ton_toi_thieu ?? 10)
+    ).forEach((item: any) => {
+      const tonkho = item.tonkho ?? 0;
+      const mucMin = item.muc_ton_toi_thieu ?? 10;
+      alerts.push({
+        loai_hang: 'thuoc',
+        ten: item.tenthuoc,
+        chi_tiet: item.donvitinh || '',
+        ton_kho: tonkho,
+        muc_toi_thieu: mucMin,
+        can_nhap: Math.max(mucMin - tonkho, 0),
+        trang_thai: tonkho <= 0 ? 'HET' : 'SAP_HET',
+      });
+    });
+    }
 
     // Tròng cần đặt (chờ đặt)
     const { data: pendingOrders } = await supabase

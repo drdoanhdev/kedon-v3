@@ -648,7 +648,17 @@ export default function BenhNhanPage() {
                   <Users className="w-4 h-4 mr-1" />
                   Gộp BN ({selectedForMerge.length})
                 </Button>
-
+                <Button
+                  variant={allSelectedCurrentPage ? 'destructive' : 'outline'}
+                  className="h-10 px-3"
+                  onClick={toggleSelectAllCurrentPage}
+                  disabled={paginated.length === 0}
+                >
+                  {allSelectedCurrentPage ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </Button>
+                <div className="hidden md:block text-[10px] leading-tight text-gray-500 -mt-1">
+                  Bấm Ctrl+Enter để gộp
+                </div>
                 
                 <select
                   value={rowsPerPage}
@@ -904,7 +914,18 @@ export default function BenhNhanPage() {
                   <Users className="w-4 h-4 mr-1" />
                   Gộp bệnh nhân ({selectedForMerge.length})
                 </Button>
-
+                <Button
+                  size="sm"
+                  variant={allSelectedCurrentPage ? 'destructive' : 'outline'}
+                  onClick={toggleSelectAllCurrentPage}
+                  disabled={paginated.length === 0}
+                  className={allSelectedCurrentPage ? 'bg-red-600 hover:bg-red-700 text-white' : ''}
+                >
+                  {allSelectedCurrentPage ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </Button>
+                <div className="text-[10px] text-gray-500 -mt-1">
+                  Bấm Ctrl+Enter để gộp
+                </div>
                 
                 <select
                   value={rowsPerPage}

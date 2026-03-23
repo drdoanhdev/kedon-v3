@@ -123,7 +123,7 @@ export default function QuanLyKho() {
   // ============================================
   const fetchAlerts = useCallback(async () => {
     try {
-      const { data } = await axios.get('/api/inventory/low-stock');
+      const { data } = await axios.get('/api/inventory/low-stock?type=kinh');
       setAlertData(data);
     } catch {}
   }, []);
@@ -539,7 +539,7 @@ export default function QuanLyKho() {
                                 <tr key={i} className="border-b last:border-0">
                                   <td className="py-2">
                                     <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                                      {a.loai_hang === 'trong_kinh' ? 'Tròng' : 'Gọng'}
+                                      {a.loai_hang === 'trong_kinh' ? 'Tròng' : a.loai_hang === 'thuoc' ? 'Thuốc' : 'Gọng'}
                                     </span>
                                   </td>
                                   <td className="py-2 font-medium">{a.ten}</td>
