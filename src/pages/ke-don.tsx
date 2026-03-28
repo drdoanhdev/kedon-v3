@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import toast, { Toaster } from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { useAuth } from '../contexts/AuthContext';
 import { searchByStartsWith } from '@/lib/utils';
 
 interface Thuoc {
@@ -67,6 +68,8 @@ interface BenhNhan {
 export default function KeDon() {
   const searchParams = useSearchParams();
   const benhnhanid = searchParams.get('bn');
+  const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
+  const authReady = !authLoading && !tenancyLoading && !!currentTenantId;
 
   const [dsThuoc, setDsThuoc] = useState<Thuoc[]>([]);
   const [dsDonCu, setDsDonCu] = useState<DonThuocCu[]>([]);
@@ -161,8 +164,9 @@ export default function KeDon() {
     }
   }, [benhNhan?.ten]);
 
-  // Fetch initial data
+  // Fetch initial data - đợi auth sẵn sàng trước khi gọi API
   useEffect(() => {
+    if (!authReady) return;
     const fetchData = async () => {
       try {
         // Thêm cache-busting parameters
@@ -249,7 +253,7 @@ export default function KeDon() {
       }
     };
     fetchData();
-  }, [benhnhanid]);
+  }, [benhnhanid, authReady]);
 
   // Focus mặc định vào ô chẩn đoán (desktop)
   useEffect(() => {

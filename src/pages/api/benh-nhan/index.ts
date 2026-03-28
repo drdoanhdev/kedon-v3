@@ -71,12 +71,13 @@ export default async function handler(
           .order("id", { ascending: false });
 
         if (search) {
-          // Tìm kiếm theo tên hoặc id
-          const searchIsNumber = /^\d+$/.test(search);
-          if (searchIsNumber) {
-            query = query.or(`ten.ilike.%${search}%,id.eq.${search}`);
+          // Tìm kiếm thông minh: số → SĐT + tên, chữ → tên + địa chỉ
+          const isNumeric = /^\d+$/.test(search.replace(/[\s.-]/g, ''));
+          if (isNumeric) {
+            const digits = search.replace(/\D/g, '');
+            query = query.or(`dienthoai.ilike.%${digits}%,ten.ilike.%${search}%,id.eq.${digits}`);
           } else {
-            query = query.ilike('ten', `%${search}%`);
+            query = query.or(`ten.ilike.%${search}%,diachi.ilike.%${search}%,dienthoai.ilike.%${search}%`);
           }
         }
 

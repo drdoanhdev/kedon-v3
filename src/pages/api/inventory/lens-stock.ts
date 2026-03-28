@@ -51,25 +51,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // POST: Tạo dòng kho mới (1 tổ hợp độ)
     if (req.method === 'POST') {
-      const { hang_trong_id, sph, cyl, add_power, ton_dau_ky, muc_ton_toi_thieu, muc_nhap_goi_y } = req.body;
+      const { hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_toi_thieu, muc_nhap_goi_y } = req.body;
 
       if (!hang_trong_id || sph === undefined) {
         return res.status(400).json({ error: 'hang_trong_id và sph là bắt buộc' });
       }
 
+      const insertData: any = {
+        tenant_id: tenantId,
+        hang_trong_id: parseInt(hang_trong_id),
+        sph: parseFloat(sph),
+        cyl: parseFloat(cyl) || 0,
+        add_power: add_power ? parseFloat(add_power) : null,
+        ton_dau_ky: parseInt(ton_dau_ky) || 0,
+        ton_hien_tai: parseInt(ton_dau_ky) || 0,
+        muc_ton_toi_thieu: parseInt(muc_ton_toi_thieu) || 2,
+        muc_nhap_goi_y: parseInt(muc_nhap_goi_y) || 10,
+      };
+      // mat chỉ dùng cho đa tròng (khi có add_power)
+      if (mat && ['trai', 'phai'].includes(mat)) insertData.mat = mat;
+
       const { data, error } = await supabase
         .from('lens_stock')
-        .insert({
-          tenant_id: tenantId,
-          hang_trong_id: parseInt(hang_trong_id),
-          sph: parseFloat(sph),
-          cyl: parseFloat(cyl) || 0,
-          add_power: add_power ? parseFloat(add_power) : null,
-          ton_dau_ky: parseInt(ton_dau_ky) || 0,
-          ton_hien_tai: parseInt(ton_dau_ky) || 0,
-          muc_ton_toi_thieu: parseInt(muc_ton_toi_thieu) || 2,
-          muc_nhap_goi_y: parseInt(muc_nhap_goi_y) || 10,
-        })
+        .insert(insertData)
         .select('*, HangTrong(id, ten_hang, loai_trong, kieu_quan_ly)')
         .single();
 
@@ -84,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // PUT: Cập nhật tất cả thông tin lens_stock
     if (req.method === 'PUT') {
-      const { id, hang_trong_id, sph, cyl, add_power, ton_dau_ky, muc_ton_toi_thieu, muc_nhap_goi_y } = req.body;
+      const { id, hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_toi_thieu, muc_nhap_goi_y } = req.body;
 
       if (!id) return res.status(400).json({ error: 'Thiếu id' });
 
@@ -119,6 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (sph !== undefined) updateFields.sph = parseFloat(sph);
       if (cyl !== undefined) updateFields.cyl = parseFloat(cyl) || 0;
       if (add_power !== undefined) updateFields.add_power = add_power === '' || add_power === null ? null : parseFloat(add_power);
+      if (mat !== undefined) updateFields.mat = (mat && ['trai', 'phai'].includes(mat)) ? mat : null;
 
       const { data, error } = await supabase
         .from('lens_stock')

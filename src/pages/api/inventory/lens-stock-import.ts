@@ -16,6 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { rows } = req.body as { rows: Array<{
       ten_hang: string; sph: number; cyl: number; add_power?: number | null;
+      mat?: string | null;
       ton_dau_ky?: number; muc_ton_toi_thieu?: number; muc_nhap_goi_y?: number;
     }> };
 
@@ -68,6 +69,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const cyl = parsePower(row.cyl) || 0;
       const addRaw = row.add_power != null && row.add_power !== '' ? parsePower(row.add_power) : null;
       const addPower = (addRaw !== null && !isNaN(addRaw)) ? addRaw : null;
+      const mat = (addPower != null && row.mat && ['trai', 'phai'].includes(row.mat)) ? row.mat : null;
       const tonDauKy = row.ton_dau_ky ?? 0;
 
       const { error } = await supabase.from('lens_stock').insert({
@@ -76,6 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sph: sph,
         cyl: cyl,
         add_power: addPower,
+        mat: mat,
         ton_dau_ky: tonDauKy,
         ton_hien_tai: tonDauKy,
         muc_ton_toi_thieu: row.muc_ton_toi_thieu ?? 2,

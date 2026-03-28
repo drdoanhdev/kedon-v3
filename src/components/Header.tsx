@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays } from 'lucide-react';
 
 export default function Header() {
   const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole, userRole } = useAuth();
@@ -19,6 +19,7 @@ export default function Header() {
     { href: '/don-kinh', label: 'Đơn kính', icon: Glasses },
     { href: '/quan-ly-kho', label: 'Kho kính', icon: Warehouse },
     { href: '/quan-ly-kho-thuoc', label: 'Kho thuốc', icon: Pill },
+    { href: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays },
   ];
 
   // Items inside avatar dropdown

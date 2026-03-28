@@ -9,7 +9,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
 import toast, { Toaster } from 'react-hot-toast';
-import { Pencil, Copy, Trash2, FilePlus } from 'lucide-react';
+import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Link from 'next/link';
@@ -152,6 +152,20 @@ export default function KeDonKinh() {
   // Edit patient dialog state
   const [openEditPatient, setOpenEditPatient] = useState(false);
   const [patientForm, setPatientForm] = useState<BenhNhan | null>(null);
+
+  // Hẹn khám lại inline state
+  const [henKhamEnabled, setHenKhamEnabled] = useState(false);
+  const [henKhamForm, setHenKhamForm] = useState({ ngay_hen: '', ly_do: 'Lấy kính', ghichu: '' });
+  const [henSoNgay, setHenSoNgay] = useState('');
+  const lyDoOptions = ['Lấy kính', 'Kiểm tra kính mới', 'Tái khám', 'Khác'];
+  const addDaysToToday = (days: number) => {
+    const d = new Date(); d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+  };
+  const addMonthsToToday = (months: number) => {
+    const d = new Date(); d.setMonth(d.getMonth() + months);
+    return d.toISOString().split('T')[0];
+  };
 
   // Cập nhật tiêu đề tab theo tên bệnh nhân
   useEffect(() => {
@@ -600,6 +614,24 @@ export default function KeDonKinh() {
         const warnings: string[] = res.data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
   addHistory(res.data.data);
+        // Lưu hẹn khám lại nếu được bật
+        if (henKhamEnabled && henKhamForm.ngay_hen) {
+          try {
+            await axios.post('/api/hen-kham-lai', {
+              benhnhanid: parseInt(benhnhanid || '0'),
+              donkinhid: res.data.data?.id || null,
+              ten_benhnhan: benhNhan?.ten || '',
+              dienthoai: benhNhan?.dienthoai || '',
+              ngay_hen: henKhamForm.ngay_hen,
+              gio_hen: null,
+              ly_do: henKhamForm.ly_do,
+              ghichu: henKhamForm.ghichu,
+            });
+            toast.success('Đã lưu lịch hẹn khám lại');
+          } catch {
+            toast.error('Lỗi khi lưu lịch hẹn');
+          }
+        }
         resetForm();
       } else {
         toast.error(`Lỗi khi lưu đơn kính: ${res.data.message || 'Không rõ nguyên nhân'}`);
@@ -748,6 +780,10 @@ export default function KeDonKinh() {
     setFrameStock(null);
     setLensStockMp(null);
     setLensStockMt(null);
+    // Reset hẹn khám
+    setHenKhamEnabled(false);
+    setHenKhamForm({ ngay_hen: '', ly_do: 'Lấy kính', ghichu: '' });
+    setHenSoNgay('');
   };
 
   // Chọn đơn từ lịch sử
@@ -808,43 +844,53 @@ export default function KeDonKinh() {
             {(lai / 1000).toFixed(0)}
           </div>
             {/* Patient info */}
-            <div className="bg-white p-3 rounded-xl shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                {benhNhan ? (
-                  <>
-                    <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-xl flex-shrink-0">👤</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-base text-blue-800 tracking-tight">{benhNhan.ten}</span>
-                        <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">#{benhNhan.id}</span>
-                        <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">🎂 {benhNhan.namsinh}</span>
-                        {benhNhan.tuoi !== undefined && (
-                          <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">{benhNhan.tuoi} tuổi</span>
-                        )}
-                        {benhNhan.dienthoai && (
-                          <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">📞 {benhNhan.dienthoai}</span>
-                        )}
-                        {benhNhan.diachi && (
-                          <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600 hidden sm:inline">📍 {benhNhan.diachi}</span>
-                        )}
-                      </div>
+            {benhNhan ? (
+              <div className="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  {/* Mobile: stacked */}
+                  <div className="md:hidden">
+                    <h1 className="font-extrabold text-lg text-blue-700 tracking-tight truncate">{benhNhan.ten}</h1>
+                    <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 flex-wrap">
+                      <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi} tuổi)` : ''}</span>
+                      {benhNhan.dienthoai && (
+                        <>
+                          <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <span>{benhNhan.dienthoai}</span>
+                        </>
+                      )}
                     </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-red-500">Không tìm thấy thông tin bệnh nhân.</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Link href={`/ke-don?bn=${benhnhanid}`}>
-                  <Button className="h-8 bg-orange-500 hover:bg-orange-600 text-white px-3 rounded-xl text-xs" size="sm">
-                    Kê đơn thuốc
+                    {benhNhan.diachi && (
+                      <div className="flex items-center gap-2 mt-0.5 text-sm text-gray-500">
+                        <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span>{benhNhan.diachi}</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* Desktop: single line */}
+                  <div className="hidden md:flex items-center gap-3 flex-wrap">
+                    <span className="font-extrabold text-base text-blue-700 tracking-tight">{benhNhan.ten}</span>
+                    <span className="flex items-center gap-1 text-sm text-gray-500"><Calendar className="w-3.5 h-3.5 text-gray-400" />{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi} tuổi)` : ''}</span>
+                    {benhNhan.dienthoai && <span className="flex items-center gap-1 text-sm text-gray-500"><Phone className="w-3.5 h-3.5 text-gray-400" />{benhNhan.dienthoai}</span>}
+                    {benhNhan.diachi && <span className="flex items-center gap-1 text-sm text-gray-500"><MapPin className="w-3.5 h-3.5 text-gray-400" />{benhNhan.diachi}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <Link href={`/ke-don?bn=${benhnhanid}`}>
+                    <Button className="h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs px-2" size="sm">
+                      Kê thuốc
+                    </Button>
+                  </Link>
+                  <Button variant="outline" size="sm" className="h-8 text-xs px-2" onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}>
+                    <Pencil className="w-3 h-3" />
                   </Button>
-                </Link>
-                <Button variant="outline" size="sm" className="h-8 text-xs rounded-xl" onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}>
-                  <Pencil className="w-3 h-3 mr-1" /> Sửa BN
-                </Button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-white rounded-xl shadow-sm p-3">
+                <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
+              </div>
+            )}
 
             {/* Mobile History Section */}
             <div className="block md:hidden">
@@ -875,27 +921,15 @@ export default function KeDonKinh() {
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
                         <label className="w-full sm:w-24 text-xs font-bold text-gray-500 uppercase whitespace-nowrap">Ngày giờ khám</label>
-                        <div className="flex-1 flex items-center gap-1">
+                        <div className="flex-1">
                           <Input
                             type="datetime-local"
                             value={form.ngaykham || ''}
                             onChange={(e) => setForm({ ...form, ngaykham: e.target.value })}
-                            className="h-10 sm:h-8 flex-1 bg-gray-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-200"
+                            className="h-10 sm:h-8 w-full bg-gray-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-200"
                             style={{ colorScheme: 'light' }}
                             step="60"
                           />
-                          <Button
-                            type="button" variant="outline" size="sm" 
-                            className="h-10 w-10 sm:h-8 sm:w-8 p-0"
-                            onClick={() => {
-                              const now = new Date();
-                              const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
-                              setForm({ ...form, ngaykham: vietnamTime.toISOString().slice(0, 16) });
-                            }}
-                            title="Đặt về thời gian hiện tại"
-                          >
-                            <span role="img" aria-label="calendar">📅</span>
-                          </Button>
                         </div>
                       </div>
                     </div>
@@ -908,6 +942,45 @@ export default function KeDonKinh() {
                         className="flex-1 min-h-[36px] bg-gray-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-200"
                         placeholder="Ghi chú thêm..."
                       />
+                    </div>
+                    {/* Hẹn khám lại - inline compact */}
+                    <div className={`rounded-xl p-2 ${henKhamEnabled ? 'border border-blue-300 bg-blue-50/60' : 'border border-gray-200 bg-gray-50/50'}`}>
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" checked={henKhamEnabled} onChange={(e) => {
+                          setHenKhamEnabled(e.target.checked);
+                          if (e.target.checked && !henKhamForm.ngay_hen) {
+                            setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(7) }));
+                          }
+                        }} className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-200" />
+                        <span className="text-xs font-bold text-blue-700">Hẹn khám lại</span>
+                        {henKhamEnabled && (
+                          <div className="flex items-center gap-1 ml-auto flex-wrap">
+                            {[7, 14, 30, 90, 180].map(d => (
+                              <button key={d} type="button" className="px-1.5 py-0.5 text-[10px] bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium" onClick={() => { setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(d) })); setHenSoNgay(''); }}>
+                                {d < 30 ? `+${d}d` : d === 30 ? '+1th' : d === 90 ? '+3th' : '+6th'}
+                              </button>
+                            ))}
+                            <div className="flex items-center">
+                              <span className="text-[10px] text-gray-500">+</span>
+                              <input type="number" min="1" value={henSoNgay} onChange={(e) => {
+                                setHenSoNgay(e.target.value);
+                                const n = parseInt(e.target.value);
+                                if (n > 0) setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(n) }));
+                              }} className="w-10 h-5 text-[10px] text-center border border-gray-300 rounded px-0.5 [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]" placeholder="N" />
+                              <span className="text-[10px] text-gray-500">d</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {henKhamEnabled && (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <Input type="date" value={henKhamForm.ngay_hen} onChange={(e) => setHenKhamForm(f => ({ ...f, ngay_hen: e.target.value }))} className="h-7 text-xs flex-1" />
+                          <select className="h-7 border border-gray-300 rounded-md px-1.5 text-xs" value={henKhamForm.ly_do} onChange={(e) => setHenKhamForm(f => ({ ...f, ly_do: e.target.value }))}>
+                            {lyDoOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                          <Input value={henKhamForm.ghichu} onChange={(e) => setHenKhamForm(f => ({ ...f, ghichu: e.target.value }))} placeholder="Ghi chú..." className="h-7 text-xs flex-1" />
+                        </div>
+                      )}
                     </div>
                   </div>
 

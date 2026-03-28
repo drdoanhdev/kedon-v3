@@ -3,7 +3,7 @@ import { useRouter } from 'next/router'
 import { useEffect } from 'react'
 
 export default function ProtectedRoute({ children, requiredRole = null, allowedRoles = null }) {
-  const { user, loading, userRole, tenancyLoading, currentTenantId } = useAuth()
+  const { user, loading, userRole, tenancyLoading, currentTenantId, currentTenant } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
@@ -50,6 +50,27 @@ export default function ProtectedRoute({ children, requiredRole = null, allowedR
             Bạn cần một trong những quyền sau: {allowedRoles.join(', ')}
           </p>
           <p className="text-sm text-gray-500 mt-2">Vai trò hiện tại: {userRole || 'Chưa cấp'}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Kiểm tra trạng thái phòng khám
+  if (currentTenant && currentTenant.status && currentTenant.status !== 'active') {
+    const isSuspended = currentTenant.status === 'suspended'
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="text-5xl mb-4">{isSuspended ? '⛔' : '🚫'}</div>
+          <h1 className="text-2xl font-bold text-red-600 mb-2">
+            {isSuspended ? 'Phòng khám đang bị tạm ngưng' : 'Phòng khám đã ngưng hoạt động'}
+          </h1>
+          <p className="text-gray-600 mb-4">
+            {isSuspended
+              ? 'Phòng khám của bạn đang bị tạm ngưng hoạt động. Vui lòng liên hệ quản trị viên nền tảng để được hỗ trợ.'
+              : 'Phòng khám của bạn đã ngưng hoạt động. Vui lòng liên hệ quản trị viên nền tảng để được hỗ trợ.'}
+          </p>
+          <p className="text-sm text-gray-400">Phòng khám: {currentTenant.name || currentTenantId}</p>
         </div>
       </div>
     )

@@ -41,15 +41,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      // Lấy email owner
+      // Lấy email owner + last sign in
       const ownerIds = [...new Set((tenants || []).map(t => t.owner_id).filter(Boolean))];
       let ownerEmails = new Map<string, string>();
+      let ownerLastSignIn = new Map<string, string | null>();
       if (ownerIds.length > 0) {
         const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
         if (authUsers?.users) {
           for (const u of authUsers.users) {
             if (ownerIds.includes(u.id)) {
               ownerEmails.set(u.id, u.email || '');
+              ownerLastSignIn.set(u.id, u.last_sign_in_at || null);
             }
           }
         }
@@ -59,6 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ...t,
         member_count: memberCounts.get(t.id) || 0,
         owner_email: t.owner_id ? ownerEmails.get(t.owner_id) || '' : '',
+        owner_last_sign_in: t.owner_id ? ownerLastSignIn.get(t.owner_id) || null : null,
       }));
 
       return res.status(200).json({ data: result });

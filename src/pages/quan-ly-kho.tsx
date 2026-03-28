@@ -19,6 +19,7 @@ interface LensStock {
   sph: number;
   cyl: number;
   add_power: number | null;
+  mat: string | null;
   ton_dau_ky: number;
   ton_hien_tai: number;
   muc_ton_toi_thieu: number;
@@ -92,7 +93,7 @@ export default function QuanLyKho() {
   const [selectedStock, setSelectedStock] = useState<LensStock | null>(null);
 
   // Form states
-  const [newStock, setNewStock] = useState({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', ton_dau_ky: '0', muc_ton_toi_thieu: '2', muc_nhap_goi_y: '10' });
+  const [newStock, setNewStock] = useState({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', mat: '', ton_dau_ky: '0', muc_ton_toi_thieu: '2', muc_nhap_goi_y: '10' });
   const [importForm, setImportForm] = useState({ so_luong: '', don_gia: '', ghi_chu: '' });
   const [damagedForm, setDamagedForm] = useState({ so_luong: '', ly_do: 'cat_vo', ghi_chu: '' });
 
@@ -102,7 +103,7 @@ export default function QuanLyKho() {
 
   // Edit stock dialog
   const [showEditStock, setShowEditStock] = useState(false);
-  const [editStockForm, setEditStockForm] = useState({ hang_trong_id: '', sph: '', cyl: '', add_power: '', ton_dau_ky: '', muc_ton_toi_thieu: '', muc_nhap_goi_y: '' });
+  const [editStockForm, setEditStockForm] = useState({ hang_trong_id: '', sph: '', cyl: '', add_power: '', mat: '', ton_dau_ky: '', muc_ton_toi_thieu: '', muc_nhap_goi_y: '' });
 
   // Show inactive brands
   const [showInactive, setShowInactive] = useState(false);
@@ -168,7 +169,7 @@ export default function QuanLyKho() {
       await axios.post('/api/inventory/lens-stock', newStock);
       toast.success('Đã thêm dòng kho mới');
       setShowAddStock(false);
-      setNewStock({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', ton_dau_ky: '0', muc_ton_toi_thieu: '2', muc_nhap_goi_y: '10' });
+      setNewStock({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', mat: '', ton_dau_ky: '0', muc_ton_toi_thieu: '2', muc_nhap_goi_y: '10' });
       fetchLensStocks();
       fetchAlerts();
     } catch (err: any) {
@@ -231,6 +232,7 @@ export default function QuanLyKho() {
         sph: editStockForm.sph,
         cyl: editStockForm.cyl,
         add_power: editStockForm.add_power || null,
+        mat: editStockForm.add_power ? editStockForm.mat || null : null,
         ton_dau_ky: editStockForm.ton_dau_ky,
         muc_ton_toi_thieu: editStockForm.muc_ton_toi_thieu,
         muc_nhap_goi_y: editStockForm.muc_nhap_goi_y,
@@ -289,6 +291,11 @@ export default function QuanLyKho() {
         const addRaw = row['ADD'] ?? row['add_power'];
         r.add_power = (addRaw !== undefined && addRaw !== null && addRaw !== '') ? parsePower(addRaw) : null;
         if (r.add_power !== null && isNaN(r.add_power)) r.add_power = null;
+        // Mắt: L/R/trai/phai cho đa tròng
+        const matRaw = String(row['Mắt'] ?? row['mat'] ?? row['Eye'] ?? '').trim().toLowerCase();
+        if (matRaw === 'l' || matRaw === 'trai' || matRaw === 'left') r.mat = 'trai';
+        else if (matRaw === 'r' || matRaw === 'phai' || matRaw === 'right') r.mat = 'phai';
+        else r.mat = null;
         r.ton_dau_ky = parseInt(row['Tồn đầu kỳ'] ?? row['ton_dau_ky'] ?? '0') || 0;
         r.muc_ton_toi_thieu = parseInt(row['Tồn tối thiểu'] ?? row['muc_ton_toi_thieu'] ?? '2') || 2;
         r.muc_nhap_goi_y = parseInt(row['Tồn mục tiêu'] ?? row['Nhập gợi ý'] ?? row['muc_nhap_goi_y'] ?? '10') || 10;
@@ -326,9 +333,9 @@ export default function QuanLyKho() {
 
   const downloadTemplate = () => {
     const templateData = [
-      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': 0, 'ADD': '', 'Tồn đầu kỳ': 10, 'Tồn tối thiểu': 2, 'Tồn mục tiêu': 10 },
-      { 'Hãng tròng': 'Hoya', 'SPH': -2.50, 'CYL': -0.75, 'ADD': '', 'Tồn đầu kỳ': 5, 'Tồn tối thiểu': 2, 'Tồn mục tiêu': 10 },
-      { 'Hãng tròng': 'Essilor', 'SPH': 'Plano', 'CYL': 'Plano', 'ADD': '', 'Tồn đầu kỳ': 20, 'Tồn tối thiểu': 5, 'Tồn mục tiêu': 20 },
+      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 10, 'Tồn tối thiểu': 2, 'Tồn mục tiêu': 10 },
+      { 'Hãng tròng': 'Hoya', 'SPH': -2.50, 'CYL': -0.75, 'ADD': 1.50, 'Mắt': 'L', 'Tồn đầu kỳ': 5, 'Tồn tối thiểu': 2, 'Tồn mục tiêu': 10 },
+      { 'Hãng tròng': 'Essilor', 'SPH': 'Plano', 'CYL': 'Plano', 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 20, 'Tồn tối thiểu': 5, 'Tồn mục tiêu': 20 },
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
@@ -352,16 +359,32 @@ export default function QuanLyKho() {
     const need = lensStocks.filter(s => s.can_nhap_them > 0);
     if (need.length === 0) return '';
     // Group by ten_hang
-    const grouped = new Map<string, { do: string; sl: number }[]>();
+    const grouped = new Map<string, { do: string; sl: number; mat: string | null; isProgressive: boolean }[]>();
     for (const s of need) {
       const name = s.HangTrong?.ten_hang || 'Không rõ';
       if (!grouped.has(name)) grouped.set(name, []);
-      grouped.get(name)!.push({ do: formatDoText(s.sph, s.cyl, s.add_power), sl: s.can_nhap_them });
+      grouped.get(name)!.push({ do: formatDoText(s.sph, s.cyl, s.add_power), sl: s.can_nhap_them, mat: s.mat, isProgressive: s.add_power != null });
     }
     const lines: string[] = [];
     for (const [name, items] of grouped) {
-      const parts = items.map(i => `${i.sl} miếng ${i.do}`);
-      lines.push(`${name}: ${parts.join(', ')}`);
+      lines.push(`- ${name}:`);
+      const progressive = items.filter(i => i.isProgressive);
+      const single = items.filter(i => !i.isProgressive);
+
+      for (const i of progressive) {
+        const eyeLabel = i.mat === 'trai' ? '-L-' : i.mat === 'phai' ? '-R-' : '';
+        lines.push(`${i.sl} miếng ${eyeLabel ? eyeLabel + ' ' : ''}${i.do}`);
+      }
+
+      if (single.length > 0) {
+        const merged = new Map<string, number>();
+        for (const i of single) {
+          merged.set(i.do, (merged.get(i.do) || 0) + i.sl);
+        }
+        for (const [d, sl] of merged) {
+          lines.push(`${sl} miếng ${d}`);
+        }
+      }
     }
     return lines.join('\n');
   };
@@ -369,21 +392,39 @@ export default function QuanLyKho() {
   const buildOrderNeedText = () => {
     const pending = lensOrders.filter(o => o.trang_thai === 'cho_dat' || o.trang_thai === 'da_dat');
     if (pending.length === 0) return '';
-    const grouped = new Map<string, { do: string; sl: number }[]>();
+    const grouped = new Map<string, { do: string; sl: number; mat: string | null; isProgressive: boolean }[]>();
     for (const o of pending) {
       const name = o.HangTrong?.ten_hang || 'Không rõ';
       if (!grouped.has(name)) grouped.set(name, []);
-      grouped.get(name)!.push({ do: formatDoText(o.sph, o.cyl, o.add_power), sl: o.so_luong_mieng });
+      grouped.get(name)!.push({
+        do: formatDoText(o.sph, o.cyl, o.add_power),
+        sl: o.so_luong_mieng,
+        mat: o.mat,
+        isProgressive: o.add_power != null,
+      });
     }
     const lines: string[] = [];
     for (const [name, items] of grouped) {
-      // Merge same degree
-      const merged = new Map<string, number>();
-      for (const i of items) {
-        merged.set(i.do, (merged.get(i.do) || 0) + i.sl);
+      lines.push(`- ${name}:`);
+      // Progressive: keep L/R per line, don't merge
+      const progressive = items.filter(i => i.isProgressive);
+      const single = items.filter(i => !i.isProgressive);
+
+      for (const i of progressive) {
+        const eyeLabel = i.mat === 'trai' ? '-L-' : i.mat === 'phai' ? '-R-' : '';
+        lines.push(`${i.sl} miếng ${eyeLabel ? eyeLabel + ' ' : ''}${i.do}`);
       }
-      const parts = Array.from(merged).map(([d, sl]) => `${sl} miếng ${d}`);
-      lines.push(`${name}: ${parts.join(', ')}`);
+
+      // Single vision: merge same degree
+      if (single.length > 0) {
+        const merged = new Map<string, number>();
+        for (const i of single) {
+          merged.set(i.do, (merged.get(i.do) || 0) + i.sl);
+        }
+        for (const [d, sl] of merged) {
+          lines.push(`${sl} miếng ${d}`);
+        }
+      }
     }
     return lines.join('\n');
   };
@@ -443,32 +484,34 @@ export default function QuanLyKho() {
     <ProtectedRoute>
       <Toaster position="top-right" />
       <div className="min-h-screen bg-gray-50">
-        <main className="max-w-7xl mx-auto py-6 px-4">
-          <div className="flex items-center justify-between mb-6">
+        <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Quản lý kho kính</h1>
-              <p className="text-gray-500 text-sm mt-1">Tồn kho tròng kính, gọng kính</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản lý kho kính</h1>
+              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">Tồn kho tròng kính, gọng kính</p>
             </div>
             <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); }} variant="outline" size="sm">
-              <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
+              <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
             </Button>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 mb-6 bg-white rounded-lg p-1 shadow-sm border">
+          <div className="grid grid-cols-3 sm:flex gap-1 mb-4 sm:mb-6 bg-white rounded-lg p-1 shadow-sm border">
             {[
-              { key: 'overview', label: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
-              { key: 'lens_stock', label: 'Kho tròng kính', icon: <Eye className="w-4 h-4" /> },
-              { key: 'lens_order', label: 'Tròng cần đặt', icon: <Truck className="w-4 h-4" /> },
+              { key: 'overview', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
+              { key: 'lens_stock', label: 'Kho tròng kính', mobileLabel: 'Kho tròng', icon: <Eye className="w-4 h-4" /> },
+              { key: 'lens_order', label: 'Tròng cần đặt', mobileLabel: 'Cần đặt', icon: <Truck className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as any)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+                className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${
                   activeTab === tab.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                {tab.icon} {tab.label}
+                {tab.icon}
+                <span className="sm:hidden">{tab.mobileLabel}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
                 {tab.key === 'lens_order' && lensOrders.length > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-orange-500 text-white">{lensOrders.length}</span>
                 )}
@@ -571,24 +614,23 @@ export default function QuanLyKho() {
 
               {/* ======================== TAB: KHO TRÒNG KÍNH ======================== */}
               {activeTab === 'lens_stock' && (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Lọc trạng thái */}
+                <div className="space-y-3 sm:space-y-4">
+                  {/* Filters & Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+                    <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0">
                       {['all', 'HET', 'SAP_HET', 'DU'].map(f => (
                         <button
                           key={f}
                           onClick={() => setStockFilter(f)}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
                             stockFilter === f ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
                           }`}
                         >
                           {f === 'all' ? 'Tất cả' : trangThaiLabel(f)}
                         </button>
                       ))}
-                      {/* Lọc theo hãng tròng */}
                       <select
-                        className="border rounded-lg px-3 py-1.5 text-sm bg-white"
+                        className="border rounded-lg px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white min-w-0"
                         value={hangTrongFilter}
                         onChange={e => setHangTrongFilter(e.target.value)}
                       >
@@ -598,25 +640,30 @@ export default function QuanLyKho() {
                         ))}
                       </select>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0">
                       <button
                         onClick={() => setShowInactive(!showInactive)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 ${
+                        className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition flex items-center gap-1 whitespace-nowrap ${
                           showInactive ? 'bg-gray-700 text-white' : 'bg-white text-gray-500 border hover:bg-gray-50'
                         }`}
                       >
-                        <Ban className="w-3.5 h-3.5" />
-                        {showInactive ? 'Đang xem ngưng KD' : 'Xem ngưng KD'}
+                        <Ban className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
+                        <span className="sm:hidden">Ngưng KD</span>
+                        <span className="hidden sm:inline">{showInactive ? 'Đang xem ngưng KD' : 'Xem ngưng KD'}</span>
                       </button>
-                      <Button onClick={() => setShowAddStock(true)} size="sm">
-                        <Plus className="w-4 h-4 mr-1" /> Thêm độ mới
+                      <Button onClick={() => setShowAddStock(true)} size="sm" className="text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap">
+                        <Plus className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-0.5 sm:mr-1" />
+                        <span className="sm:hidden">Thêm độ</span>
+                        <span className="hidden sm:inline">Thêm độ mới</span>
                       </Button>
-                      <Button onClick={() => setShowImportExcel(true)} size="sm" variant="outline">
-                        <Upload className="w-4 h-4 mr-1" /> Nhập Excel
+                      <Button onClick={() => setShowImportExcel(true)} size="sm" variant="outline" className="text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap">
+                        <Upload className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-0.5 sm:mr-1" />
+                        <span className="sm:hidden">Excel</span>
+                        <span className="hidden sm:inline">Nhập Excel</span>
                       </Button>
                       {lensStocks.some(s => s.can_nhap_them > 0) && (
-                        <Button onClick={() => openCopyPopup(buildStockNeedText(), 'Danh sách tròng cần nhập')} size="sm" variant="outline">
-                          <ClipboardCopy className="w-4 h-4 mr-1" /> Cần nhập
+                        <Button onClick={() => openCopyPopup(buildStockNeedText(), 'Danh sách tròng cần nhập')} size="sm" variant="outline" className="text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap">
+                          <ClipboardCopy className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-0.5 sm:mr-1" /> Cần nhập
                         </Button>
                       )}
                     </div>
@@ -625,21 +672,21 @@ export default function QuanLyKho() {
                   <Card>
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-xs sm:text-sm">
                           <thead>
                             <tr className="border-b bg-gray-50 text-left text-gray-500">
-                              <th className="p-3 font-medium">Hãng tròng</th>
-                              <th className="p-3 font-medium">Loại</th>
-                              <th className="p-3 font-medium font-mono">SPH</th>
-                              <th className="p-3 font-medium font-mono">CYL</th>
-                              <th className="p-3 font-medium font-mono">ADD</th>
-                              <th className="p-3 font-medium text-center">Tồn đầu kỳ</th>
-                              <th className="p-3 font-medium text-center">Tồn</th>
-                              <th className="p-3 font-medium text-center">Tối thiểu</th>
-                              <th className="p-3 font-medium text-center">Tồn mục tiêu</th>
-                              <th className="p-3 font-medium text-center">Cần nhập</th>
-                              <th className="p-3 font-medium text-center">Trạng thái</th>
-                              <th className="p-3 font-medium text-center">Thao tác</th>
+                              <th className="p-2 sm:p-3 font-medium"><span className="sm:hidden">Hãng</span><span className="hidden sm:inline">Hãng tròng</span></th>
+                              <th className="p-2 sm:p-3 font-medium font-mono">SPH</th>
+                              <th className="p-2 sm:p-3 font-medium font-mono">CYL</th>
+                              <th className="p-2 sm:p-3 font-medium font-mono">ADD</th>
+                              <th className="p-2 sm:p-3 font-medium text-center">Mắt</th>
+                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn đầu kỳ</th>
+                              <th className="p-2 sm:p-3 font-medium text-center">Tồn</th>
+                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tối thiểu</th>
+                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn mục tiêu</th>
+                              <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">Nhập</span><span className="hidden sm:inline">Cần nhập</span></th>
+                              <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">TT</span><span className="hidden sm:inline">Trạng thái</span></th>
+                              <th className="p-2 sm:p-3 font-medium text-center"><span className="hidden sm:inline">Thao tác</span></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -651,38 +698,40 @@ export default function QuanLyKho() {
                               const isInactive = (stock.HangTrong as any)?.trang_thai === false;
                               return (
                               <tr key={stock.id} className={`border-b hover:bg-gray-50 ${isInactive ? 'opacity-50 bg-gray-50' : ''}`}>
-                                <td className="p-3 font-medium">
+                                <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm max-w-[80px] sm:max-w-none truncate">
                                   {stock.HangTrong?.ten_hang}
-                                  {isInactive && <span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">Ngưng KD</span>}
+                                  {isInactive && <><span className="ml-1 text-[10px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded sm:hidden">Ngưng</span><span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded hidden sm:inline">Ngưng KD</span></>}
                                 </td>
-                                <td className="p-3 text-gray-500 text-xs">
-                                  {stock.HangTrong?.loai_trong === 'da_trong' ? 'Đa tròng' : stock.HangTrong?.loai_trong === 'loan' ? 'Loạn' : 'Đơn'}
+                                <td className="p-2 sm:p-3 font-mono">{formatSph(stock.sph)}</td>
+                                <td className="p-2 sm:p-3 font-mono">{stock.cyl !== 0 ? `${stock.cyl >= 0 ? '+' : ''}${stock.cyl.toFixed(2)}` : '-'}</td>
+                                <td className="p-2 sm:p-3 font-mono">{stock.add_power != null ? `${stock.add_power >= 0 ? '+' : ''}${stock.add_power.toFixed(2)}` : '-'}</td>
+                                <td className="p-2 sm:p-3 text-center">
+                                  {stock.mat === 'trai' ? <span className="text-[10px] sm:text-xs bg-blue-100 text-blue-700 px-1 sm:px-1.5 py-0.5 rounded">L</span>
+                                    : stock.mat === 'phai' ? <span className="text-[10px] sm:text-xs bg-green-100 text-green-700 px-1 sm:px-1.5 py-0.5 rounded">R</span>
+                                    : <span className="text-gray-300">-</span>}
                                 </td>
-                                <td className="p-3 font-mono">{formatSph(stock.sph)}</td>
-                                <td className="p-3 font-mono">{stock.cyl !== 0 ? `${stock.cyl >= 0 ? '+' : ''}${stock.cyl.toFixed(2)}` : '-'}</td>
-                                <td className="p-3 font-mono">{stock.add_power != null ? `${stock.add_power >= 0 ? '+' : ''}${stock.add_power.toFixed(2)}` : '-'}</td>
-                                <td className="p-3 text-center text-gray-500">{stock.ton_dau_ky}</td>
-                                <td className="p-3 text-center">
-                                  <span className={`font-bold text-lg ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai <= stock.muc_ton_toi_thieu ? 'text-yellow-600' : 'text-green-600'}`}>
+                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.ton_dau_ky}</td>
+                                <td className="p-2 sm:p-3 text-center">
+                                  <span className={`font-bold text-base sm:text-lg ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai <= stock.muc_ton_toi_thieu ? 'text-yellow-600' : 'text-green-600'}`}>
                                     {stock.ton_hien_tai}
                                   </span>
                                 </td>
-                                <td className="p-3 text-center text-gray-500">{stock.muc_ton_toi_thieu}</td>
-                                <td className="p-3 text-center text-gray-500">{stock.muc_nhap_goi_y}</td>
-                                <td className="p-3 text-center">
+                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_ton_toi_thieu}</td>
+                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_nhap_goi_y}</td>
+                                <td className="p-2 sm:p-3 text-center">
                                   {stock.can_nhap_them > 0 ? (
                                     <span className="font-bold text-blue-600">{stock.can_nhap_them}</span>
                                   ) : (
                                     <span className="text-gray-300">-</span>
                                   )}
                                 </td>
-                                <td className="p-3 text-center">
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${trangThaiColor(stock.trang_thai_ton)}`}>
+                                <td className="p-2 sm:p-3 text-center">
+                                  <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full ${trangThaiColor(stock.trang_thai_ton)}`}>
                                     {trangThaiLabel(stock.trang_thai_ton)}
                                   </span>
                                 </td>
-                                <td className="p-3 text-center">
-                                  <div className="flex gap-1 justify-center">
+                                <td className="p-1.5 sm:p-3 text-center">
+                                  <div className="flex gap-0.5 sm:gap-1 justify-center">
                                     <button
                                       onClick={() => {
                                         setSelectedStock(stock);
@@ -691,29 +740,30 @@ export default function QuanLyKho() {
                                           sph: String(stock.sph),
                                           cyl: String(stock.cyl),
                                           add_power: stock.add_power != null ? String(stock.add_power) : '',
+                                          mat: stock.mat || '',
                                           ton_dau_ky: String(stock.ton_dau_ky),
                                           muc_ton_toi_thieu: String(stock.muc_ton_toi_thieu),
                                           muc_nhap_goi_y: String(stock.muc_nhap_goi_y),
                                         });
                                         setShowEditStock(true);
                                       }}
-                                      className="p-1.5 rounded-lg hover:bg-blue-100 text-blue-600" title="Sửa thông số"
+                                      className="p-1 sm:p-1.5 rounded-lg hover:bg-blue-100 text-blue-600" title="Sửa thông số"
                                     >
-                                      <Pencil className="w-4 h-4" />
+                                      <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                     </button>
                                     {!isInactive && (
                                     <>
                                     <button
                                       onClick={() => { setSelectedStock(stock); setShowImport(true); }}
-                                      className="p-1.5 rounded-lg hover:bg-green-100 text-green-600" title="Nhập kho"
+                                      className="p-1 sm:p-1.5 rounded-lg hover:bg-green-100 text-green-600" title="Nhập kho"
                                     >
-                                      <ArrowDownToLine className="w-4 h-4" />
+                                      <ArrowDownToLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                     </button>
                                     <button
                                       onClick={() => { setSelectedStock(stock); setShowDamaged(true); }}
-                                      className="p-1.5 rounded-lg hover:bg-red-100 text-red-600" title="Xuất hỏng"
+                                      className="p-1 sm:p-1.5 rounded-lg hover:bg-red-100 text-red-600" title="Xuất hỏng"
                                     >
-                                      <Ban className="w-4 h-4" />
+                                      <Ban className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                     </button>
                                     </>
                                     )}
@@ -851,6 +901,20 @@ export default function QuanLyKho() {
                       onChange={e => setNewStock({ ...newStock, add_power: e.target.value })} placeholder="" />
                   </div>
                 </div>
+                {newStock.add_power && (
+                  <div>
+                    <Label>Mắt (đa tròng) *</Label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 mt-1"
+                      value={newStock.mat}
+                      onChange={e => setNewStock({ ...newStock, mat: e.target.value })}
+                    >
+                      <option value="">-- Chọn mắt --</option>
+                      <option value="trai">L - Mắt trái</option>
+                      <option value="phai">R - Mắt phải</option>
+                    </select>
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <Label>Tồn đầu kỳ</Label>
@@ -1002,6 +1066,20 @@ export default function QuanLyKho() {
                         onChange={e => setEditStockForm({ ...editStockForm, add_power: e.target.value })} />
                     </div>
                   </div>
+                  {editStockForm.add_power && (
+                    <div>
+                      <Label>Mắt (đa tròng) *</Label>
+                      <select
+                        className="w-full border rounded-lg px-3 py-2 mt-1"
+                        value={editStockForm.mat}
+                        onChange={e => setEditStockForm({ ...editStockForm, mat: e.target.value })}
+                      >
+                        <option value="">-- Chọn mắt --</option>
+                        <option value="trai">L - Mắt trái</option>
+                        <option value="phai">R - Mắt phải</option>
+                      </select>
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label>Tồn đầu kỳ</Label>
@@ -1060,6 +1138,7 @@ export default function QuanLyKho() {
                           <th className="p-2 font-medium">SPH</th>
                           <th className="p-2 font-medium">CYL</th>
                           <th className="p-2 font-medium">ADD</th>
+                          <th className="p-2 font-medium">Mắt</th>
                           <th className="p-2 font-medium">Tồn ĐK</th>
                           <th className="p-2 font-medium">Tối thiểu</th>
                           <th className="p-2 font-medium">Tồn MT</th>
@@ -1073,6 +1152,7 @@ export default function QuanLyKho() {
                             <td className="p-2 font-mono">{r.sph}</td>
                             <td className="p-2 font-mono">{r.cyl}</td>
                             <td className="p-2 font-mono">{r.add_power ?? '-'}</td>
+                            <td className="p-2">{r.mat === 'trai' ? 'L' : r.mat === 'phai' ? 'R' : '-'}</td>
                             <td className="p-2">{r.ton_dau_ky}</td>
                             <td className="p-2">{r.muc_ton_toi_thieu}</td>
                             <td className="p-2">{r.muc_nhap_goi_y}</td>

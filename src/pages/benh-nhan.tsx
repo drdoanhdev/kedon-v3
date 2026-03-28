@@ -46,22 +46,14 @@ interface DonKinh {
   madonkinh: string;
   benhnhanid: number;
   ngaykham: string;
-  // Các trường cấu trúc phẳng thay vì object nested
-  cauphai: number;
-  truphai: number;
-  trucphai: number;
-  congphai: number;
-  khoangcachphai: number;
-  cautrai: number;
-  trutrai: number;
-  tructrai: number;
-  congtrai: number;
-  khoangcachtrai: number;
   sokinh_moi_mp?: string;
   sokinh_moi_mt?: string;
+  sokinh_cu_mp?: string;
+  sokinh_cu_mt?: string;
+  ten_gong?: string;
   giatrong: number;
   giagong: number;
-  no: number;
+  no: boolean;
   sotien_da_thanh_toan: number;
   trangthai_thanh_toan: string;
 }
@@ -83,6 +75,7 @@ interface DienTien {
 export default function BenhNhanPage() {
   const [benhNhans, setBenhNhans] = useState<BenhNhan[]>([]);
   const [search, setSearch] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [open, setOpen] = useState<boolean>(false);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [form, setForm] = useState<BenhNhan>({
@@ -136,27 +129,38 @@ export default function BenhNhanPage() {
     }
   }, [open, isEditing]);
 
+  // Debounce search: chỉ gọi API sau 300ms ngừng gõ
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
     const fetchList = async () => {
       try {
-        // Thêm cache-busting parameters
         const timestamp = Date.now();
-        const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${search}&_t=${timestamp}`, {
+        const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${encodeURIComponent(debouncedSearch)}&_t=${timestamp}`, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
-          }
+          },
+          signal: abortController.signal,
         });
         setBenhNhans(res.data.data || []);
         setTotal(res.data.total || 0);
       } catch (error: unknown) {
+        if (axios.isCancel(error)) return; // Request bị hủy, bỏ qua
         const message = error instanceof Error ? error.message : String(error);
         toast.error(`Lỗi tải danh sách bệnh nhân: ${message}`);
       }
     };
     fetchList();
-  }, [currentPage, rowsPerPage, search]);
+    return () => abortController.abort();
+  }, [currentPage, rowsPerPage, debouncedSearch]);
 
   const totalPages = Math.ceil(total / rowsPerPage);
 
@@ -298,7 +302,7 @@ export default function BenhNhanPage() {
       
       // Refresh danh sách
       const timestamp = Date.now();
-      const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${search}&_t=${timestamp}`, {
+      const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${encodeURIComponent(debouncedSearch)}&_t=${timestamp}`, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -315,7 +319,7 @@ export default function BenhNhanPage() {
         : error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi khi gộp bệnh nhân: ${message}`);
     }
-  }, [selectedForMerge, mainPatientId, currentPage, rowsPerPage, search]);
+  }, [selectedForMerge, mainPatientId, currentPage, rowsPerPage, debouncedSearch]);
 
   // Function để toggle chọn bệnh nhân để gộp
   const toggleSelectForMerge = useCallback((patientId: number) => {
@@ -382,7 +386,7 @@ export default function BenhNhanPage() {
       setOpen(false);
       // Thêm cache-busting parameters khi refetch
       const timestamp = Date.now();
-      const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${search}&_t=${timestamp}`, {
+      const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${encodeURIComponent(debouncedSearch)}&_t=${timestamp}`, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
@@ -397,7 +401,7 @@ export default function BenhNhanPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [form, isEditing, currentPage, rowsPerPage, search, isSubmitting]);
+  }, [form, isEditing, currentPage, rowsPerPage, debouncedSearch, isSubmitting]);
 
   const handleEdit = useCallback((bn: BenhNhan) => {
     setForm(bn);
@@ -446,15 +450,18 @@ export default function BenhNhanPage() {
         return true;
       }
       
-      // 2. Tìm theo số điện thoại (bất kỳ vị trí nào)
+      // 2. Tìm theo số điện thoại
       if (bn.dienthoai && /\d/.test(searchTerm)) {
-        // Loại bỏ tất cả ký tự không phải số
         const cleanPhone = bn.dienthoai.replace(/\D/g, '');
         const cleanSearch = searchTerm.replace(/\D/g, '');
-        
         if (cleanSearch && cleanPhone.includes(cleanSearch)) {
           return true;
         }
+      }
+      
+      // 3. Tìm theo địa chỉ
+      if (bn.diachi && searchByStartsWith(bn.diachi, searchTerm)) {
+        return true;
       }
       
       return false;
@@ -583,15 +590,12 @@ export default function BenhNhanPage() {
   const filteredDonThuocs = useMemo(() => {
     return donThuocs.map((don) => {
       const chiTiet = chiTietDonThuocs[don.id] || [];
-      const dieuTri = chiTiet
-        .map((ct) => `${ct.thuoc.tenthuoc} x ${ct.soluong}`)
-        .join(', ') || '-';
       const dienTien = (dienTiens[selectedBenhNhanId!] || []).find(
         (dt: DienTien) => dt.ngay.slice(0, 10) === don.ngay_kham.slice(0, 10)
       );
       return {
         ...don,
-        dieuTri,
+        chiTietList: chiTiet,
         dienTien: dienTien ? dienTien.noidung : '-',
       };
     });
@@ -609,7 +613,7 @@ export default function BenhNhanPage() {
             <h1 className="text-lg font-semibold mb-3">Quản Lý Bệnh Nhân</h1>
             <div className="space-y-3">
               <Input
-                placeholder="Tìm kiếm bệnh nhân..."
+                placeholder="Tên, SĐT hoặc địa chỉ..."
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -759,32 +763,42 @@ export default function BenhNhanPage() {
                         <h3 className="font-medium text-sm mb-2">📋 Lịch sử khám bệnh</h3>
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                           <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="don-thuoc">Đơn thuốc</TabsTrigger>
-                            <TabsTrigger value="don-kinh">Đơn kính</TabsTrigger>
+                            <TabsTrigger value="don-thuoc">Đơn thuốc ({filteredDonThuocs.length})</TabsTrigger>
+                            <TabsTrigger value="don-kinh">Đơn kính ({donKinhs.length})</TabsTrigger>
                           </TabsList>
                           
                           <TabsContent value="don-thuoc" className="mt-2">
                             {filteredDonThuocs.length === 0 ? (
                               <p className="text-xs text-gray-500">Chưa có đơn thuốc nào.</p>
                             ) : (
-                              <div className="space-y-2">
+                              <div className="space-y-2 max-h-[350px] overflow-y-auto">
                                 {filteredDonThuocs.map((don) => (
-                                  <div key={don.id} className="bg-yellow-50 border rounded p-2">
-                                    <div className="text-xs text-gray-600 mb-1">
-                                      {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
+                                  <div key={don.id} className="bg-white border rounded-lg p-2.5 shadow-sm">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                        {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
+                                      </span>
+                                      <span className="text-xs font-bold text-blue-600">
+                                        {(don.tongtien / 1000).toFixed(0)}k
+                                      </span>
                                     </div>
-                                    <div className="text-sm font-medium mb-1">{don.chandoan}</div>
-                                    <div className="text-xs text-gray-700 mb-1">
-                                      <strong>Điều trị:</strong> {don.dieuTri}
-                                    </div>
-                                    {don.dienTien !== '-' && (
-                                      <div className="text-xs text-gray-700 mb-1">
-                                        <strong>Diễn tiến:</strong> {don.dienTien}
+                                    {don.chandoan && (
+                                      <div className="text-xs font-semibold text-gray-800 mb-1.5">{don.chandoan}</div>
+                                    )}
+                                    {don.chiTietList.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mb-1.5">
+                                        {don.chiTietList.map((ct, i) => (
+                                          <span key={i} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full border border-blue-100">
+                                            {ct.thuoc.tenthuoc} ×{ct.soluong}
+                                          </span>
+                                        ))}
                                       </div>
                                     )}
-                                    <div className="text-sm font-medium text-blue-600">
-                                      {(don.tongtien / 1000).toFixed(0)}k VND
-                                    </div>
+                                    {don.dienTien !== '-' && (
+                                      <div className="text-[10px] text-gray-500 italic">
+                                        Diễn tiến: {don.dienTien}
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
@@ -803,28 +817,30 @@ export default function BenhNhanPage() {
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                                       <div>
-                                        <strong>Mắt phải:</strong><br/>
-                                        S{don.cauphai || 0} C{don.truphai || 0} A{don.trucphai || 0}
+                                        <strong>MP:</strong> {don.sokinh_moi_mp || 'Chưa có'}
                                       </div>
                                       <div>
-                                        <strong>Mắt trái:</strong><br/>
-                                        S{don.cautrai || 0} C{don.trutrai || 0} A{don.tructrai || 0}
+                                        <strong>MT:</strong> {don.sokinh_moi_mt || 'Chưa có'}
                                       </div>
                                     </div>
+                                    {don.ten_gong && (
+                                      <div className="text-[11px] text-gray-500 mb-1.5">Gọng: {don.ten_gong}</div>
+                                    )}
                                     <div className="flex justify-between items-center">
                                       <div className="text-sm font-medium text-blue-600">
                                         {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k VND
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-600">Nợ:</span>
-                                        <span className={`text-xs px-2 py-1 rounded ${
-                                          (don.no || 0) === 0 
-                                            ? 'bg-green-100 text-green-800' 
-                                            : 'bg-red-100 text-red-800'
-                                        }`}>
-                                          {((don.no || 0) / 1000).toFixed(0)}k
-                                        </span>
-                                      </div>
+                                      {(() => {
+                                        const tongTienKinh = (don.giatrong || 0) + (don.giagong || 0);
+                                        const conNo = tongTienKinh - (don.sotien_da_thanh_toan || 0);
+                                        return (
+                                          <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                            conNo <= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                          }`}>
+                                            {conNo <= 0 ? 'Đã TT' : `Nợ: ${(conNo / 1000).toFixed(0)}k`}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                 ))}
@@ -865,7 +881,7 @@ export default function BenhNhanPage() {
               <h1 className="text-xl font-semibold">Quản Lý Bệnh Nhân</h1>
               <div className="flex items-center gap-2">
                 <Input
-                  placeholder="Tìm kiếm bệnh nhân..."
+                  placeholder="Tên, SĐT hoặc địa chỉ..."
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
@@ -1055,114 +1071,114 @@ export default function BenhNhanPage() {
                         {selectedBenhNhanId === bn.id && (
                           <tr>
                             <td colSpan={7} className="px-2 py-1">
-                              <Card className="shadow-sm bg-yellow-50">
+                              <Card className="shadow-sm bg-gray-50 border-gray-200">
                                 <CardContent className="p-3">
-                                  <div className="flex gap-4">
-                                    {/* Tabs Navigation - Vertical Layout */}
-                                    <div className="flex flex-col gap-1 min-w-[120px]">
-                                      <button
-                                        onClick={() => setActiveTab('don-thuoc')}
-                                        className={`px-3 py-2 text-xs rounded-md border transition-colors ${
-                                          activeTab === 'don-thuoc'
-                                            ? 'bg-white text-black border-gray-300 shadow-sm'
-                                            : 'bg-yellow-100 text-gray-600 border-yellow-200 hover:bg-yellow-200'
-                                        }`}
-                                      >
-                                        📋 Đơn thuốc
-                                      </button>
-                                      <button
-                                        onClick={() => setActiveTab('don-kinh')}
-                                        className={`px-3 py-2 text-xs rounded-md border transition-colors ${
-                                          activeTab === 'don-kinh'
-                                            ? 'bg-white text-black border-gray-300 shadow-sm'
-                                            : 'bg-yellow-100 text-gray-600 border-yellow-200 hover:bg-yellow-200'
-                                        }`}
-                                      >
-                                        👓 Đơn kính
-                                      </button>
-                                    </div>
+                                  {/* Tab buttons */}
+                                  <div className="flex gap-1 mb-3 border-b pb-2">
+                                    <button
+                                      onClick={() => setActiveTab('don-thuoc')}
+                                      className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
+                                        activeTab === 'don-thuoc'
+                                          ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      📋 Đơn thuốc ({filteredDonThuocs.length})
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveTab('don-kinh')}
+                                      className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
+                                        activeTab === 'don-kinh'
+                                          ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      👓 Đơn kính ({donKinhs.length})
+                                    </button>
+                                  </div>
                                     
-                                    {/* Content Area */}
-                                    <div className="flex-1">{activeTab === 'don-thuoc' ? (
-                                        filteredDonThuocs.length === 0 ? (
-                                          <p className="text-xs text-muted-foreground">Chưa có đơn thuốc nào.</p>
-                                        ) : (
-                                          <table className="min-w-full text-xs">
-                                            <thead>
-                                              <tr className="border-b">
-                                                <th className="text-left py-1">Ngày khám</th>
-                                                <th className="text-left py-1">Chẩn đoán</th>
-                                                <th className="text-left py-1 max-w-[200px]">Điều trị (thuốc, số lượng)</th>
-                                                <th className="text-left py-1 max-w-[200px]">Diễn tiến bệnh</th>
-                                                <th className="text-right py-1">Số tiền</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {filteredDonThuocs.map((don) => (
-                                                <tr key={don.id} className="border-b">
-                                                  <td className="py-1">
-                                                    {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
-                                                  </td>
-                                                  <td className="py-1">{don.chandoan}</td>
-                                                  <td className="py-1 truncate">{don.dieuTri}</td>
-                                                  <td className="py-1 truncate">{don.dienTien}</td>
-                                                  <td className="text-right py-1">
-                                                    {(don.tongtien / 1000).toFixed(0)}k
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        )
+                                  {/* Content */}
+                                  <div className="max-h-[400px] overflow-y-auto">
+                                    {activeTab === 'don-thuoc' ? (
+                                      filteredDonThuocs.length === 0 ? (
+                                        <p className="text-xs text-gray-400 py-4 text-center">Chưa có đơn thuốc nào.</p>
                                       ) : (
-                                        donKinhs.length === 0 ? (
-                                          <p className="text-xs text-muted-foreground">Chưa có đơn kính nào.</p>
-                                        ) : (
-                                          <table className="min-w-full text-xs">
-                                            <thead>
-                                              <tr className="border-b">
-                                                <th className="text-left py-1">Ngày khám</th>
-                                                <th className="text-left py-1">Số kính</th>
-                                                <th className="text-right py-1">Giá tròng</th>
-                                                <th className="text-right py-1">Giá gọng</th>
-                                                <th className="text-right py-1">Tổng tiền</th>
-                                                <th className="text-right py-1">Nợ</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {donKinhs.map((don) => (
-                                                <tr key={don.id} className="border-b">
-                                                  <td className="py-1">
-                                                    {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
-                                                  </td>
-                                                  <td className="py-1 text-xs">
-                                                    MP: {don.sokinh_moi_mp || 'N/A'}, MT: {don.sokinh_moi_mt || 'N/A'}
-                                                  </td>
-                                                  <td className="text-right py-1">
-                                                    {((don.giatrong || 0) / 1000).toFixed(0)}k
-                                                  </td>
-                                                  <td className="text-right py-1">
-                                                    {((don.giagong || 0) / 1000).toFixed(0)}k
-                                                  </td>
-                                                  <td className="text-right py-1">
-                                                    {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k
-                                                  </td>
-                                                  <td className="text-right py-1">
-                                                    <span className={`text-xs px-1 py-0.5 rounded ${
-                                                      (don.no || 0) === 0 
-                                                        ? 'bg-green-100 text-green-800' 
-                                                        : 'bg-red-100 text-red-800'
-                                                    }`}>
-                                                      {((don.no || 0) / 1000).toFixed(0)}k
+                                        <div className="space-y-2">
+                                          {filteredDonThuocs.map((don) => (
+                                            <div key={don.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow">
+                                              <div className="flex items-start justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                                    {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
+                                                  </span>
+                                                  <span className="text-xs font-semibold text-gray-800">{don.chandoan || '-'}</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-blue-600 whitespace-nowrap ml-2">
+                                                  {(don.tongtien / 1000).toFixed(0)}k
+                                                </span>
+                                              </div>
+                                              {don.chiTietList.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mb-1.5">
+                                                  {don.chiTietList.map((ct, i) => (
+                                                    <span key={i} className="inline-flex items-center text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">
+                                                      {ct.thuoc.tenthuoc} <span className="font-semibold ml-1">×{ct.soluong}</span>
                                                     </span>
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        )
-                                      )}
-                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              {don.dienTien !== '-' && (
+                                                <div className="text-[11px] text-gray-500 italic">
+                                                  Diễn tiến: {don.dienTien}
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )
+                                    ) : (
+                                      donKinhs.length === 0 ? (
+                                        <p className="text-xs text-gray-400 py-4 text-center">Chưa có đơn kính nào.</p>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          {donKinhs.map((don) => (
+                                            <div key={don.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow">
+                                              <div className="flex items-start justify-between mb-2">
+                                                <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                                  {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
+                                                </span>
+                                                <div className="flex items-center gap-3 text-xs">
+                                                  <span className="font-bold text-blue-600">
+                                                    {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k
+                                                  </span>
+                                                  {(() => {
+                                                    const tongTienKinh = (don.giatrong || 0) + (don.giagong || 0);
+                                                    const conNo = tongTienKinh - (don.sotien_da_thanh_toan || 0);
+                                                    return (
+                                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                                        conNo <= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                      }`}>
+                                                        {conNo <= 0 ? 'Đã TT' : `Nợ: ${(conNo / 1000).toFixed(0)}k`}
+                                                      </span>
+                                                    );
+                                                  })()}
+                                                </div>
+                                              </div>
+                                              <div className="grid grid-cols-2 gap-x-6 text-[11px] text-gray-600">
+                                                <div>
+                                                  <span className="font-medium text-gray-700">MP:</span> {don.sokinh_moi_mp || 'Chưa có'}
+                                                </div>
+                                                <div>
+                                                  <span className="font-medium text-gray-700">MT:</span> {don.sokinh_moi_mt || 'Chưa có'}
+                                                </div>
+                                                {don.ten_gong && (
+                                                  <div className="col-span-2 mt-0.5 text-gray-400">Gọng: {don.ten_gong}</div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )
+                                    )}
                                   </div>
                                 </CardContent>
                               </Card>

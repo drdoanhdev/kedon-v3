@@ -136,6 +136,22 @@ export async function requireTenantAccess(
       return null;
     }
 
+    // Kiểm tra trạng thái phòng khám
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('status')
+      .eq('id', tenantId)
+      .single();
+
+    if (tenantData?.status === 'suspended') {
+      res.status(403).json({ message: 'Phòng khám đang bị tạm ngưng. Vui lòng liên hệ quản trị viên nền tảng.' });
+      return null;
+    }
+    if (tenantData?.status === 'inactive') {
+      res.status(403).json({ message: 'Phòng khám đã ngưng hoạt động. Vui lòng liên hệ quản trị viên nền tảng.' });
+      return null;
+    }
+
     const owner = isOwnerRole(tenantRole);
     if (options.ownerOnly && !owner) {
       res.status(403).json({ message: 'Forbidden: owner role is required' });

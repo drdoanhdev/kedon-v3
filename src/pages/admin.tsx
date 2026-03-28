@@ -112,11 +112,12 @@ function TenantsTab() {
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Phòng khám</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600">Owner</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-600">Chủ sở hữu</th>
               <th className="px-4 py-3 text-center font-medium text-gray-600">Thành viên</th>
               <th className="px-4 py-3 text-center font-medium text-gray-600">Gói</th>
               <th className="px-4 py-3 text-center font-medium text-gray-600">Trạng thái</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600">Ngày tạo</th>
+              <th className="px-4 py-3 text-left font-medium text-gray-600">Đăng nhập gần nhất</th>
               <th className="px-4 py-3 text-center font-medium text-gray-600">Thao tác</th>
             </tr>
           </thead>
@@ -135,7 +136,7 @@ function TenantsTab() {
                     t.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {t.plan || 'trial'}
+                    {t.plan === 'pro' ? 'Chuyên nghiệp' : t.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-center">
@@ -144,11 +145,16 @@ function TenantsTab() {
                     t.status === 'suspended' ? 'bg-red-100 text-red-700' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {t.status}
+                    {t.status === 'active' ? 'Hoạt động' : t.status === 'suspended' ? 'Tạm ngưng' : 'Ngưng hoạt động'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(t.created_at).toLocaleDateString('vi-VN')}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {t.owner_last_sign_in
+                    ? new Date(t.owner_last_sign_in).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
+                    : '—'}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <select
@@ -156,9 +162,9 @@ function TenantsTab() {
                     onChange={(e) => handleStatusChange(t.id, e.target.value)}
                     className="text-xs border rounded px-2 py-1"
                   >
-                    <option value="active">Active</option>
-                    <option value="suspended">Suspended</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="active">Hoạt động</option>
+                    <option value="suspended">Tạm ngưng</option>
+                    <option value="inactive">Ngưng hoạt động</option>
                   </select>
                 </td>
               </tr>
@@ -256,7 +262,7 @@ function PaymentsTab() {
                     <td className="px-4 py-3 text-gray-700">{(p as any).tenants?.name || p.tenant_id?.slice(0, 8)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                        {p.plan} · {p.months}th
+                        {p.plan === 'pro' ? 'Chuyên nghiệp' : p.plan === 'basic' ? 'Cơ bản' : p.plan === 'trial' ? 'Dùng thử' : p.plan} · {p.months} tháng
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{formatVND(p.amount)}</td>
@@ -266,7 +272,7 @@ function PaymentsTab() {
                         p.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                         'bg-gray-100 text-gray-500'
                       }`}>
-                        {p.status === 'paid' ? 'Đã TT' : p.status === 'pending' ? 'Chờ TT' : p.status}
+                        {p.status === 'paid' ? 'Đã thanh toán' : p.status === 'pending' ? 'Chờ thanh toán' : p.status === 'cancelled' ? 'Đã hủy' : p.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500">
@@ -421,7 +427,7 @@ function UsersTab() {
               <thead className="bg-gray-50 border-b">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Email</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-600">Global Role</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">Vai trò hệ thống</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Phòng khám</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Đăng nhập gần nhất</th>
                   <th className="px-4 py-3 text-center font-medium text-gray-600">Thao tác</th>
@@ -438,10 +444,10 @@ function UsersTab() {
                         className="text-xs border rounded px-2 py-1"
                       >
                         <option value="">— Chưa cấp —</option>
-                        <option value="staff">staff</option>
-                        <option value="doctor">doctor</option>
-                        <option value="admin">admin</option>
-                        <option value="superadmin">superadmin</option>
+                        <option value="staff">Nhân viên</option>
+                        <option value="doctor">Bác sĩ</option>
+                        <option value="admin">Quản trị viên</option>
+                        <option value="superadmin">Quản trị nền tảng</option>
                       </select>
                     </td>
                     <td className="px-4 py-3">
@@ -449,7 +455,7 @@ function UsersTab() {
                         <div className="flex flex-wrap gap-1">
                           {u.tenants.map((t: any, i: number) => (
                             <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">
-                              {t.tenant_name} ({t.role})
+                              {t.tenant_name} ({t.role === 'owner' ? 'Chủ PK' : t.role === 'admin' ? 'Quản trị' : t.role === 'doctor' ? 'Bác sĩ' : t.role === 'staff' ? 'Nhân viên' : t.role})
                             </span>
                           ))}
                         </div>
@@ -583,9 +589,9 @@ function PlansTab() {
               ))}
             </ul>
             <div className="text-xs text-gray-400 space-y-0.5 mb-3">
-              {plan.max_users && <div>Tối đa: {plan.max_users} user</div>}
-              {plan.trial_days && <div>Trial: {plan.trial_days} ngày</div>}
-              {plan.trial_max_prescriptions && <div>Giới hạn: {plan.trial_max_prescriptions} đơn</div>}
+              {plan.max_users && <div>Tối đa: {plan.max_users} người dùng</div>}
+              {plan.trial_days && <div>Dùng thử: {plan.trial_days} ngày</div>}
+              {plan.trial_max_prescriptions && <div>Giới hạn dùng thử: {plan.trial_max_prescriptions} đơn</div>}
             </div>
             <button
               onClick={() => openEdit(plan)}
@@ -641,7 +647,7 @@ function PlansTab() {
               {/* Giới hạn */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Max users</label>
+                  <label className="text-sm font-medium text-gray-700">Tối đa người dùng</label>
                   <input
                     type="number"
                     value={editPlan.max_users || ''}
@@ -651,7 +657,7 @@ function PlansTab() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Trial ngày</label>
+                  <label className="text-sm font-medium text-gray-700">Dùng thử (ngày)</label>
                   <input
                     type="number"
                     value={editPlan.trial_days || ''}
@@ -661,7 +667,7 @@ function PlansTab() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700">Max đơn trial</label>
+                  <label className="text-sm font-medium text-gray-700">Tối đa đơn dùng thử</label>
                   <input
                     type="number"
                     value={editPlan.trial_max_prescriptions || ''}

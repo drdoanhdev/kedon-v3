@@ -40,6 +40,7 @@ interface CachedAuth {
 interface CachedMembership {
   role: string;
   active: boolean;
+  tenantStatus: string;
   expiry: number;
 }
 
@@ -148,7 +149,7 @@ export async function requireTenant(
   } else {
     const { data: membership, error: memErr } = await supabaseAdmin
       .from('tenantmembership')
-      .select('role, active')
+      .select('role, active, tenants!inner(status)')
       .eq('user_id', userId)
       .eq('tenant_id', tenantId)
       .maybeSingle();
@@ -165,11 +166,24 @@ export async function requireTenant(
 
     membershipRole = membership.role || 'staff';
     membershipActive = membership.active !== false;
-    membershipCache.set(memCacheKey, { role: membershipRole, active: membershipActive, expiry: now + MEMBERSHIP_CACHE_TTL });
+    const tenantStatus = (membership as any).tenants?.status || 'active';
+    membershipCache.set(memCacheKey, { role: membershipRole, active: membershipActive, tenantStatus, expiry: now + MEMBERSHIP_CACHE_TTL });
   }
 
   if (!membershipActive) {
     res.status(403).json({ message: 'Bạn không phải thành viên của phòng khám này' });
+    return null;
+  }
+
+  // Kiểm tra trạng thái phòng khám
+  const cachedMemFinal = membershipCache.get(memCacheKey);
+  const tenantStatus = cachedMemFinal?.tenantStatus || 'active';
+  if (tenantStatus === 'suspended') {
+    res.status(403).json({ message: 'Phòng khám đang bị tạm ngưng. Vui lòng liên hệ quản trị viên nền tảng.' });
+    return null;
+  }
+  if (tenantStatus === 'inactive') {
+    res.status(403).json({ message: 'Phòng khám đã ngưng hoạt động. Vui lòng liên hệ quản trị viên nền tảng.' });
     return null;
   }
 

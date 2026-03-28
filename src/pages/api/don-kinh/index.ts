@@ -639,6 +639,8 @@ async function processLensInventory(
       // Filter by add_power: match exact value or null for single-vision
       if (parsed.add_power !== undefined) {
         stockQuery = stockQuery.eq('add_power', parsed.add_power);
+        // Đa tròng: phân biệt mắt trái/phải
+        stockQuery = stockQuery.eq('mat', eye.mat);
       } else {
         stockQuery = stockQuery.is('add_power', null);
       }
