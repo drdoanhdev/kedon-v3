@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { SimplePagination } from '../components/ui/pagination';
 import { BarChart } from '../components/ui/chart';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { AxiosError } from 'axios';
@@ -342,7 +342,6 @@ ${topCustomers.map((c, i) => `${i + 1}. ${c.name}: ${(c.tongtien / 1000).toFixed
       <ProtectedRoute>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="w-full max-w-md p-6">
-            <Toaster position="top-right" />
             <Card className="shadow-lg">
               <CardContent className="p-8">
                 <div className="text-center mb-6">
@@ -375,7 +374,6 @@ ${topCustomers.map((c, i) => `${i + 1}. ${c.name}: ${(c.tongtien / 1000).toFixed
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         <div className="p-4 lg:p-6">
-          <Toaster position="top-right" />
 
           <div className="flex justify-between items-center mb-6">
             <div>

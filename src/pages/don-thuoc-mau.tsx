@@ -9,7 +9,8 @@ import { Textarea } from '../components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 interface DonThuocMau {
   id: number;
@@ -43,6 +44,7 @@ interface ThuocMau {
 }
 
 export default function DonThuocMauPage() {
+  const { confirm } = useConfirm();
   const [dsMau, setDsMau] = useState<DonThuocMau[]>([]);
   const [dsThuoc, setDsThuoc] = useState<Thuoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +154,7 @@ export default function DonThuocMauPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa đơn thuốc mẫu này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa đơn thuốc mẫu này?')) return;
 
     try {
       const response = await fetch(`/api/don-thuoc-mau?id=${id}`, {
@@ -185,7 +187,6 @@ export default function DonThuocMauPage() {
     return (
       <ProtectedRoute>
         <div className="p-4">
-          <Toaster position="top-right" />
           <div className="text-center">Đang tải...</div>
         </div>
       </ProtectedRoute>
@@ -195,7 +196,6 @@ export default function DonThuocMauPage() {
   return (
     <ProtectedRoute>
       <div className="p-4 space-y-4">
-        <Toaster position="top-right" />
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Quản lý đơn thuốc mẫu</h1>
           <Dialog open={showForm} onOpenChange={setShowForm}>

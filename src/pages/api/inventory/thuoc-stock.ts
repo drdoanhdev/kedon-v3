@@ -14,16 +14,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { search, filter } = req.query;
+    const { search, filter, show_inactive } = req.query;
 
     let query = supabase
       .from('Thuoc')
-      .select('id, mathuoc, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_toi_thieu')
+      .select('id, mathuoc, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_toi_thieu, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
       .order('tenthuoc', { ascending: true });
 
     // Lọc chỉ thuốc, không lấy thủ thuật
     query = query.or('la_thu_thuat.is.null,la_thu_thuat.eq.false');
+
+    // Mặc định ẩn thuốc ngừng kinh doanh
+    if (!show_inactive || show_inactive !== '1') {
+      query = query.or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
+    }
 
     if (search) {
       query = query.or(`tenthuoc.ilike.%${search}%,mathuoc.ilike.%${search}%,hoatchat.ilike.%${search}%`);

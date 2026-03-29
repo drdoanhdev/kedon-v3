@@ -5,7 +5,8 @@ import { Button } from '../components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import apiClient from '../lib/apiClient';
 import axios from 'axios';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import Link from 'next/link';
@@ -91,6 +92,7 @@ interface ChoKhamRecord {
 }
 
 export default function ChoKhamPage() {
+  const { confirm } = useConfirm();
   const [danhSachCho, setDanhSachCho] = useState<ChoKham[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -261,7 +263,7 @@ export default function ChoKhamPage() {
 
   // Xóa khỏi danh sách chờ
   const handleRemoveFromQueue = useCallback(async (choKhamId: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa bệnh nhân này khỏi danh sách chờ?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa bệnh nhân này khỏi danh sách chờ?')) return;
     
     try {
       await axios.delete(`/api/cho-kham?id=${choKhamId}`);
@@ -321,7 +323,6 @@ export default function ChoKhamPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         <div className="p-4 lg:p-6">
-          <Toaster position="top-right" />
 
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">

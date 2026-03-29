@@ -9,7 +9,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Pagination, SimplePagination } from '@/components/ui/pagination';
 import { Trash2, Pencil, Settings } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -66,6 +67,7 @@ function calcAge(namsinh: string | null): number | "" {
 }
 
 export default function DonKinhPage() {
+  const { confirm } = useConfirm();
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
@@ -189,7 +191,7 @@ export default function DonKinhPage() {
   }, [currentPage, rowsPerPage, searchDebounced, dateFilter, debtFilter]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Bạn có chắc muốn xóa đơn kính này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa đơn kính này?')) return;
     try {
       const res = await axios.delete(`/api/don-kinh?id=${id}`);
       if (res.status === 200) {
@@ -222,7 +224,7 @@ export default function DonKinhPage() {
   return (
     <ProtectedRoute>
       <div className="p-4 lg:p-6 space-y-4">
-        <Toaster position="top-right" />
+
         {isFetching && (
           <div className="fixed top-4 right-4 z-50 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
             Đang tìm kiếm...

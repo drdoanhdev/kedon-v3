@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Phone, MessageSquare, Check, X, Trash2, CalendarDays, Clock, RefreshCw, Copy, Pencil, Plus, Settings } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { Button } from '../components/ui/button';
@@ -27,7 +28,7 @@ interface HenKham {
   created_at: string;
 }
 
-type FilterTab = 'hom_nay' | 'tuan_nay' | 'khoang_ngay';
+type FilterTab = 'hom_nay' | '7_ngay_toi' | '1_thang_toi' | 'khoang_ngay';
 
 const TRANG_THAI_MAP: Record<string, { label: string; color: string; bg: string }> = {
   cho: { label: 'Chờ', color: 'text-yellow-700', bg: 'bg-yellow-100' },
@@ -42,17 +43,6 @@ function getToday(): string {
   return d.toISOString().split('T')[0];
 }
 
-function getWeekRange(): [string, string] {
-  const now = new Date();
-  now.setHours(now.getHours() + 7);
-  const day = now.getDay(); // 0=Sun
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  return [monday.toISOString().split('T')[0], sunday.toISOString().split('T')[0]];
-}
-
 function formatNgay(d: string): string {
   if (!d) return '';
   const parts = d.split('-');
@@ -65,7 +55,31 @@ function formatGio(t: string | null): string {
   return t.substring(0, 5); // "HH:mm"
 }
 
+function getDaysDiff(dateStr: string): number {
+  const today = new Date(getToday());
+  const target = new Date(dateStr);
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getCountdownLabel(dateStr: string, trangThai: string): { text: string; className: string } | null {
+  if (trangThai !== 'cho' && trangThai !== 'qua_han') return null;
+  const diff = getDaysDiff(dateStr);
+  if (diff < 0) return { text: `Quá hạn ${Math.abs(diff)} ngày`, className: 'text-red-600 bg-red-50 border border-red-200' };
+  if (diff === 0) return { text: 'Hôm nay', className: 'text-orange-700 bg-orange-100 border border-orange-200 font-bold' };
+  if (diff === 1) return { text: 'Ngày mai', className: 'text-orange-600 bg-orange-50 border border-orange-200' };
+  if (diff <= 3) return { text: `Còn ${diff} ngày`, className: 'text-yellow-700 bg-yellow-50 border border-yellow-200' };
+  if (diff <= 7) return { text: `Còn ${diff} ngày`, className: 'text-blue-600 bg-blue-50 border border-blue-200' };
+  return { text: `Còn ${diff} ngày`, className: 'text-gray-500 bg-gray-50 border border-gray-200' };
+}
+
+function addDaysFromToday(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
 export default function LichHen() {
+  const { confirm } = useConfirm();
   const [data, setData] = useState<HenKham[]>([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<FilterTab>('hom_nay');
@@ -107,6 +121,30 @@ export default function LichHen() {
   const [addForm, setAddForm] = useState({ ten_benhnhan: '', dienthoai: '', ngay_hen: getToday(), gio_hen: '08:00', ly_do: 'Tái khám', ghichu: '' });
   const lyDoOptions = ['Lấy kính', 'Kiểm tra kính mới', 'Tái khám', 'Khác'];
 
+  // Edit dialog
+  const [openEdit, setOpenEdit] = useState(false);
+  const [editForm, setEditForm] = useState({ id: 0, ngay_hen: '', gio_hen: '', ly_do: '', ghichu: '' });
+
+  // Patient search in Add dialog
+  const [patientSearch, setPatientSearch] = useState('');
+  const [patientResults, setPatientResults] = useState<{ id: number; ten: string; dienthoai: string }[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<number>(0);
+  const [searchingPatient, setSearchingPatient] = useState(false);
+
+  // Debounce patient search
+  useEffect(() => {
+    if (!patientSearch.trim()) { setPatientResults([]); return; }
+    const timer = setTimeout(async () => {
+      setSearchingPatient(true);
+      try {
+        const res = await axios.get(`/api/benh-nhan?search=${encodeURIComponent(patientSearch)}&pageSize=10&_t=${Date.now()}`);
+        setPatientResults(res.data.data || []);
+      } catch { /* ignore */ }
+      setSearchingPatient(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [patientSearch]);
+
   const getBuiltInTemplates = (hen: HenKham | null) => {
     if (!hen) return [];
     const ten = hen.ten_benhnhan || 'Anh/Chị';
@@ -144,8 +182,18 @@ export default function LichHen() {
       let from = '', to = '';
       if (tab === 'hom_nay') {
         from = to = getToday();
-      } else if (tab === 'tuan_nay') {
-        [from, to] = getWeekRange();
+      } else if (tab === '7_ngay_toi') {
+        from = getToday();
+        const d = new Date();
+        d.setHours(d.getHours() + 7);
+        d.setDate(d.getDate() + 6);
+        to = d.toISOString().split('T')[0];
+      } else if (tab === '1_thang_toi') {
+        from = getToday();
+        const d = new Date();
+        d.setHours(d.getHours() + 7);
+        d.setMonth(d.getMonth() + 1);
+        to = d.toISOString().split('T')[0];
       } else {
         from = fromDate;
         to = toDate;
@@ -160,7 +208,22 @@ export default function LichHen() {
       const res = await axios.get(`/api/hen-kham-lai?${params.toString()}`, {
         headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
       });
-      setData(res.data.data || []);
+      const items: HenKham[] = res.data.data || [];
+
+      // Auto-mark overdue appointments as qua_han
+      const today = getToday();
+      const overdueIds = items.filter(h => h.trang_thai === 'cho' && h.ngay_hen < today).map(h => h.id);
+      if (overdueIds.length > 0) {
+        await Promise.all(overdueIds.map(id =>
+          axios.put('/api/hen-kham-lai', { id, trang_thai: 'qua_han' }).catch(() => {})
+        ));
+        // Update local data
+        items.forEach(h => {
+          if (overdueIds.includes(h.id)) h.trang_thai = 'qua_han';
+        });
+      }
+
+      setData(items);
     } catch {
       toast.error('Lỗi khi tải lịch hẹn');
     } finally {
@@ -191,7 +254,7 @@ export default function LichHen() {
   };
 
   const deleteHen = async (id: number) => {
-    if (!window.confirm('Xóa lịch hẹn này?')) return;
+    if (!await confirm('Xóa lịch hẹn này?')) return;
     try {
       await axios.delete(`/api/hen-kham-lai?id=${id}`);
       toast.success('Đã xóa');
@@ -201,6 +264,35 @@ export default function LichHen() {
     }
   };
 
+  const editHenKham = async () => {
+    if (!editForm.ngay_hen) { toast.error('Vui lòng chọn ngày hẹn'); return; }
+    try {
+      await axios.put('/api/hen-kham-lai', {
+        id: editForm.id,
+        ngay_hen: editForm.ngay_hen,
+        gio_hen: editForm.gio_hen || null,
+        ly_do: editForm.ly_do,
+        ghichu: editForm.ghichu,
+      });
+      toast.success('Đã cập nhật lịch hẹn');
+      setOpenEdit(false);
+      fetchData();
+    } catch {
+      toast.error('Lỗi khi cập nhật lịch hẹn');
+    }
+  };
+
+  const reschedule = useCallback(async (id: number, days: number) => {
+    const newDate = addDaysFromToday(days);
+    try {
+      await axios.put('/api/hen-kham-lai', { id, ngay_hen: newDate, trang_thai: 'cho' });
+      toast.success(`Đã dời lịch → ${formatNgay(newDate)}`);
+      fetchData();
+    } catch {
+      toast.error('Lỗi khi dời lịch');
+    }
+  }, []);
+
   const addHenKham = async () => {
     if (!addForm.ten_benhnhan || !addForm.ngay_hen) {
       toast.error('Vui lòng nhập tên và ngày hẹn');
@@ -208,7 +300,7 @@ export default function LichHen() {
     }
     try {
       await axios.post('/api/hen-kham-lai', {
-        benhnhanid: 0,
+        benhnhanid: selectedPatientId || 0,
         ten_benhnhan: addForm.ten_benhnhan,
         dienthoai: addForm.dienthoai,
         ngay_hen: addForm.ngay_hen,
@@ -219,6 +311,9 @@ export default function LichHen() {
       toast.success('Đã thêm lịch hẹn');
       setOpenAdd(false);
       setAddForm({ ten_benhnhan: '', dienthoai: '', ngay_hen: getToday(), gio_hen: '08:00', ly_do: 'Tái khám', ghichu: '' });
+      setSelectedPatientId(0);
+      setPatientSearch('');
+      setPatientResults([]);
       fetchData();
     } catch {
       toast.error('Lỗi khi thêm lịch hẹn');
@@ -230,12 +325,13 @@ export default function LichHen() {
     cho: data.filter(h => h.trang_thai === 'cho').length,
     da_den: data.filter(h => h.trang_thai === 'da_den').length,
     huy: data.filter(h => h.trang_thai === 'huy').length,
+    qua_han: data.filter(h => h.trang_thai === 'qua_han').length,
   }), [data]);
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-        <Toaster position="top-right" />
+
 
         {/* Header */}
         <div className="bg-white border-b px-4 py-3">
@@ -260,11 +356,12 @@ export default function LichHen() {
 
         <div className="max-w-6xl mx-auto p-4 space-y-4">
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-blue-600">{stats.total}</div><div className="text-xs text-gray-500">Tổng</div></CardContent></Card>
             <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{stats.cho}</div><div className="text-xs text-gray-500">Đang chờ</div></CardContent></Card>
             <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{stats.da_den}</div><div className="text-xs text-gray-500">Đã đến</div></CardContent></Card>
             <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-red-600">{stats.huy}</div><div className="text-xs text-gray-500">Đã hủy</div></CardContent></Card>
+            <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-gray-600">{stats.qua_han}</div><div className="text-xs text-gray-500">Quá hạn</div></CardContent></Card>
           </div>
 
           {/* Filters */}
@@ -272,7 +369,7 @@ export default function LichHen() {
             <CardContent className="p-3 space-y-3">
               {/* Time tabs */}
               <div className="flex gap-2 flex-wrap">
-                {([['hom_nay', 'Hôm nay'], ['tuan_nay', 'Tuần này'], ['khoang_ngay', 'Khoảng ngày']] as const).map(([key, label]) => (
+                {([['hom_nay', 'Hôm nay'], ['7_ngay_toi', '7 ngày tới'], ['1_thang_toi', '1 tháng tới'], ['khoang_ngay', 'Khoảng ngày']] as const).map(([key, label]) => (
                   <button
                     key={key}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -316,19 +413,25 @@ export default function LichHen() {
             <div className="space-y-2">
               {filteredData.map(hen => {
                 const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
+                const countdown = getCountdownLabel(hen.ngay_hen, hen.trang_thai);
                 return (
-                  <Card key={hen.id} className="hover:shadow-md transition-shadow">
+                  <Card key={hen.id} className={`hover:shadow-md transition-shadow ${countdown && getDaysDiff(hen.ngay_hen) < 0 ? 'border-red-300' : countdown && getDaysDiff(hen.ngay_hen) === 0 ? 'border-orange-300' : ''}`}>
                     <CardContent className="p-4">
-                      <div className="flex flex-col md:flex-row md:items-center gap-3">
+                      <div className="flex flex-col md:flex-row md:items-start gap-3">
                         {/* Info */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <Link href={hen.benhnhanid ? `/ke-don-kinh?bn=${hen.benhnhanid}` : '#'} className="font-bold text-blue-700 hover:underline truncate">
                               {hen.ten_benhnhan || 'Không tên'}
                             </Link>
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>
                               {st.label}
                             </span>
+                            {countdown && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${countdown.className}`}>
+                                {countdown.text}
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                             <span className="flex items-center gap-1">
@@ -343,10 +446,46 @@ export default function LichHen() {
                             {hen.ly_do && <span className="text-gray-500">• {hen.ly_do}</span>}
                           </div>
                           {hen.ghichu && <p className="text-xs text-gray-400 mt-1">{hen.ghichu}</p>}
+
+                          {/* Quick reschedule buttons */}
+                          {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              <span className="text-xs text-gray-400">Dời lịch:</span>
+                              {[
+                                { days: 7, label: '+7 ngày' },
+                                { days: 14, label: '+14 ngày' },
+                                { days: 30, label: '+1 tháng' },
+                              ].map(({ days, label }) => (
+                                <button
+                                  key={days}
+                                  onClick={() => reschedule(hen.id, days)}
+                                  className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100 border border-purple-200 transition-colors font-medium"
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* Actions */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                          {/* Edit button */}
+                          <button
+                            className="inline-flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
+                            onClick={() => {
+                              setEditForm({
+                                id: hen.id,
+                                ngay_hen: hen.ngay_hen,
+                                gio_hen: hen.gio_hen ? formatGio(hen.gio_hen) : '',
+                                ly_do: hen.ly_do || '',
+                                ghichu: hen.ghichu || '',
+                              });
+                              setOpenEdit(true);
+                            }}
+                          >
+                            <Pencil className="w-4 h-4" /> Sửa
+                          </button>
                           {/* Gọi điện */}
                           {hen.dienthoai && (
                             <a href={`tel:${hen.dienthoai}`} className="inline-flex items-center gap-1 px-3 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors">
@@ -372,7 +511,7 @@ export default function LichHen() {
                             </button>
                           )}
                           {/* Status actions */}
-                          {hen.trang_thai === 'cho' && (
+                          {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
                             <>
                               <button
                                 className="inline-flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
@@ -585,15 +724,57 @@ export default function LichHen() {
         </Dialog>
 
         {/* Thêm lịch hẹn Dialog */}
-        <Dialog open={openAdd} onOpenChange={setOpenAdd}>
-          <DialogContent>
+        <Dialog open={openAdd} onOpenChange={(v) => {
+          setOpenAdd(v);
+          if (!v) { setPatientSearch(''); setPatientResults([]); setSelectedPatientId(0); }
+        }}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Thêm lịch hẹn mới</DialogTitle>
             </DialogHeader>
             <div className="space-y-3 py-2">
+              {/* Patient search */}
+              <div>
+                <Label>Tìm bệnh nhân</Label>
+                <Input
+                  value={patientSearch}
+                  onChange={e => setPatientSearch(e.target.value)}
+                  placeholder="Gõ tên hoặc SĐT để tìm..."
+                  className="mb-1"
+                />
+                {searchingPatient && <p className="text-xs text-gray-400">Đang tìm...</p>}
+                {patientResults.length > 0 && (
+                  <div className="border rounded-md max-h-40 overflow-y-auto bg-white">
+                    {patientResults.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors border-b last:border-b-0 ${selectedPatientId === p.id ? 'bg-blue-100 font-medium' : ''}`}
+                        onClick={() => {
+                          setSelectedPatientId(p.id);
+                          setAddForm(f => ({ ...f, ten_benhnhan: p.ten, dienthoai: p.dienthoai || '' }));
+                          setPatientResults([]);
+                          setPatientSearch('');
+                        }}
+                      >
+                        <span className="font-medium">{p.ten}</span>
+                        {p.dienthoai && <span className="text-gray-500 ml-2">• {p.dienthoai}</span>}
+                        <span className="text-gray-400 ml-2 text-xs">ID: {p.id}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedPatientId > 0 && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-green-600 font-medium">✓ Đã chọn bệnh nhân ID: {selectedPatientId}</span>
+                    <button type="button" className="text-xs text-red-500 hover:underline" onClick={() => { setSelectedPatientId(0); setAddForm(f => ({ ...f, ten_benhnhan: '', dienthoai: '' })); }}>Bỏ chọn</button>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <Label>Tên bệnh nhân *</Label>
-                <Input value={addForm.ten_benhnhan} onChange={e => setAddForm(f => ({ ...f, ten_benhnhan: e.target.value }))} placeholder="Họ tên..." />
+                <Input value={addForm.ten_benhnhan} onChange={e => { setAddForm(f => ({ ...f, ten_benhnhan: e.target.value })); if (selectedPatientId) setSelectedPatientId(0); }} placeholder="Họ tên..." />
               </div>
               <div>
                 <Label>Số điện thoại</Label>
@@ -609,6 +790,25 @@ export default function LichHen() {
                   <Input type="time" value={addForm.gio_hen} onChange={e => setAddForm(f => ({ ...f, gio_hen: e.target.value }))} />
                 </div>
               </div>
+              {/* Quick date buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-gray-500">Hẹn sau:</span>
+                {[
+                  { days: 7, label: '7 ngày' },
+                  { days: 14, label: '14 ngày' },
+                  { days: 30, label: '1 tháng' },
+                  { days: 90, label: '3 tháng' },
+                ].map(({ days, label }) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 border border-blue-200 font-medium"
+                    onClick={() => setAddForm(f => ({ ...f, ngay_hen: addDaysFromToday(days) }))}
+                  >
+                    +{label}
+                  </button>
+                ))}
+              </div>
               <div>
                 <Label>Lý do</Label>
                 <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" value={addForm.ly_do} onChange={e => setAddForm(f => ({ ...f, ly_do: e.target.value }))}>
@@ -623,6 +823,60 @@ export default function LichHen() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpenAdd(false)}>Hủy</Button>
               <Button onClick={addHenKham}>Lưu lịch hẹn</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Sửa lịch hẹn Dialog */}
+        <Dialog open={openEdit} onOpenChange={setOpenEdit}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Sửa lịch hẹn</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Ngày hẹn *</Label>
+                  <Input type="date" value={editForm.ngay_hen} onChange={e => setEditForm(f => ({ ...f, ngay_hen: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Giờ hẹn</Label>
+                  <Input type="time" value={editForm.gio_hen} onChange={e => setEditForm(f => ({ ...f, gio_hen: e.target.value }))} />
+                </div>
+              </div>
+              {/* Quick date buttons for edit */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-gray-500">Dời lịch:</span>
+                {[
+                  { days: 7, label: '+7 ngày' },
+                  { days: 14, label: '+14 ngày' },
+                  { days: 30, label: '+1 tháng' },
+                  { days: 90, label: '+3 tháng' },
+                ].map(({ days, label }) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100 border border-purple-200 font-medium"
+                    onClick={() => setEditForm(f => ({ ...f, ngay_hen: addDaysFromToday(days) }))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <Label>Lý do</Label>
+                <select className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" value={editForm.ly_do} onChange={e => setEditForm(f => ({ ...f, ly_do: e.target.value }))}>
+                  {lyDoOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>Ghi chú</Label>
+                <Input value={editForm.ghichu} onChange={e => setEditForm(f => ({ ...f, ghichu: e.target.value }))} placeholder="Ghi chú..." />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOpenEdit(false)}>Hủy</Button>
+              <Button onClick={editHenKham}>Lưu thay đổi</Button>
             </div>
           </DialogContent>
         </Dialog>

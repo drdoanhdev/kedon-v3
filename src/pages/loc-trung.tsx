@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { Users, Check, Search, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import axios from "axios";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute';
 import Link from "next/link";
 
@@ -85,6 +86,7 @@ function similarity(s1: string, s2: string): number {
 }
 
 export default function LocTrungPage() {
+  const { confirm } = useConfirm();
   const [benhNhans, setBenhNhans] = useState<BenhNhan[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
@@ -412,7 +414,7 @@ export default function LocTrungPage() {
     const confirmMessage = `Bạn có chắc chắn muốn gộp ${patientIdsToMerge.length} bệnh nhân vào bệnh nhân ID ${mainPatientId}?\n\n` +
       `⚠️ Hành động này KHÔNG THỂ HOÀN TÁC!`;
 
-    if (!window.confirm(confirmMessage)) return;
+    if (!await confirm(confirmMessage)) return;
 
     try {
       await axios.post('/api/benh-nhan/merge', {
@@ -459,7 +461,6 @@ export default function LocTrungPage() {
   return (
     <ProtectedRoute>
       <div className="p-4 max-w-7xl mx-auto">
-        <Toaster position="top-right" />
         
         {/* Header */}
         <div className="mb-6">

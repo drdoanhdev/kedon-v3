@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import ProtectedRoute from '../components/ProtectedRoute'
-import toast, { Toaster } from 'react-hot-toast'
+import toast from 'react-hot-toast'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import Link from 'next/link'
 import { fetchWithAuth } from '../lib/fetchWithAuth'
 
@@ -14,6 +15,7 @@ interface UserWithRole {
 }
 
 export default function QuanLyNguoiDung() {
+  const { confirm } = useConfirm()
   const { userRole, signOut } = useAuth()
   const [users, setUsers] = useState<UserWithRole[]>([])
   const [loading, setLoading] = useState(false)
@@ -94,7 +96,7 @@ export default function QuanLyNguoiDung() {
 
   // Xóa user
   const handleDeleteUser = async (userId: string, userEmail: string) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa ${userEmail}?\n\nThao tác này không thể hoàn tác!`)) {
+    if (!await confirm(`Bạn có chắc muốn xóa ${userEmail}?\n\nThao tác này không thể hoàn tác!`)) {
       return
     }
 
@@ -189,7 +191,6 @@ export default function QuanLyNguoiDung() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-        <Toaster position="top-right" />
 
         {/* Header */}
         <header className="bg-white shadow">

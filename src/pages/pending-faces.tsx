@@ -32,7 +32,8 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 // =============================================
 // INTERFACES - Phù hợp với bảng PendingFaces
@@ -141,6 +142,7 @@ const getQualityLabel = (score: number) => {
 // =============================================
 
 export default function PendingFacesPage() {
+  const { confirm } = useConfirm();
   // Data states
   const [pendingFaces, setPendingFaces] = useState<PendingFace[]>([]);
   const [stats, setStats] = useState<Stats>({ pending: 0, assigned: 0, rejected: 0, total: 0 });
@@ -473,7 +475,7 @@ export default function PendingFacesPage() {
   // =============================================
 
   const handleCleanup = async () => {
-    if (!confirm('Xóa tất cả pending faces cũ hơn 7 ngày?')) return;
+    if (!await confirm('Xóa tất cả pending faces cũ hơn 7 ngày?')) return;
     
     try {
       const response = await fetch(`${PYTHON_API}/api/pending-faces/cleanup`, {
@@ -515,7 +517,6 @@ export default function PendingFacesPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         <div className="container mx-auto p-4 lg:p-6 space-y-6">
-          <Toaster position="top-right" />
           
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

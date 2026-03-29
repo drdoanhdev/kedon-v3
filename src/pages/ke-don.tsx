@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '../components/ui/label';
 import Link from 'next/link';
 import { format } from 'date-fns';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 import { searchByStartsWith } from '@/lib/utils';
@@ -30,6 +31,7 @@ interface Thuoc {
   cachdung: string;
   hoatchat: string;
   tonkho?: number;
+  ngung_kinh_doanh?: boolean;
 }
 
 interface ChiTietDonThuoc {
@@ -66,6 +68,7 @@ interface BenhNhan {
 }
 
 export default function KeDon() {
+  const { confirm } = useConfirm();
   const searchParams = useSearchParams();
   const benhnhanid = searchParams.get('bn');
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
@@ -98,8 +101,11 @@ export default function KeDon() {
   const [tienKhachDuaInput, setTienKhachDuaInput] = useState('');
   const [editDonThuocId, setEditDonThuocId] = useState<number | null>(null);
   const [highlightId, setHighlightId] = useState<number | null>(null); // highlight đơn mới / cập nhật
+  const [focusedRowIdx, setFocusedRowIdx] = useState<number>(-1);
   const chandoanDesktopRef = useRef<HTMLInputElement | null>(null);
   const searchDesktopRef = useRef<HTMLInputElement | null>(null);
+  const soluongRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const cachdungRefs = useRef<(HTMLInputElement | null)[]>([]);
   // Edit patient dialog state
   const [openEditPatient, setOpenEditPatient] = useState(false);
   const [patientForm, setPatientForm] = useState<BenhNhan | null>(null);
@@ -294,7 +300,7 @@ export default function KeDon() {
   }, [dsChon]);
 
   const danhSachThuocDonDangKe = useMemo(() => {
-    return dsThuoc.filter((t) => searchByStartsWith(t.tenthuoc, timThuocDonDangKe));
+    return dsThuoc.filter((t) => !t.ngung_kinh_doanh && searchByStartsWith(t.tenthuoc, timThuocDonDangKe));
   }, [dsThuoc, timThuocDonDangKe]);
 
   const themThuoc = useCallback(
@@ -319,8 +325,8 @@ export default function KeDon() {
   }, []);
 
   const saoChepDon = useCallback(
-    (don: DonThuocCu) => {
-      if (!window.confirm('Bạn có chắc muốn sao chép đơn thuốc này?')) return;
+    async (don: DonThuocCu) => {
+      if (!await confirm('Bạn có chắc muốn sao chép đơn thuốc này?')) return;
       const chiTiet = dsChiTietDonCu[don.id] || [];
       setDsChon(chiTiet);
       setChandoan(don.chandoan);
@@ -338,8 +344,8 @@ export default function KeDon() {
   );
 
   // Sao chép đơn đang sửa dở (giữ nguyên những sửa đổi trong form)
-  const saoChepDonDangSua = useCallback(() => {
-    if (!window.confirm('Bạn có chắc muốn sao chép đơn đang sửa thành một đơn mới?')) return;
+  const saoChepDonDangSua = useCallback(async () => {
+    if (!await confirm('Bạn có chắc muốn sao chép đơn đang sửa thành một đơn mới?')) return;
     // Reset trạng thái sửa
     setEditDonThuocId(null);
     setSotienDaThanhToan(0);
@@ -391,7 +397,7 @@ export default function KeDon() {
 
   const xoaDon = useCallback(
     async (id: number) => {
-      if (!window.confirm('Bạn có chắc muốn xóa đơn thuốc này?')) return;
+      if (!await confirm('Bạn có chắc muốn xóa đơn thuốc này?')) return;
       try {
         const res = await axios.delete(`/api/don-thuoc?id=${id}`);
         if (res.status === 200) {
@@ -469,7 +475,7 @@ export default function KeDon() {
   }, [editDienTien]);
 
   const xoaDienTien = useCallback(async (id: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa diễn tiến này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa diễn tiến này?')) return;
     try {
       const res = await axios.delete(`/api/dien-tien?id=${id}`);
       setDsDienTien((prev) => prev.filter((d) => d.id !== id));
@@ -495,7 +501,7 @@ export default function KeDon() {
       setSotienDaThanhToan(paidClamped);
       setSotienDaThanhToanInput((paidClamped / 1000).toString());
     }
-    if (!window.confirm(`Bạn có chắc muốn ${editDonThuocId ? 'cập nhật' : 'lưu'} đơn thuốc này?`)) return;
+    if (!await confirm(`Bạn có chắc muốn ${editDonThuocId ? 'cập nhật' : 'lưu'} đơn thuốc này?`)) return;
 
     try {
       const payload = {
@@ -618,7 +624,7 @@ export default function KeDon() {
       }));
       
       // Thêm vào đơn đang kê (hoặc thay thế)
-      const shouldReplace = dsChon.length === 0 || confirm('Bạn có muốn thay thế đơn thuốc hiện tại không?');
+      const shouldReplace = dsChon.length === 0 || await confirm('Bạn có muốn thay thế đơn thuốc hiện tại không?');
       if (shouldReplace) {
         setDsChon(thuocsMoi);
       } else {
@@ -680,7 +686,6 @@ export default function KeDon() {
   if (!benhnhanid) {
     return (
       <div className="p-4">
-        <Toaster position="top-right" />
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-red-500">Vui lòng chọn một bệnh nhân để kê đơn.</p>
@@ -730,14 +735,13 @@ export default function KeDon() {
     <ProtectedRoute>
   {/* Mobile: Stack layout, Desktop: Keep current grid (md and up) */}
   <div className="flex flex-col md:block">
-        <Toaster position="top-right" />
 
         {/* Mobile layout - Clinical blue theme */}
-  <div className="block md:hidden p-2 space-y-2">
+  <div className="block md:hidden p-2 space-y-2 bg-[#f5f6f8] min-h-screen">
 
           {/* Patient Mini Card - Mobile */}
           {benhNhan ? (
-            <div className="bg-white rounded-xl shadow-clinical p-3 flex items-center gap-3">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <h1 className="font-extrabold text-lg text-gray-800 tracking-tight truncate">{benhNhan.ten}</h1>
                 <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
@@ -765,7 +769,7 @@ export default function KeDon() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow-clinical p-3">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
               <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
             </div>
           )}
@@ -780,7 +784,7 @@ export default function KeDon() {
                   value={chandoan}
                   onChange={(e) => handleChandoanChange(e.target.value)}
                   onFocus={(e) => { e.target.select(); chandoanSuggestions.length > 0 && setShowChandoanSuggestions(true); }}
-                  className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+                  className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                 />
                 {showChandoanSuggestions && chandoanSuggestions.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto">
@@ -805,7 +809,7 @@ export default function KeDon() {
                 type="datetime-local"
                 value={ngayKham}
                 onChange={(e) => setNgayKham(e.target.value)}
-                className="bg-white border border-gray-200 rounded-2xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+                className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                 style={{ colorScheme: 'light' }}
               />
             </div>
@@ -820,7 +824,7 @@ export default function KeDon() {
                     setHighlightedIndex(-1);
                   }}
                   onKeyDown={handleKeyDown}
-                  className="bg-white border border-gray-200 rounded-2xl px-4 py-3 text-base focus:ring-2 focus:ring-blue-200 focus:border-blue-300"
+                  className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                 />
                 {timThuocDonDangKe && (
                   <ul className="absolute top-full left-0 right-0 mt-1 text-sm max-h-48 overflow-y-auto bg-white border rounded-xl shadow-lg z-50">
@@ -852,9 +856,9 @@ export default function KeDon() {
           </div>
 
           {/* Drug Prescription Card - Mobile */}
-          <div className="bg-white rounded-xl shadow-clinical flex flex-col">
-            <div className="p-3 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="font-bold text-blue-800 text-sm tracking-tight">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+            <div className="p-3 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="font-bold text-gray-900 text-sm tracking-tight">
                 📝 Đơn thuốc {editDonThuocId ? <span className="text-orange-500 text-xs font-medium ml-1">(Đang sửa)</span> : ''}
               </h3>
               <Dialog open={showMauDialog} onOpenChange={setShowMauDialog}>
@@ -909,7 +913,7 @@ export default function KeDon() {
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 px-1">Danh sách đã chọn ({dsChon.length})</p>
                   <div className="space-y-2">
                     {dsChon.map((item, idx) => (
-                      <div key={item.thuoc.id} className={`bg-white rounded-xl border p-3 flex items-center gap-3 ${item.thuoc.donvitinh.toLowerCase().includes('lần') ? 'border-amber-200 bg-amber-50/40' : 'border-gray-100'}`}>
+                      <div key={item.thuoc.id} className={`bg-white rounded-xl border p-3 flex items-center gap-3 ${item.thuoc.donvitinh.toLowerCase().includes('lần') ? 'border-amber-200' : 'border-gray-200'}`}>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <p className="font-bold text-gray-900 text-[15px] leading-tight">{item.thuoc.tenthuoc}</p>
@@ -925,7 +929,7 @@ export default function KeDon() {
                           </div>
                           <div className="mt-0.5">
                             <Input
-                              className="bg-blue-50 border-none focus:ring-0 px-2 py-1 rounded-lg h-auto text-sm text-gray-500 w-full placeholder:text-gray-400"
+                              className="bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 px-2 py-1 rounded-lg h-auto text-sm text-gray-900 w-full transition-shadow"
                               placeholder="Nhập cách dùng..."
                               onFocus={(e) => e.target.select()}
                               value={item.cachdung}
@@ -945,7 +949,7 @@ export default function KeDon() {
                             <div className="flex items-baseline gap-1">
                               <Input
                                 type="number"
-                                className="bg-blue-50 border-none focus:ring-0 p-0 h-auto w-10 text-right text-blue-600 font-bold text-lg rounded with-spinner"
+                                className="bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-0 h-auto w-10 text-right text-blue-600 font-bold text-lg rounded with-spinner"
                                 onFocus={(e) => e.target.select()}
                                 min={1}
                                 step={1}
@@ -998,43 +1002,43 @@ export default function KeDon() {
           </div>
 
           {/* Payment & Actions - Mobile */}
-          <div className="bg-white rounded-xl shadow-clinical p-3 space-y-3">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 space-y-3">
             {/* Payment summary */}
             <div className="space-y-1.5">
               {tongTienThuoc > 0 && (
-                <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
+                <div className="flex justify-between items-center pb-1.5 border-b border-gray-200">
                   <span className="text-xs text-gray-500 font-medium">Tiền thuốc</span>
                   <span className="text-sm font-bold text-gray-800">{tongTienThuoc.toLocaleString()}đ</span>
                 </div>
               )}
               {tongTienThuThuat > 0 && (
-                <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
+                <div className="flex justify-between items-center pb-1.5 border-b border-gray-200">
                   <span className="text-xs text-amber-600 font-medium">Tiền thủ thuật</span>
                   <span className="text-sm font-bold text-amber-700">{tongTienThuThuat.toLocaleString()}đ</span>
                 </div>
               )}
               {ghiNo && (
                 <>
-                  <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
+                  <div className="flex justify-between items-center pb-1.5 border-b border-gray-200">
                     <span className="text-xs text-gray-500 font-medium">Đã thanh toán</span>
-                    <span className="text-sm font-bold text-gray-800">{sotienDaThanhToan.toLocaleString()}đ</span>
+                    <span className="text-sm font-bold text-green-600">{sotienDaThanhToan.toLocaleString()}đ</span>
                   </div>
-                  <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
+                  <div className="flex justify-between items-center pb-1.5 border-b border-gray-200">
                     <span className="text-xs text-gray-500 font-medium">Còn nợ</span>
-                    <span className="text-sm font-bold text-red-500">{sotienConNo.toLocaleString()}đ</span>
+                    <span className="text-sm font-bold text-red-600">{sotienConNo.toLocaleString()}đ</span>
                   </div>
                 </>
               )}
-              <div className="pt-1 flex justify-between items-center">
-                <span className="font-extrabold text-blue-800 tracking-tight">TỔNG CỘNG</span>
-                <span className="font-extrabold text-xl text-blue-700">{tongTien.toLocaleString()}đ</span>
+              <div className="pt-2 flex justify-between items-center">
+                <span className="font-extrabold text-gray-900 tracking-tight">TỔNG CỘNG</span>
+                <span className="font-extrabold text-2xl text-blue-600">{tongTien.toLocaleString()}đ</span>
               </div>
             </div>
 
             {/* Tiền khách đưa */}
             <div className="space-y-1 px-1">
-              <label className="text-xs font-bold text-gray-500 uppercase">Khách đưa</label>
-              <div className="flex items-center bg-gray-100 rounded-xl px-3 py-2.5">
+              <label className="text-xs font-medium text-gray-700 uppercase">Khách đưa</label>
+              <div className="flex items-center bg-white border border-gray-300 rounded-xl px-3 py-2.5">
                 <input
                   type="number"
                   value={tienKhachDuaInput}
@@ -1087,8 +1091,8 @@ export default function KeDon() {
             </div>
             {ghiNo && (
               <div className="space-y-1 px-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Đã thanh toán</label>
-                <div className="flex items-center bg-gray-100 rounded-xl px-3 py-2.5">
+                <label className="text-xs font-medium text-gray-700 uppercase">Đã thanh toán</label>
+                <div className="flex items-center bg-white border border-gray-300 rounded-xl px-3 py-2.5">
                   <input
                     type="number"
                     value={sotienDaThanhToanInput}
@@ -1175,9 +1179,9 @@ export default function KeDon() {
           </div>
 
           {/* Diễn tiến bệnh - Mobile */}
-          <div className="bg-white rounded-xl shadow-clinical">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="px-3 pt-3 pb-1 flex justify-between items-center">
-              <h2 className="font-bold text-blue-800 text-sm tracking-tight">Diễn tiến bệnh</h2>
+              <h2 className="font-bold text-gray-900 text-sm tracking-tight">Diễn tiến bệnh</h2>
               <Dialog open={openDialog} onOpenChange={setOpenDialog}>
                 <DialogTrigger asChild>
                   <button className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 transition-colors">
@@ -1220,7 +1224,7 @@ export default function KeDon() {
                 <p className="text-xs text-gray-400 px-1">Chưa có diễn tiến nào.</p>
               ) : (
                 dsDienTien.map((d) => (
-                  <div key={d.id} className="bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100">
+                  <div key={d.id} className="bg-white px-2 py-1.5 rounded-lg border border-gray-200">
                     <div className="flex justify-between items-start">
                       <div className="flex-1 min-w-0">
                         <p className="text-[11px] font-bold text-gray-500">{format(new Date(d.ngay), 'dd/MM/yyyy')}</p>
@@ -1251,9 +1255,9 @@ export default function KeDon() {
           </div>
 
           {/* Quá trình điều trị - Mobile */}
-          <div className="bg-white rounded-xl shadow-clinical">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="px-3 pt-3 pb-1">
-              <h2 className="font-bold text-blue-800 text-sm tracking-tight">Quá trình điều trị</h2>
+              <h2 className="font-bold text-gray-900 text-sm tracking-tight">Quá trình điều trị</h2>
             </div>
             <div className="px-2 pb-2 space-y-2 max-h-64 overflow-y-auto">
               {dsDonCu.length === 0 ? (
@@ -1262,7 +1266,7 @@ export default function KeDon() {
                 dsDonCu.map((don) => (
                   <div
                     key={don.id}
-                    className={`px-2 py-1.5 rounded-lg cursor-pointer transition-colors border shadow-sm ${don.id === highlightId ? 'bg-yellow-50 border-yellow-300' : don.id === editDonThuocId ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100 hover:border-gray-200'}`}
+                    className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
                     onClick={() => suaDon(don)}
                   >
                     <div className="flex items-baseline justify-between gap-1">
@@ -1294,10 +1298,10 @@ export default function KeDon() {
   <div className="hidden md:flex h-[calc(100vh-76px)] overflow-hidden">
 
     {/* ═══ LEFT SIDEBAR: Quá trình điều trị + Diễn tiến ═══ */}
-    <aside className="w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-r border-gray-100 bg-blue-50/30 flex flex-col overflow-hidden">
+    <aside className="w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] flex flex-col overflow-hidden">
       {/* Treatment History */}
-      <div className="px-3 pt-3 pb-1">
-        <h2 className="font-bold text-blue-800 text-sm tracking-tight">Quá trình điều trị</h2>
+      <div className="px-3 pt-3 pb-2">
+        <h2 className="font-bold text-gray-900 text-sm tracking-tight">Quá trình điều trị</h2>
       </div>
       <div className="flex-1 overflow-y-auto clinical-scrollbar px-1 pb-2">
         {dsDonCu.length === 0 && (
@@ -1307,7 +1311,7 @@ export default function KeDon() {
           {dsDonCu.map((don, idx) => (
             <div
               key={don.id}
-              className={`px-1.5 py-1 rounded-lg cursor-pointer transition-colors border shadow-sm ${don.id === highlightId ? 'bg-yellow-50 border-yellow-300' : don.id === editDonThuocId ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100 hover:border-gray-200'}`}
+              className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
               onClick={() => suaDon(don)}
             >
               <div className="flex items-baseline justify-between gap-1">
@@ -1322,8 +1326,8 @@ export default function KeDon() {
                     hour12: false
                   })}
                 </p>
-                <p className="text-xs font-bold text-blue-800 truncate flex-1">{don.chandoan || '—'}</p>
-                <p className="text-[11px] font-semibold text-gray-700 whitespace-nowrap ml-1">{(don.tongtien / 1000).toFixed(0)}</p>
+                <p className="text-xs font-bold text-gray-900 truncate flex-1">{don.chandoan || '—'}</p>
+                <p className="text-[11px] font-bold text-blue-600 whitespace-nowrap ml-1">{(don.tongtien / 1000).toFixed(0)}k</p>
               </div>
               <p className="text-[11px] text-gray-500 leading-tight">
                 {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
@@ -1338,7 +1342,7 @@ export default function KeDon() {
 
       {/* Diễn tiến bệnh */}
       <div className="px-3 pt-2 flex justify-between items-center">
-        <h2 className="font-bold text-blue-800 text-sm tracking-tight">Diễn tiến bệnh</h2>
+        <h2 className="font-bold text-gray-900 text-sm tracking-tight">Diễn tiến bệnh</h2>
         <Dialog open={openDialog} onOpenChange={setOpenDialog}>
           <DialogTrigger asChild>
             <button className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 transition-colors">
@@ -1381,7 +1385,7 @@ export default function KeDon() {
           <p className="text-xs text-gray-400">Chưa có diễn tiến nào.</p>
         )}
         {dsDienTien.map((d) => (
-          <div key={d.id} className="bg-white px-1.5 py-1 rounded-lg border border-gray-100 hover:border-gray-200 shadow-sm group transition-colors">
+          <div key={d.id} className="bg-white px-2.5 py-2 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md shadow-sm group transition-all">
             <div className="flex justify-between items-start">
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-bold text-gray-500 uppercase">{format(new Date(d.ngay), 'dd/MM/yyyy')}</p>
@@ -1411,16 +1415,16 @@ export default function KeDon() {
     </aside>
 
     {/* ═══ MIDDLE: Prescription Core ═══ */}
-    <section className="flex-1 overflow-y-auto clinical-scrollbar p-4 flex flex-col gap-3 bg-gray-50/50">
+    <section className="flex-1 overflow-y-auto clinical-scrollbar p-4 flex flex-col gap-3 bg-[#f5f6f8]">
       {/* Patient Mini Card */}
       {benhNhan ? (
-        <div className="bg-white p-3 rounded-xl shadow-clinical flex items-center justify-between">
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-xl">
               👤
             </div>
             <div>
-              <h1 className="font-extrabold text-base text-blue-800 tracking-tight">{benhNhan.ten}</h1>
+              <h1 className="font-extrabold text-base text-blue-700 tracking-tight">{benhNhan.ten}</h1>
               <div className="flex gap-3 mt-0.5 flex-wrap">
                 <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">ID: {benhNhan.id}</span>
                 {benhNhan.tuoi !== undefined && (
@@ -1444,7 +1448,7 @@ export default function KeDon() {
           </div>
         </div>
       ) : (
-        <div className="bg-white p-3 rounded-xl shadow-clinical">
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200">
           <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
         </div>
       )}
@@ -1452,7 +1456,7 @@ export default function KeDon() {
       {/* Diagnosis & Date Row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2 space-y-1">
-          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Chẩn đoán</label>
+          <label className="text-xs font-medium text-gray-700 uppercase ml-1">Chẩn đoán</label>
           <div className="relative">
             <Input
               ref={chandoanDesktopRef}
@@ -1477,7 +1481,7 @@ export default function KeDon() {
                   selectChandoanSuggestion(chandoanSuggestions[selectedSuggestionIndex]);
                 }
               }}
-              className="bg-blue-50 border-none rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-blue-200"
+              className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
             />
             {showChandoanSuggestions && chandoanSuggestions.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto">
@@ -1497,24 +1501,21 @@ export default function KeDon() {
           </div>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Ngày giờ khám</label>
+          <label className="text-xs font-medium text-gray-700 uppercase ml-1">Ngày giờ khám</label>
           <Input
             type="datetime-local"
             value={ngayKham}
             onChange={(e) => setNgayKham(e.target.value)}
-            className="bg-gray-100 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-200"
+            className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
             style={{ colorScheme: 'light' }}
           />
         </div>
       </div>
 
       {/* Medicine Table Card */}
-      <div className="bg-white rounded-xl shadow-clinical flex-1 flex flex-col min-h-[300px]">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex-1 flex flex-col min-h-[300px]">
         {/* Table Header */}
-        <div className="p-3 border-b border-gray-100 flex justify-between items-center">
-          <h3 className="font-bold text-blue-800 text-sm tracking-tight">
-            📝 Đơn thuốc đang kê {editDonThuocId ? <span className="text-orange-500 text-sm font-medium ml-1">(Đang sửa)</span> : ''}
-          </h3>
+        <div className="p-3 border-b border-gray-200 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <div className="relative w-72">
               <Input
@@ -1526,7 +1527,7 @@ export default function KeDon() {
                   setHighlightedIndex(-1);
                 }}
                 onKeyDown={handleKeyDown}
-                className="bg-gray-50 border-none rounded-full pl-4 pr-4 py-2 text-xs focus:ring-2 focus:ring-blue-200"
+                className="bg-white border border-gray-300 rounded-lg pl-4 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
               />
               {timThuocDonDangKe && (
                 <ul className="absolute top-full left-0 right-0 mt-1 text-xs max-h-48 overflow-y-auto bg-white border rounded-xl shadow-lg z-50">
@@ -1598,6 +1599,9 @@ export default function KeDon() {
               </DialogContent>
             </Dialog>
           </div>
+          <h3 className="font-bold text-gray-900 text-sm tracking-tight whitespace-nowrap">
+            📝 Đơn thuốc đang kê {editDonThuocId ? <span className="text-orange-500 text-sm font-medium ml-1">(Đang sửa)</span> : ''}
+          </h3>
         </div>
 
         {/* Drug Table */}
@@ -1607,30 +1611,30 @@ export default function KeDon() {
               <p className="text-sm text-gray-400">Tìm và thêm thuốc vào đơn từ ô tìm kiếm phía trên</p>
             </div>
           ) : (
-            <table className="w-full text-left">
+            <table className="w-full text-left border-separate border-spacing-0">
               <thead>
-                <tr className="bg-gray-50/80">
-                  <th className="px-2 py-2 text-xs font-bold text-gray-500 uppercase w-8">TT</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase">Tên thuốc</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase w-14">SL</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase w-14">Đơn vị</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase">Cách dùng</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase">Hoạt chất</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase text-right">Đơn giá</th>
-                  <th className="px-0 py-0 text-xs font-bold text-gray-500 uppercase text-right">Thành tiền</th>
-                  <th className="px-0 py-0 w-8"></th>
+                <tr className="bg-gray-100">
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase w-8 border-b border-gray-300">TT</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase border-b border-gray-300">Tên thuốc</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase w-16 border-b border-gray-300">SL</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase w-16 border-b border-gray-300">Đơn vị</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase border-b border-gray-300">Cách dùng</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase border-b border-gray-300">Hoạt chất</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase text-right border-b border-gray-300">Đơn giá</th>
+                  <th className="px-2 py-1.5 text-xs font-semibold text-gray-900 uppercase text-right border-b border-gray-300">Thành tiền</th>
+                  <th className="px-2 py-1.5 w-8 border-b border-gray-300"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200/60">
+              <tbody>
                 {dsChon.map((item, idx) => (
                   <tr
                     key={item.thuoc.id}
-                    className={`hover:bg-gray-50/50 transition-colors group ${item.thuoc.donvitinh.toLowerCase().includes('lần') ? 'bg-amber-100/80' : ''}`}
+                    className={`hover:bg-gray-50 transition-colors group ${focusedRowIdx === idx ? 'bg-blue-50/50' : item.thuoc.donvitinh.toLowerCase().includes('lần') ? 'bg-amber-100' : ''}`}
                   >
-                    <td className="px-2 py-1.5 text-xs text-gray-500 text-center">{idx + 1}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 text-sm text-gray-900 text-center border-b border-gray-200">{idx + 1}</td>
+                    <td className="px-2 py-1.5 border-b border-gray-200">
                       <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-semibold text-blue-800">{item.thuoc.tenthuoc}</p>
+                        <p className="text-sm font-semibold text-gray-900">{item.thuoc.tenthuoc}</p>
                         {!item.thuoc.la_thu_thuat && thuocStockMap[item.thuoc.id] && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
                             thuocStockMap[item.thuoc.id].trang_thai === 'HET' ? 'bg-red-100 text-red-700'
@@ -1642,11 +1646,19 @@ export default function KeDon() {
                         )}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 border-b border-gray-200">
                       <Input
                         type="number"
-                        className="w-14 bg-blue-50 border-none rounded-md px-2 py-0.5 h-7 text-xs text-center with-spinner"
-                        onFocus={(e) => e.target.select()}
+                        className="w-16 bg-white border border-gray-300 rounded-md px-2 py-0.5 h-7 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 with-spinner"
+                        ref={(el) => { soluongRefs.current[idx] = el; }}
+                        onFocus={(e) => { e.target.select(); setFocusedRowIdx(idx); }}
+                        onBlurCapture={() => setFocusedRowIdx(-1)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            cachdungRefs.current[idx]?.focus();
+                          }
+                        }}
                         min={1}
                         step={1}
                         value={item.soluongInput !== undefined ? item.soluongInput : String(item.soluong)}
@@ -1680,11 +1692,23 @@ export default function KeDon() {
                         }}
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-xs font-medium text-gray-700">{item.thuoc.donvitinh}</td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2 py-1.5 text-sm font-medium text-gray-900 border-b border-gray-200">{item.thuoc.donvitinh}</td>
+                    <td className="px-2 py-1.5 border-b border-gray-200">
                       <Input
-                        className="bg-blue-50 border-none focus:ring-0 px-2 py-0.5 h-7 rounded-md text-xs italic text-gray-600 w-full"
-                        onFocus={(e) => e.target.select()}
+                        className="bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 px-2 py-0.5 h-7 rounded-md text-sm text-gray-900 w-full transition-shadow"
+                        ref={(el) => { cachdungRefs.current[idx] = el; }}
+                        onFocus={(e) => { e.target.select(); setFocusedRowIdx(idx); }}
+                        onBlurCapture={() => setFocusedRowIdx(-1)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (idx < dsChon.length - 1) {
+                              soluongRefs.current[idx + 1]?.focus();
+                            } else {
+                              searchDesktopRef.current?.focus();
+                            }
+                          }
+                        }}
                         value={item.cachdung}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -1696,10 +1720,10 @@ export default function KeDon() {
                         }}
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-xs text-gray-500">{item.thuoc.hoatchat || '-'}</td>
-                    <td className="px-2 py-1.5 text-xs text-right text-gray-600">{item.thuoc.giaban.toLocaleString()}đ</td>
-                    <td className="px-2 py-1.5 text-xs text-right text-gray-700">{(item.soluong * item.thuoc.giaban).toLocaleString()}đ</td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-2 py-1.5 text-sm text-gray-500 border-b border-gray-200">{item.thuoc.hoatchat || '-'}</td>
+                    <td className="px-2 py-1.5 text-sm text-right text-gray-900 border-b border-gray-200">{item.thuoc.giaban.toLocaleString()}đ</td>
+                    <td className="px-2 py-1.5 text-sm text-right font-medium text-gray-900 border-b border-gray-200">{(item.soluong * item.thuoc.giaban).toLocaleString()}đ</td>
+                    <td className="px-2 py-1.5 text-right border-b border-gray-200">
                       <button
                         className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 hover:scale-110 transition-all"
                         onClick={() => xoaThuoc(item.thuoc.id)}
@@ -1717,45 +1741,45 @@ export default function KeDon() {
     </section>
 
     {/* ═══ RIGHT SIDEBAR: Thanh toán & Hành động ═══ */}
-    <aside className="w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-l border-gray-100 bg-gray-50/50 p-3 flex flex-col overflow-y-auto clinical-scrollbar">
-      <h2 className="font-bold text-blue-800 text-xs tracking-tight mb-2">Thanh toán</h2>
+    <aside className="w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-l border-gray-200 bg-[#f5f6f8] p-3 flex flex-col overflow-y-auto clinical-scrollbar">
+      <h2 className="font-bold text-gray-900 text-sm tracking-tight mb-2">Thanh toán</h2>
 
       {/* Payment Summary Card */}
-      <div className="bg-white rounded-xl p-2.5 shadow-clinical space-y-1.5 mb-2">
+      <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-200 space-y-2 mb-3">
         {tongTienThuoc > 0 && (
-          <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
-            <span className="text-[11px] text-gray-500 font-medium whitespace-nowrap">Tiền thuốc</span>
-            <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{tongTienThuoc.toLocaleString()}đ</span>
+          <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+            <span className="text-xs text-gray-500 font-medium whitespace-nowrap">Tiền thuốc</span>
+            <span className="text-sm font-bold text-gray-900 whitespace-nowrap">{tongTienThuoc.toLocaleString()}đ</span>
           </div>
         )}
         {tongTienThuThuat > 0 && (
-          <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
-            <span className="text-[11px] text-amber-600 font-medium whitespace-nowrap">Thủ thuật</span>
-            <span className="text-xs font-bold text-amber-700 whitespace-nowrap">{tongTienThuThuat.toLocaleString()}đ</span>
+          <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+            <span className="text-xs text-amber-600 font-medium whitespace-nowrap">Thủ thuật</span>
+            <span className="text-sm font-bold text-amber-700 whitespace-nowrap">{tongTienThuThuat.toLocaleString()}đ</span>
           </div>
         )}
         {ghiNo && (
           <>
-            <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
-              <span className="text-[11px] text-gray-500 font-medium whitespace-nowrap">Đã thanh toán</span>
-              <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{sotienDaThanhToan.toLocaleString()}đ</span>
+            <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+              <span className="text-xs text-gray-500 font-medium whitespace-nowrap">Đã thanh toán</span>
+              <span className="text-sm font-bold text-green-600 whitespace-nowrap">{sotienDaThanhToan.toLocaleString()}đ</span>
             </div>
-            <div className="flex justify-between items-center pb-1.5 border-b border-gray-100">
-              <span className="text-[11px] text-gray-500 font-medium whitespace-nowrap">Còn nợ</span>
-              <span className="text-xs font-bold text-red-500 whitespace-nowrap">{sotienConNo.toLocaleString()}đ</span>
+            <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+              <span className="text-xs text-gray-500 font-medium whitespace-nowrap">Còn nợ</span>
+              <span className="text-sm font-bold text-red-600 whitespace-nowrap">{sotienConNo.toLocaleString()}đ</span>
             </div>
           </>
         )}
-        <div className="pt-1.5 flex justify-between items-center">
-          <span className="font-extrabold text-xs text-blue-800 tracking-tight whitespace-nowrap">TỔNG CỘNG</span>
-          <span className="font-extrabold text-base text-blue-700 whitespace-nowrap">{tongTien.toLocaleString()}đ</span>
+        <div className="pt-2 flex justify-between items-center">
+          <span className="font-bold text-xs text-gray-900 tracking-tight whitespace-nowrap">TỔNG CỘNG</span>
+          <span className="font-extrabold text-base text-blue-600 whitespace-nowrap">{tongTien.toLocaleString()}đ</span>
         </div>
       </div>
 
       {/* Tiền khách đưa */}
-      <div className="space-y-1.5 mb-2 px-0.5">
-        <label className="text-[10px] font-bold text-gray-500 uppercase">Khách đưa</label>
-        <div className="flex items-center bg-gray-100 rounded-xl px-3 py-2">
+      <div className="space-y-1.5 mb-3 px-0.5">
+        <label className="text-xs font-medium text-gray-700 uppercase">Khách đưa</label>
+        <div className="flex items-center bg-white border border-gray-300 rounded-lg px-3 py-2">
           <input
             type="number"
             value={tienKhachDuaInput}
@@ -1794,7 +1818,7 @@ export default function KeDon() {
       </div>
 
       {/* Debt section */}
-      <div className="space-y-1.5 mb-2">
+      <div className="space-y-1.5 mb-3">
         <div className="flex items-center gap-2 px-0.5">
           <input
             type="checkbox"
@@ -1809,8 +1833,8 @@ export default function KeDon() {
         </div>
         {ghiNo && (
           <div className="space-y-1.5 px-0.5">
-            <label className="text-[10px] font-bold text-gray-500 uppercase">Đã TT</label>
-            <div className="flex items-center bg-gray-100 rounded-xl px-3 py-2">
+            <label className="text-xs font-medium text-gray-700 uppercase">Đã TT</label>
+            <div className="flex items-center bg-white border border-gray-300 rounded-lg px-3 py-2">
               <input
                 type="number"
                 value={sotienDaThanhToanInput}
@@ -1837,10 +1861,10 @@ export default function KeDon() {
       </div>
 
       {/* Action buttons */}
-      <div className="mt-auto space-y-1.5">
+      <div className="mt-auto space-y-2">
         {!editDonThuocId && (
           <button
-            className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-xs py-2.5 rounded-xl shadow-clinical flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-extrabold text-sm py-3 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
             onClick={luuDonThuoc}
             disabled={!chandoan || dsChon.length === 0}
           >
@@ -1849,7 +1873,7 @@ export default function KeDon() {
         )}
         {editDonThuocId && (
           <button
-            className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold text-xs py-2.5 rounded-xl shadow-clinical flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-extrabold text-sm py-3 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
             onClick={luuDonThuoc}
             disabled={!chandoan || dsChon.length === 0}
           >
@@ -1857,16 +1881,16 @@ export default function KeDon() {
           </button>
         )}
 
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           <button
-            className="bg-white border border-gray-200 text-gray-700 font-bold text-[11px] py-2 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+            className="bg-white border border-gray-200 text-gray-700 font-bold text-xs py-2.5 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
             onClick={resetForm}
           >
             <FilePlus className="w-3.5 h-3.5" /> Mới
           </button>
           {editDonThuocId ? (
             <button
-              className="bg-white border border-gray-200 text-gray-700 font-bold text-[11px] py-2 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+              className="bg-white border border-gray-200 text-gray-700 font-bold text-xs py-2.5 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
               onClick={() => saoChepDonDangSua()}
             >
               📋 Chép
@@ -1875,7 +1899,7 @@ export default function KeDon() {
             <Dialog open={showMauDialog} onOpenChange={setShowMauDialog}>
               <DialogTrigger asChild>
                 <button
-                  className="bg-white border border-gray-200 text-gray-700 font-bold text-[11px] py-2 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+                  className="bg-white border border-gray-200 text-gray-700 font-bold text-xs py-2.5 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
                   onClick={() => {
                     setShowMauDialog(true);
                     fetchDonThuocMau();
@@ -1890,7 +1914,7 @@ export default function KeDon() {
 
         {editDonThuocId && (
           <button
-            className="w-full bg-white border border-red-200 text-red-500 font-bold text-[11px] py-2 rounded-xl hover:bg-red-50 transition-colors"
+            className="w-full bg-white border border-red-200 text-red-500 font-bold text-xs py-2.5 rounded-xl hover:bg-red-50 transition-colors"
             onClick={() => xoaDon(editDonThuocId)}
           >
             Xóa đơn

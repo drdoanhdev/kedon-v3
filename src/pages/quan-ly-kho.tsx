@@ -6,7 +6,8 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Plus, AlertTriangle, Package, Eye, Frame, ArrowDownToLine, ArrowUpFromLine, Ban, Truck, RefreshCw, Pencil, Upload, Download, ClipboardCopy } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
@@ -77,6 +78,7 @@ interface AlertSummary {
 // COMPONENT
 // ============================================
 export default function QuanLyKho() {
+  const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'import'>('overview');
 
   // Data states
@@ -249,7 +251,7 @@ export default function QuanLyKho() {
 
   const handleDeleteStock = async () => {
     if (!selectedStock) return;
-    if (!confirm(`Xác nhận xóa tổ hợp ${selectedStock.HangTrong?.ten_hang} (${selectedStock.sph}/${selectedStock.cyl}) khỏi kho?`)) return;
+    if (!await confirm(`Xác nhận xóa tổ hợp ${selectedStock.HangTrong?.ten_hang} (${selectedStock.sph}/${selectedStock.cyl}) khỏi kho?`)) return;
     try {
       await axios.delete(`/api/inventory/lens-stock?id=${selectedStock.id}`);
       toast.success('Đã xóa dòng kho');
@@ -482,7 +484,6 @@ export default function QuanLyKho() {
   // ============================================
   return (
     <ProtectedRoute>
-      <Toaster position="top-right" />
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
           <div className="flex items-center justify-between mb-4 sm:mb-6">

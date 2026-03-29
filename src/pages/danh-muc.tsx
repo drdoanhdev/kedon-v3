@@ -8,7 +8,8 @@ import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
 
 // Interfaces
@@ -79,6 +80,7 @@ interface NhaCungCap {
 }
 
 function DanhMucPage() {
+  const { confirm } = useConfirm();
   // Define tab options
   const tabs = [
     { value: 'thuoc', label: 'Thuốc', icon: Pill },
@@ -335,7 +337,7 @@ function DanhMucPage() {
   };
 
   const deleteThuoc = async (id: number) => {
-    if (!confirm('Bạn có chắc muốn xoá thuốc này?')) return;
+    if (!await confirm('Bạn có chắc muốn xoá thuốc này?')) return;
     try {
       await axios.delete(`/api/thuoc?id=${id}`);
       toast.success('Đã xoá thuốc');
@@ -405,7 +407,7 @@ function DanhMucPage() {
   };
 
   const handleDeleteDonMau = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa đơn thuốc mẫu này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa đơn thuốc mẫu này?')) return;
 
     try {
       const response = await axios.delete(`/api/don-thuoc-mau?id=${id}`);
@@ -485,7 +487,7 @@ function DanhMucPage() {
   };
 
   const handleDeleteHangTrong = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa hãng tròng này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa hãng tròng này?')) return;
     try {
       // Ưu tiên gọi xoá với query param (API đã hỗ trợ). Nếu lỗi thử fallback body.
       try {
@@ -550,7 +552,7 @@ function DanhMucPage() {
   };
 
   const handleDeleteGongKinh = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa gọng kính này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa gọng kính này?')) return;
     try {
       await axios.delete('/api/gong-kinh', { data: { id } });
       toast.success('Xóa gọng kính thành công');
@@ -644,7 +646,7 @@ function DanhMucPage() {
   };
 
   const handleDeleteSoKinh = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa mẫu số kính này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa mẫu số kính này?')) return;
     try {
       await axios.delete(`/api/mau-kinh?id=${id}&type=sokinh`);
       toast.success('Xóa mẫu số kính thành công');
@@ -655,7 +657,7 @@ function DanhMucPage() {
   };
 
   const handleDeleteThiLuc = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa mẫu thị lực này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa mẫu thị lực này?')) return;
     try {
       await axios.delete(`/api/mau-kinh?id=${id}&type=thiluc`);
       toast.success('Xóa mẫu thị lực thành công');
@@ -710,7 +712,7 @@ function DanhMucPage() {
   };
 
   const handleDeleteNCC = async (id: number) => {
-    if (!confirm('Xóa nhà cung cấp này?')) return;
+    if (!await confirm('Xóa nhà cung cấp này?')) return;
     try {
       await axios.delete(`/api/nha-cung-cap?id=${id}`);
       toast.success('Đã xóa');
@@ -1359,7 +1361,6 @@ function DanhMucPage() {
       <ProtectedRoute>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="w-full max-w-md p-6">
-            <Toaster position="top-right" />
 
             <Card className="shadow-lg">
               <CardContent className="p-6 lg:p-8">
@@ -1438,7 +1439,6 @@ function DanhMucPage() {
   return (
     <ProtectedRoute>
       <div className="p-3 md:p-4 md:p-6">
-        <Toaster position="top-right" />
 
         {/* Custom Tabs Implementation */}
         <div className="space-y-6">

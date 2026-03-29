@@ -8,7 +8,8 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { Pencil, Trash2, Plus } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 
 interface HangTrong {
@@ -41,6 +42,7 @@ interface MauSoKinh {
 }
 
 export default function QuanLyKinh() {
+  const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<'hang-trong' | 'gong-kinh' | 'mau-du-lieu'>('hang-trong');
   
   // States cho hãng tròng
@@ -194,7 +196,7 @@ export default function QuanLyKinh() {
   };
 
   const deleteHangTrong = async (id: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa hãng tròng này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa hãng tròng này?')) return;
     
     try {
       try {
@@ -211,7 +213,7 @@ export default function QuanLyKinh() {
   };
 
   const deleteGongKinh = async (id: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa gọng kính này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa gọng kính này?')) return;
     
     try {
       await axios.delete('/api/gong-kinh', { data: { id } });
@@ -299,7 +301,7 @@ export default function QuanLyKinh() {
   };
 
   const deleteThiLuc = async (id: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa mẫu thị lực này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa mẫu thị lực này?')) return;
     
     try {
       await axios.delete('/api/mau-kinh', { data: { id, type: 'thiluc' } });
@@ -311,7 +313,7 @@ export default function QuanLyKinh() {
   };
 
   const deleteSoKinh = async (id: number) => {
-    if (!window.confirm('Bạn có chắc muốn xóa mẫu số kính này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa mẫu số kính này?')) return;
     
     try {
       await axios.delete('/api/mau-kinh', { data: { id, type: 'sokinh' } });
@@ -325,7 +327,6 @@ export default function QuanLyKinh() {
   return (
     <ProtectedRoute>
       <div className="container mx-auto p-4">
-        <Toaster />
         
         <h1 className="text-2xl font-bold mb-6">Quản lý danh mục kính</h1>
 

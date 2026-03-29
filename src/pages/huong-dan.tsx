@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 import { isOwnerRole } from '../lib/tenantRoles';
@@ -74,7 +74,6 @@ export default function HuongDan() {
   return (
     <ProtectedRoute>
       <div className="max-w-4xl mx-auto px-4 py-6">
-        <Toaster position="top-right" />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

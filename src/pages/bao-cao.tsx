@@ -6,7 +6,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Pagination, SimplePagination } from '../components/ui/pagination';
 import { BarChart } from '../components/ui/chart';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -178,7 +178,6 @@ export default function BaoCaoPage() {
       <ProtectedRoute>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="w-full max-w-md p-6">
-            <Toaster position="top-right" />
 
             <Card className="shadow-lg">
               <CardContent className="p-6 lg:p-8">
@@ -392,7 +391,6 @@ export default function BaoCaoPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         <div className="p-4 lg:p-6">
-          <Toaster position="top-right" />
 
           {/* Header with logout option */}
           <div className="flex justify-between items-center mb-4">

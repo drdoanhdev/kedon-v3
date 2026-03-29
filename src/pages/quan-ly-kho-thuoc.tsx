@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Package, AlertTriangle, RefreshCw, Plus, ArrowDownToLine, Trash2, Search, History } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import axios from 'axios';
 
 // ============================================
@@ -22,6 +22,7 @@ interface ThuocStock {
   tonkho: number | null;
   muc_ton_toi_thieu: number | null;
   trang_thai: string;
+  ngung_kinh_doanh?: boolean;
 }
 
 interface StockSummary {
@@ -71,6 +72,7 @@ export default function QuanLyKhoThuoc() {
   // Filter
   const [stockFilter, setStockFilter] = useState<string>('all');
   const [searchText, setSearchText] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
 
   // Dialog: Nhập kho
   const [showNhapDialog, setShowNhapDialog] = useState(false);
@@ -89,13 +91,14 @@ export default function QuanLyKhoThuoc() {
       const params: any = {};
       if (stockFilter !== 'all') params.filter = stockFilter;
       if (searchText) params.search = searchText;
+      if (showInactive) params.show_inactive = '1';
       const { data } = await axios.get('/api/inventory/thuoc-stock', { params });
       setThuocList(data.data || []);
       setSummary(data.summary || { total: 0, het: 0, sap_het: 0, du: 0 });
     } catch {
       toast.error('Lỗi tải dữ liệu kho thuốc');
     }
-  }, [stockFilter, searchText]);
+  }, [stockFilter, searchText, showInactive]);
 
   const fetchNhapHistory = useCallback(async () => {
     try {
@@ -116,7 +119,7 @@ export default function QuanLyKhoThuoc() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetchStock(); }, [stockFilter, searchText]);
+  useEffect(() => { fetchStock(); }, [stockFilter, searchText, showInactive]);
 
   // ============================================
   // ACTIONS
@@ -221,7 +224,6 @@ export default function QuanLyKhoThuoc() {
   // ============================================
   return (
     <ProtectedRoute>
-      <Toaster position="top-right" />
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-6 px-4">
           <div className="flex items-center justify-between mb-6">
@@ -391,6 +393,14 @@ export default function QuanLyKhoThuoc() {
                           {f.label}
                         </Button>
                       ))}
+                      <button
+                        onClick={() => setShowInactive(!showInactive)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 whitespace-nowrap border ${
+                          showInactive ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {showInactive ? 'Đang xem ngừng KD' : 'Xem ngừng KD'}
+                      </button>
                     </div>
                   </div>
 
@@ -419,10 +429,15 @@ export default function QuanLyKhoThuoc() {
                                 </td>
                               </tr>
                             ) : (
-                              thuocList.map(t => (
-                                <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50">
+                              thuocList.map(t => {
+                                const isInactive = !!t.ngung_kinh_doanh;
+                                return (
+                                <tr key={t.id} className={`border-b last:border-0 hover:bg-gray-50 ${isInactive ? 'opacity-50 bg-gray-50' : ''}`}>
                                   <td className="py-2 pr-4 text-gray-400">{t.mathuoc || '-'}</td>
-                                  <td className="py-2 pr-4 font-medium">{t.tenthuoc}</td>
+                                  <td className="py-2 pr-4 font-medium">
+                                    {t.tenthuoc}
+                                    {isInactive && <span className="ml-1.5 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Ngừng KD</span>}
+                                  </td>
                                   <td className="py-2 pr-4">{t.donvitinh || '-'}</td>
                                   <td className="py-2 pr-4 text-right">{formatMoney(t.gianhap)}</td>
                                   <td className="py-2 pr-4 text-right">{formatMoney(t.giaban)}</td>
@@ -434,16 +449,21 @@ export default function QuanLyKhoThuoc() {
                                   </td>
                                   <td className="py-2 text-right">
                                     <div className="flex justify-end gap-1">
+                                      {!isInactive && (
+                                      <>
                                       <Button size="sm" variant="outline" onClick={() => { setSelectedThuoc(t); setShowNhapDialog(true); }}>
                                         <ArrowDownToLine className="w-3 h-3 mr-1" /> Nhập
                                       </Button>
                                       <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" onClick={() => { setSelectedThuoc(t); setShowHuyDialog(true); }}>
                                         <Trash2 className="w-3 h-3 mr-1" /> Hủy
                                       </Button>
+                                      </>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
-                              ))
+                                );
+                              })
                             )}
                           </tbody>
                         </table>

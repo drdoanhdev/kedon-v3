@@ -6,7 +6,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { getAuthHeaders } from '../lib/fetchWithAuth';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 
 type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans';
@@ -111,26 +112,28 @@ function TenantsTab() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="px-4 py-3 text-left font-medium text-gray-600">Phòng khám</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600">Chủ sở hữu</th>
-              <th className="px-4 py-3 text-center font-medium text-gray-600">Thành viên</th>
-              <th className="px-4 py-3 text-center font-medium text-gray-600">Gói</th>
-              <th className="px-4 py-3 text-center font-medium text-gray-600">Trạng thái</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600">Ngày tạo</th>
-              <th className="px-4 py-3 text-left font-medium text-gray-600">Đăng nhập gần nhất</th>
-              <th className="px-4 py-3 text-center font-medium text-gray-600">Thao tác</th>
+              <th className="px-2 py-2 text-left font-medium text-gray-600 whitespace-nowrap">Phòng khám</th>
+              <th className="px-2 py-2 text-left font-medium text-gray-600 whitespace-nowrap">SĐT</th>
+              <th className="px-2 py-2 text-left font-medium text-gray-600 whitespace-nowrap">Chủ sở hữu</th>
+              <th className="px-2 py-2 text-center font-medium text-gray-600 whitespace-nowrap">TV</th>
+              <th className="px-2 py-2 text-center font-medium text-gray-600 whitespace-nowrap">Gói</th>
+              <th className="px-2 py-2 text-center font-medium text-gray-600 whitespace-nowrap">Trạng thái</th>
+              <th className="px-2 py-2 text-left font-medium text-gray-600 whitespace-nowrap">Ngày tạo</th>
+              <th className="px-2 py-2 text-left font-medium text-gray-600 whitespace-nowrap">Đăng nhập</th>
+              <th className="px-2 py-2 text-center font-medium text-gray-600 whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {tenants.map((t) => (
               <tr key={t.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
+                <td className="px-2 py-2 whitespace-nowrap">
                   <div className="font-medium text-gray-900">{t.name}</div>
                   <div className="text-xs text-gray-500">{t.code || t.id.slice(0, 8)}</div>
                 </td>
-                <td className="px-4 py-3 text-gray-600">{t.owner_email || '—'}</td>
-                <td className="px-4 py-3 text-center">{t.member_count}</td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{t.phone || '—'}</td>
+                <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{t.owner_email || '—'}</td>
+                <td className="px-2 py-2 text-center">{t.member_count}</td>
+                <td className="px-2 py-2 text-center whitespace-nowrap">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                     t.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
                     t.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
@@ -139,32 +142,32 @@ function TenantsTab() {
                     {t.plan === 'pro' ? 'Chuyên nghiệp' : t.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-2 py-2 text-center whitespace-nowrap">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                     t.status === 'active' ? 'bg-green-100 text-green-700' :
                     t.status === 'suspended' ? 'bg-red-100 text-red-700' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {t.status === 'active' ? 'Hoạt động' : t.status === 'suspended' ? 'Tạm ngưng' : 'Ngưng hoạt động'}
+                    {t.status === 'active' ? 'Hoạt động' : t.status === 'suspended' ? 'Tạm ngưng' : 'Ngưng HĐ'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-gray-500">
+                <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
                   {new Date(t.created_at).toLocaleDateString('vi-VN')}
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
+                <td className="px-2 py-2 text-gray-500 text-xs whitespace-nowrap">
                   {t.owner_last_sign_in
                     ? new Date(t.owner_last_sign_in).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
                     : '—'}
                 </td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-2 py-2 text-center whitespace-nowrap">
                   <select
                     value={t.status}
                     onChange={(e) => handleStatusChange(t.id, e.target.value)}
-                    className="text-xs border rounded px-2 py-1"
+                    className="text-xs border rounded px-1 py-1"
                   >
                     <option value="active">Hoạt động</option>
                     <option value="suspended">Tạm ngưng</option>
-                    <option value="inactive">Ngưng hoạt động</option>
+                    <option value="inactive">Ngưng HĐ</option>
                   </select>
                 </td>
               </tr>
@@ -181,6 +184,7 @@ function TenantsTab() {
 
 // ========== Quản lý thanh toán ==========
 function PaymentsTab() {
+  const { confirm } = useConfirm();
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending');
@@ -202,7 +206,7 @@ function PaymentsTab() {
 
   const handleAction = async (orderId: string, action: 'confirm' | 'cancel') => {
     const label = action === 'confirm' ? 'xác nhận thanh toán' : 'hủy đơn';
-    if (!confirm(`Bạn có chắc muốn ${label}?`)) return;
+    if (!await confirm(`Bạn có chắc muốn ${label}?`)) return;
 
     try {
       const headers = await getAuthHeaders();
@@ -802,7 +806,6 @@ export default function AdminPage() {
 
   return (
     <ProtectedRoute>
-      <Toaster position="top-right" />
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

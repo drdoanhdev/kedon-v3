@@ -13,7 +13,8 @@ import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 
@@ -51,6 +52,7 @@ interface TenantInfo {
 }
 
 export default function QuanLyPhongKham() {
+  const { confirm } = useConfirm();
   const { currentTenant, currentRole, user } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
@@ -192,7 +194,7 @@ export default function QuanLyPhongKham() {
   };
 
   const handleRemoveMember = async (membershipId: string, email: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa ${email} khỏi phòng khám?`)) return;
+    if (!await confirm(`Bạn có chắc chắn muốn xóa ${email} khỏi phòng khám?`)) return;
     try {
       const res = await fetchWithAuth(`/api/tenants/members?membershipId=${membershipId}`, {
         method: 'DELETE',
@@ -211,7 +213,6 @@ export default function QuanLyPhongKham() {
 
   return (
     <ProtectedRoute>
-      <Toaster position="top-right" />
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Quản lý Phòng khám</h1>

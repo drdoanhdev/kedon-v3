@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { supabase } from '../contexts/AuthContext'
-import toast, { Toaster } from 'react-hot-toast'
+import toast from 'react-hot-toast'
 import Link from 'next/link'
 
 export default function CaiDat() {
@@ -47,7 +47,6 @@ export default function CaiDat() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-        <Toaster position="top-right" />
         
         <header className="bg-white shadow">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

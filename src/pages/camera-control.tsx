@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '../components/ui/dialog';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import { 
   Camera, 
   Video, 
@@ -307,7 +307,6 @@ export default function CameraControl() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50 p-6">
-        <Toaster position="top-right" />
         
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">

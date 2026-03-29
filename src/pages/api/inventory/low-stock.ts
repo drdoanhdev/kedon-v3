@@ -66,9 +66,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (type !== 'kinh') {
     const { data: thuocAlerts } = await supabase
       .from('Thuoc')
-      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_toi_thieu')
+      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_toi_thieu, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
-      .or('la_thu_thuat.is.null,la_thu_thuat.eq.false');
+      .or('la_thu_thuat.is.null,la_thu_thuat.eq.false')
+      .or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
 
     (thuocAlerts || []).filter((t: any) =>
       (t.tonkho ?? 0) <= (t.muc_ton_toi_thieu ?? 10)

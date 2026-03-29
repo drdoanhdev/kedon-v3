@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../supabase';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 function Signup() {
   const [email, setEmail] = useState('');
@@ -16,7 +17,7 @@ function Signup() {
         password,
       });
       if (error) throw error;
-      alert('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận.');
+      toast.success('Đăng ký thành công! Vui lòng kiểm tra email để xác nhận.');
       navigate('/login');
     } catch (error) {
       setError(error.message);

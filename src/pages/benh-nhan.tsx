@@ -18,7 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Plus, Pencil, Trash2, Users, Check } from "lucide-react";
 import axios from "axios";
 import Link from "next/link";
-import toast, { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute'
 import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
 
@@ -72,7 +73,27 @@ interface DienTien {
   noidung: string;
 }
 
+interface HenKham {
+  id: number;
+  benhnhanid: number;
+  ten_benhnhan: string;
+  dienthoai: string;
+  ngay_hen: string;
+  gio_hen: string | null;
+  ly_do: string;
+  trang_thai: string;
+  ghichu: string;
+}
+
+const TRANG_THAI_MAP: Record<string, { label: string; color: string; bg: string }> = {
+  cho: { label: 'Chờ', color: 'text-yellow-700', bg: 'bg-yellow-100' },
+  da_den: { label: 'Đã đến', color: 'text-green-700', bg: 'bg-green-100' },
+  huy: { label: 'Hủy', color: 'text-red-700', bg: 'bg-red-100' },
+  qua_han: { label: 'Quá hạn', color: 'text-gray-700', bg: 'bg-gray-200' },
+};
+
 export default function BenhNhanPage() {
+  const { confirm } = useConfirm();
   const [benhNhans, setBenhNhans] = useState<BenhNhan[]>([]);
   const [search, setSearch] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
@@ -91,6 +112,7 @@ export default function BenhNhanPage() {
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]);
   const [chiTietDonThuocs, setChiTietDonThuocs] = useState<Record<number, ChiTietDonThuoc[]>>({});
   const [dienTiens, setDienTiens] = useState<Record<number, DienTien[]>>({});
+  const [henKhams, setHenKhams] = useState<HenKham[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>("don-thuoc");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -171,6 +193,7 @@ export default function BenhNhanPage() {
       setDonKinhs([]);
       setChiTietDonThuocs({});
       setDienTiens({});
+      setHenKhams([]);
       return;
     }
     try {
@@ -224,6 +247,16 @@ export default function BenhNhanPage() {
         }
       });
       setDonKinhs(resDonKinh.data.data || []);
+
+      // Fetch lịch hẹn khám lại
+      const resHenKham = await axios.get(`/api/hen-kham-lai?benhnhanid=${benhnhanid}&_t=${timestamp}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      setHenKhams(resHenKham.data.data || []);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi tải dữ liệu: ${message}`);
@@ -231,6 +264,7 @@ export default function BenhNhanPage() {
       setDonKinhs([]);
       setChiTietDonThuocs({});
       setDienTiens({});
+      setHenKhams([]);
     }
   }, []);
 
@@ -246,6 +280,7 @@ export default function BenhNhanPage() {
         setDonKinhs([]);
         setChiTietDonThuocs({});
         setDienTiens({});
+        setHenKhams([]);
         setActiveTab("don-thuoc");
       } else {
         setSelectedBenhNhanId(benhnhanid);
@@ -285,7 +320,7 @@ export default function BenhNhanPage() {
       `- Xóa ${patientIdsToMerge.length} bệnh nhân còn lại\n\n` +
       `⚠️ LƯU Ý: Hành động này KHÔNG THỂ HOÀN TÁC!`;
 
-    if (!window.confirm(confirmMessage)) return;
+    if (!await confirm(confirmMessage)) return;
 
     try {
       await axios.post('/api/benh-nhan/merge', {
@@ -412,7 +447,7 @@ export default function BenhNhanPage() {
   const handleDelete = useCallback(async (id: number) => {
     const confirmMessage = 'Bạn có chắc chắn muốn xóa bệnh nhân này?\n\n⚠️ LƯU Ý: Việc xóa sẽ xóa luôn TẤT CẢ:\n- Đơn thuốc của bệnh nhân\n- Chi tiết đơn thuốc\n- Diễn tiến bệnh\n\nHành động này KHÔNG THỂ HOÀN TÁC!';
     
-    if (!window.confirm(confirmMessage)) return;
+    if (!await confirm(confirmMessage)) return;
     
     try {
       console.log('🗑️ Deleting patient with ID:', id, 'Type:', typeof id);
@@ -425,6 +460,7 @@ export default function BenhNhanPage() {
         setDonThuocs([]);
         setChiTietDonThuocs({});
         setDienTiens({});
+        setHenKhams([]);
       }
       toast.success('Đã xóa bệnh nhân và tất cả dữ liệu liên quan');
     } catch (error: unknown) {
@@ -604,7 +640,6 @@ export default function BenhNhanPage() {
   return (
     <ProtectedRoute>
       <div className="p-2 lg:p-4">
-        <Toaster position="top-right" />
         
         {/* Mobile Layout */}
   <div className="block md:hidden space-y-3">
@@ -622,6 +657,7 @@ export default function BenhNhanPage() {
                   setDonThuocs([]);
                   setChiTietDonThuocs({});
                   setDienTiens({});
+                  setHenKhams([]);
                 }}
                 className="h-10"
               />
@@ -762,9 +798,10 @@ export default function BenhNhanPage() {
                       <div className="mt-3 pt-3 border-t">
                         <h3 className="font-medium text-sm mb-2">📋 Lịch sử khám bệnh</h3>
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                          <TabsList className="grid w-full grid-cols-2">
+                          <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="don-thuoc">Đơn thuốc ({filteredDonThuocs.length})</TabsTrigger>
                             <TabsTrigger value="don-kinh">Đơn kính ({donKinhs.length})</TabsTrigger>
+                            <TabsTrigger value="lich-hen">Lịch hẹn ({henKhams.length})</TabsTrigger>
                           </TabsList>
                           
                           <TabsContent value="don-thuoc" className="mt-2">
@@ -847,6 +884,33 @@ export default function BenhNhanPage() {
                               </div>
                             )}
                           </TabsContent>
+
+                          <TabsContent value="lich-hen" className="mt-2">
+                            {henKhams.length === 0 ? (
+                              <p className="text-xs text-gray-500">Chưa có lịch hẹn nào.</p>
+                            ) : (
+                              <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                                {henKhams.map((hen) => {
+                                  const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
+                                  return (
+                                    <div key={hen.id} className="bg-white border rounded-lg p-2.5 shadow-sm">
+                                      <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                          {new Date(hen.ngay_hen).toLocaleDateString('vi-VN')}
+                                          {hen.gio_hen && ` ${hen.gio_hen.substring(0, 5)}`}
+                                        </span>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>
+                                          {st.label}
+                                        </span>
+                                      </div>
+                                      {hen.ly_do && <div className="text-xs font-semibold text-gray-800 mb-1">{hen.ly_do}</div>}
+                                      {hen.ghichu && <div className="text-[10px] text-gray-500 italic">{hen.ghichu}</div>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </TabsContent>
                         </Tabs>
                       </div>
                     )}
@@ -867,6 +931,7 @@ export default function BenhNhanPage() {
                   setDonThuocs([]);
                   setChiTietDonThuocs({});
                   setDienTiens({});
+                  setHenKhams([]);
                 }}
               />
             </div>
@@ -890,6 +955,7 @@ export default function BenhNhanPage() {
                     setDonThuocs([]);
                     setChiTietDonThuocs({});
                     setDienTiens({});
+                    setHenKhams([]);
                   }}
                   className="w-64 text-sm"
                 />
@@ -1095,11 +1161,21 @@ export default function BenhNhanPage() {
                                     >
                                       👓 Đơn kính ({donKinhs.length})
                                     </button>
+                                    <button
+                                      onClick={() => setActiveTab('lich-hen')}
+                                      className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
+                                        activeTab === 'lich-hen'
+                                          ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      📅 Lịch hẹn ({henKhams.length})
+                                    </button>
                                   </div>
                                     
                                   {/* Content */}
                                   <div className="max-h-[400px] overflow-y-auto">
-                                    {activeTab === 'don-thuoc' ? (
+                                    {activeTab === 'don-thuoc' && (
                                       filteredDonThuocs.length === 0 ? (
                                         <p className="text-xs text-gray-400 py-4 text-center">Chưa có đơn thuốc nào.</p>
                                       ) : (
@@ -1135,7 +1211,9 @@ export default function BenhNhanPage() {
                                           ))}
                                         </div>
                                       )
-                                    ) : (
+                                    )}
+
+                                    {activeTab === 'don-kinh' && (
                                       donKinhs.length === 0 ? (
                                         <p className="text-xs text-gray-400 py-4 text-center">Chưa có đơn kính nào.</p>
                                       ) : (
@@ -1179,6 +1257,36 @@ export default function BenhNhanPage() {
                                         </div>
                                       )
                                     )}
+
+                                    {/* Lịch hẹn tab content */}
+                                    {activeTab === 'lich-hen' && (
+                                      henKhams.length === 0 ? (
+                                        <p className="text-xs text-gray-400 py-4 text-center">Chưa có lịch hẹn nào.</p>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          {henKhams.map((hen) => {
+                                            const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
+                                            return (
+                                              <div key={hen.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow">
+                                                <div className="flex items-start justify-between mb-1.5">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                                      {new Date(hen.ngay_hen).toLocaleDateString('vi-VN')}
+                                                      {hen.gio_hen && ` ${hen.gio_hen.substring(0, 5)}`}
+                                                    </span>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>
+                                                      {st.label}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                                {hen.ly_do && <div className="text-xs font-semibold text-gray-800 mb-0.5">{hen.ly_do}</div>}
+                                                {hen.ghichu && <div className="text-[11px] text-gray-500 italic">{hen.ghichu}</div>}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )
+                                    )}
                                   </div>
                                 </CardContent>
                               </Card>
@@ -1211,6 +1319,7 @@ export default function BenhNhanPage() {
                   setDonThuocs([]);
                   setChiTietDonThuocs({});
                   setDienTiens({});
+                  setHenKhams([]);
                 }}
               />
             </div>
@@ -1321,7 +1430,7 @@ export default function BenhNhanPage() {
                   onClick={async () => {
                     if (!form.id) { toast.error('Không xác định được ID bệnh nhân'); return; }
                     const confirmMessage = 'Bạn chắc chắn muốn xóa bệnh nhân này?\n\n⚠ TẤT CẢ đơn thuốc, đơn kính, diễn tiến sẽ bị xóa và KHÔNG THỂ HOÀN TÁC!';
-                    if (!window.confirm(confirmMessage)) return;
+                    if (!await confirm(confirmMessage)) return;
                     await handleDelete(form.id);
                     setOpen(false);
                   }}

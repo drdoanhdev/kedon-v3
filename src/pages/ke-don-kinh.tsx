@@ -8,7 +8,8 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -86,22 +87,22 @@ interface DonKinh {
 
 interface HistoryProps { items: DonKinh[]; onSelect: (don: DonKinh) => void; highlightId?: number | null; }
 const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
-  <div className="h-full overflow-y-auto p-2 bg-blue-50/30">
-    <h2 className="font-bold text-blue-800 text-sm tracking-tight mb-2">Lịch sử đơn kính</h2>
+  <div className="h-full overflow-y-auto p-3 bg-[#f5f6f8]">
+    <h2 className="font-bold text-gray-900 text-sm tracking-tight mb-3">Lịch sử đơn kính</h2>
     {items.length === 0 ? (
       <p className="text-xs text-gray-500">Chưa có đơn kính nào</p>
     ) : (
-      <div className="space-y-2 lg:space-y-1">
+      <div className="space-y-2">
         {items.map((don) => (
           <div
             key={don.id}
-            className={`px-1.5 py-1 rounded-lg cursor-pointer transition-colors border shadow-sm ${don.id === highlightId ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-gray-100 hover:border-gray-200'}`}
+            className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
             onClick={() => onSelect(don)}
           >
             <div className="block md:hidden">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <p className="text-sm font-semibold">
+                  <p className="text-sm font-bold text-gray-900">
                     {new Date(don.ngaykham || don.ngay_kham || '').toLocaleDateString('vi-VN')}
                   </p>
                   <p className="text-xs text-gray-500">
@@ -109,9 +110,9 @@ const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold">{(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k</p>
+                  <p className="text-sm font-bold text-gray-900">{(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k</p>
                   {(don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0) > 0 && (
-                    <p className="text-xs text-red-600">Nợ: {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</p>
+                    <p className="text-xs font-semibold text-red-600">Nợ: {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</p>
                   )}
                 </div>
               </div>
@@ -140,6 +141,7 @@ const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
 );
 
 export default function KeDonKinh() {
+  const { confirm } = useConfirm();
   const searchParams = useSearchParams();
   const benhnhanid = searchParams.get('bn');
   const { currentRole } = useAuth();
@@ -589,7 +591,7 @@ export default function KeDonKinh() {
       toast.error('Không có ID bệnh nhân để lưu đơn kính');
       return;
     }
-    if (!window.confirm('Bạn có chắc muốn lưu đơn kính này?')) return;
+    if (!await confirm('Bạn có chắc muốn lưu đơn kính này?')) return;
 
     const payload: DonKinh = {
       ...form,
@@ -659,7 +661,7 @@ export default function KeDonKinh() {
       toast.error('Không có ID đơn kính để cập nhật');
       return;
     }
-    if (!window.confirm('Bạn có chắc muốn cập nhật đơn kính này?')) return;
+    if (!await confirm('Bạn có chắc muốn cập nhật đơn kính này?')) return;
 
     const payload: DonKinh = {
       ...form,
@@ -716,7 +718,7 @@ export default function KeDonKinh() {
       toast.error('Không có ID đơn kính để xóa');
       return;
     }
-    if (!window.confirm('Bạn có chắc muốn xóa đơn kính này?')) return;
+    if (!await confirm('Bạn có chắc muốn xóa đơn kính này?')) return;
 
     try {
       const res = await axios.delete(`/api/don-kinh?id=${form.id}`);
@@ -816,7 +818,6 @@ export default function KeDonKinh() {
   if (!benhnhanid) {
     return (
       <div className="p-1">
-        <Toaster position="top-right" />
         <Card>
           <CardContent className="p-1">
             <p className="text-sm text-red-500">Vui lòng chọn một bệnh nhân để kê đơn kính.</p>
@@ -830,22 +831,21 @@ export default function KeDonKinh() {
     <ProtectedRoute>
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
       <div className="flex flex-col lg:flex-row" style={{ height: 'calc(100vh - 72px)' }}>
-        <Toaster position="top-right" />
         
         {/* History sidebar - Hidden on mobile, shown on desktop */}
-        <aside className="hidden md:block w-72 flex-shrink-0 border-r border-gray-100 bg-blue-50/30 overflow-hidden">
+        <aside className="hidden md:block w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
           <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
         </aside>
 
         {/* Main content area */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-gray-50/50">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-[#f5f6f8]">
           {/* Profit display - Mobile only */}
           <div className="fixed top-1 right-1 text-sm p-1 bg-white rounded-lg shadow lg:hidden">
             {(lai / 1000).toFixed(0)}
           </div>
             {/* Patient info */}
             {benhNhan ? (
-              <div className="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3">
+              <div className="bg-white rounded-xl shadow-sm p-4 flex items-center gap-4 border border-gray-200">
                 <div className="flex-1 min-w-0">
                   {/* Mobile: stacked */}
                   <div className="md:hidden">
@@ -887,7 +887,7 @@ export default function KeDonKinh() {
                 </div>
               </div>
             ) : (
-              <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
                 <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
               </div>
             )}
@@ -902,31 +902,31 @@ export default function KeDonKinh() {
             </div>
 
             {/* Form kê đơn kính - Responsive Layout */}
-            <div className="space-y-3">
+            <div className="space-y-4">
               {/* Thông tin chung */}
-              <div className="bg-white rounded-xl shadow-sm p-3">
+              <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
                   <div className="space-y-2">
                     <div className="flex flex-col lg:flex-row gap-2">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
-                        <label className="w-full sm:w-20 text-xs font-bold text-gray-500 uppercase">Chẩn đoán</label>
+                        <label className="w-full sm:w-20 text-xs font-medium text-gray-700 uppercase">Chẩn đoán</label>
                         <input
                           list="chandoan-list"
                           value={form.chandoan || ''}
                           onChange={(e) => setForm({ ...form, chandoan: e.target.value })}
-                          className="h-10 sm:h-8 bg-blue-50 border-none rounded-xl px-4 text-sm font-medium flex-1 focus:ring-2 focus:ring-blue-200"
+                          className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                           placeholder="Nhập chẩn đoán..."
                           data-nav="presc"
                           data-order="0"
                         />
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
-                        <label className="w-full sm:w-24 text-xs font-bold text-gray-500 uppercase whitespace-nowrap">Ngày giờ khám</label>
+                        <label className="w-full sm:w-24 text-xs font-medium text-gray-700 uppercase whitespace-nowrap">Ngày giờ khám</label>
                         <div className="flex-1">
                           <Input
                             type="datetime-local"
                             value={form.ngaykham || ''}
                             onChange={(e) => setForm({ ...form, ngaykham: e.target.value })}
-                            className="h-10 sm:h-8 w-full bg-gray-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-200"
+                            className="h-10 sm:h-9 w-full bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                             style={{ colorScheme: 'light' }}
                             step="60"
                           />
@@ -934,27 +934,28 @@ export default function KeDonKinh() {
                       </div>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                      <label className="w-full sm:w-16 text-xs font-bold text-gray-500 uppercase sm:pt-1">Ghi chú</label>
+                      <label className="w-full sm:w-16 text-xs font-medium text-gray-700 uppercase sm:pt-1">Ghi chú</label>
                       <Textarea
                         rows={1}
                         value={form.ghichu || ''}
                         onChange={(e) => setForm({ ...form, ghichu: e.target.value })}
-                        className="flex-1 min-h-[36px] bg-gray-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-200"
+                        className="flex-1 min-h-[36px] bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                         placeholder="Ghi chú thêm..."
                       />
                     </div>
                     {/* Hẹn khám lại - inline compact */}
                     <div className={`rounded-xl p-2 ${henKhamEnabled ? 'border border-blue-300 bg-blue-50/60' : 'border border-gray-200 bg-gray-50/50'}`}>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <input type="checkbox" checked={henKhamEnabled} onChange={(e) => {
                           setHenKhamEnabled(e.target.checked);
                           if (e.target.checked && !henKhamForm.ngay_hen) {
                             setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(7) }));
                           }
                         }} className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-200" />
-                        <span className="text-xs font-bold text-blue-700">Hẹn khám lại</span>
+                        <span className="text-xs font-bold text-blue-700 whitespace-nowrap">{henKhamEnabled ? 'Hẹn khám lại sau:' : 'Hẹn khám lại'}</span>
+                        {/* Mobile: compact buttons */}
                         {henKhamEnabled && (
-                          <div className="flex items-center gap-1 ml-auto flex-wrap">
+                          <div className="flex items-center gap-1 flex-wrap sm:hidden">
                             {[7, 14, 30, 90, 180].map(d => (
                               <button key={d} type="button" className="px-1.5 py-0.5 text-[10px] bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium" onClick={() => { setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(d) })); setHenSoNgay(''); }}>
                                 {d < 30 ? `+${d}d` : d === 30 ? '+1th' : d === 90 ? '+3th' : '+6th'}
@@ -971,14 +972,32 @@ export default function KeDonKinh() {
                             </div>
                           </div>
                         )}
+                        {/* Desktop: inline buttons same line */}
+                        {henKhamEnabled && (
+                          <div className="hidden sm:flex items-center gap-1.5">
+                            {[7, 14, 30, 90, 180].map(d => (
+                              <button key={d} type="button" className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-medium transition-colors" onClick={() => { setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(d) })); setHenSoNgay(''); }}>
+                                {d < 30 ? `${d} ngày` : d === 30 ? '1 tháng' : d === 90 ? '3 tháng' : '6 tháng'}
+                              </button>
+                            ))}
+                            <div className="flex items-center gap-0.5">
+                              <input type="number" min="1" value={henSoNgay} onChange={(e) => {
+                                setHenSoNgay(e.target.value);
+                                const n = parseInt(e.target.value);
+                                if (n > 0) setHenKhamForm(f => ({ ...f, ngay_hen: addDaysToToday(n) }));
+                              }} className="w-12 h-6 text-xs text-center bg-white border border-gray-300 rounded-md px-1 [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield] focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="..." />
+                              <span className="text-xs text-gray-500">ngày</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {henKhamEnabled && (
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <Input type="date" value={henKhamForm.ngay_hen} onChange={(e) => setHenKhamForm(f => ({ ...f, ngay_hen: e.target.value }))} className="h-7 text-xs flex-1" />
-                          <select className="h-7 border border-gray-300 rounded-md px-1.5 text-xs" value={henKhamForm.ly_do} onChange={(e) => setHenKhamForm(f => ({ ...f, ly_do: e.target.value }))}>
+                          <Input type="date" value={henKhamForm.ngay_hen} onChange={(e) => setHenKhamForm(f => ({ ...f, ngay_hen: e.target.value }))} className="h-7 text-xs w-32 shrink-0" />
+                          <select className="h-7 border border-gray-300 rounded-md px-1.5 text-xs shrink-0" value={henKhamForm.ly_do} onChange={(e) => setHenKhamForm(f => ({ ...f, ly_do: e.target.value }))}>
                             {lyDoOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                           </select>
-                          <Input value={henKhamForm.ghichu} onChange={(e) => setHenKhamForm(f => ({ ...f, ghichu: e.target.value }))} placeholder="Ghi chú..." className="h-7 text-xs flex-1" />
+                          <Input value={henKhamForm.ghichu} onChange={(e) => setHenKhamForm(f => ({ ...f, ghichu: e.target.value }))} placeholder="Ghi chú..." className="h-7 text-xs flex-1 min-w-0" />
                         </div>
                       )}
                     </div>
@@ -988,115 +1007,216 @@ export default function KeDonKinh() {
                       {/* Mobile: Simplified stacked layout */}
                       <div className="block sm:hidden space-y-3">
                         {/* Mắt Phải - Mobile */}
-                        <div className="border rounded p-2 bg-blue-50">
-                          <h4 className="font-semibold text-sm mb-2">Mắt Phải (MP)</h4>
-                          <div className="grid grid-cols-2 gap-2">
+                        <div className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm">
+                          <h4 className="font-bold text-gray-900 text-sm mb-3">Mắt Phải (MP)</h4>
+                          <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="text-xs text-gray-600">Thị lực không kính</label>
-                              <input data-nav="presc" data-order="1" data-first-focus="thiluc_khongkinh_mp" list="thiluc-list" value={form.thiluc_khongkinh_mp || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mp: e.target.value })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Thị lực không kính</label>
+                              <input data-nav="presc" data-order="1" data-first-focus="thiluc_khongkinh_mp" list="thiluc-list" value={form.thiluc_khongkinh_mp || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mp: e.target.value })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div>
-                              <label className="text-xs text-gray-600">Thị lực kính cũ</label>
-                              <input data-nav="presc" data-order="3" list="thiluc-list" value={form.thiluc_kinhcu_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mp: e.target.value })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Thị lực kính cũ</label>
+                              <input data-nav="presc" data-order="3" list="thiluc-list" value={form.thiluc_kinhcu_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mp: e.target.value })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div>
-                              <label className="text-xs text-gray-600">Thị lực kính mới</label>
-                              <input data-nav="presc" data-order="5" list="thiluc-list" value={form.thiluc_kinhmoi_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mp: e.target.value })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Thị lực kính mới</label>
+                              <input data-nav="presc" data-order="5" list="thiluc-list" value={form.thiluc_kinhmoi_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mp: e.target.value })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div>
-                              <label className="text-xs text-gray-600">Số kính cũ</label>
-                              <SoKinhInput dataNavOrder={7} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="8"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_cu_mp || ''} onChange={(val) => setForm({ ...form, sokinh_cu_mp: val })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Số kính cũ</label>
+                              <SoKinhInput dataNavOrder={7} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="8"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_cu_mp || ''} onChange={(val) => setForm({ ...form, sokinh_cu_mp: val })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div className="col-span-2">
-                              <label className="text-xs text-gray-600">Số kính mới</label>
-                              <SoKinhInput dataNavOrder={9} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="10"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_moi_mp || ''} onChange={(val) => setForm({ ...form, sokinh_moi_mp: val })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Số kính mới</label>
+                              <SoKinhInput dataNavOrder={9} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="10"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_moi_mp || ''} onChange={(val) => setForm({ ...form, sokinh_moi_mp: val })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                           </div>
                         </div>
                         
                         {/* Mắt Trái - Mobile */}
-                        <div className="border rounded p-2 bg-green-50">
-                          <h4 className="font-semibold text-sm mb-2">Mắt Trái (MT)</h4>
-                          <div className="grid grid-cols-2 gap-2">
+                        <div className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm">
+                          <h4 className="font-bold text-gray-900 text-sm mb-3">Mắt Trái (MT)</h4>
+                          <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="text-xs text-gray-600">Thị lực không kính</label>
-                              <input data-nav="presc" data-order="2" list="thiluc-list" value={form.thiluc_khongkinh_mt || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mt: e.target.value })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Thị lực không kính</label>
+                              <input data-nav="presc" data-order="2" list="thiluc-list" value={form.thiluc_khongkinh_mt || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mt: e.target.value })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div>
-                              <label className="text-xs text-gray-600">Thị lực kính cũ</label>
-                              <input data-nav="presc" data-order="4" list="thiluc-list" value={form.thiluc_kinhcu_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mt: e.target.value })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Thị lực kính cũ</label>
+                              <input data-nav="presc" data-order="4" list="thiluc-list" value={form.thiluc_kinhcu_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mt: e.target.value })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div>
-                              <label className="text-xs text-gray-600">Thị lực kính mới</label>
-                              <input data-nav="presc" data-order="6" list="thiluc-list" value={form.thiluc_kinhmoi_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mt: e.target.value })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Thị lực kính mới</label>
+                              <input data-nav="presc" data-order="6" list="thiluc-list" value={form.thiluc_kinhmoi_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mt: e.target.value })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div>
-                              <label className="text-xs text-gray-600">Số kính cũ</label>
-                              <SoKinhInput dataNavOrder={8} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="9"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_cu_mt || ''} onChange={(val) => setForm({ ...form, sokinh_cu_mt: val })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Số kính cũ</label>
+                              <SoKinhInput dataNavOrder={8} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="9"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_cu_mt || ''} onChange={(val) => setForm({ ...form, sokinh_cu_mt: val })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div className="col-span-2">
-                              <label className="text-xs text-gray-600">Số kính mới</label>
-                              <SoKinhInput dataNavOrder={10} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="11"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_moi_mt || ''} onChange={(val) => setForm({ ...form, sokinh_moi_mt: val })} className="h-10 w-full border rounded px-2 text-sm bg-yellow-50 focus:bg-yellow-100" />
+                              <label className="text-xs font-medium text-gray-700 mb-1 block">Số kính mới</label>
+                              <SoKinhInput dataNavOrder={10} onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="11"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_moi_mt || ''} onChange={(val) => setForm({ ...form, sokinh_moi_mt: val })} className="h-10 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Desktop: Keep original table */}
-                      <div className="hidden sm:block overflow-x-auto">
-                        <table className="w-full border-collapse text-sm">
-                          <thead>
-                            <tr className="bg-gray-100">
-                              <th className="p-1 border w-16">Mắt</th>
-                              <th className="p-1 border text-center w-32" colSpan={3}>Thị lực</th>
-                              <th className="p-1 border text-center" colSpan={2}>Số kính</th>
-                            </tr>
-                            <tr className="bg-gray-50">
-                              <th className="p-1 border"></th>
-                              <th className="p-1 border font-normal text-xs w-20">Không kính</th>
-                              <th className="p-1 border font-normal text-xs w-20">Kính cũ</th>
-                              <th className="p-1 border font-normal text-xs w-20">Kính mới</th>
-                              <th className="p-1 border font-normal text-xs w-40">Kính cũ</th>
-                              <th className="p-1 border font-normal text-xs w-40">Kính mới</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {/* Mắt Phải */}
-                            <tr>
-                              <td className="p-1 border font-semibold text-center">MP</td>
-                              <td className="p-1 border"><input data-nav="presc" data-order="1" data-first-focus="thiluc_khongkinh_mp" list="thiluc-list" value={form.thiluc_khongkinh_mp || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mp: e.target.value })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><input data-nav="presc" data-order="3" list="thiluc-list" value={form.thiluc_kinhcu_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mp: e.target.value })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><input data-nav="presc" data-order="5" list="thiluc-list" value={form.thiluc_kinhmoi_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mp: e.target.value })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><SoKinhInput onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="8"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_cu_mp || ''} onChange={(val) => setForm({ ...form, sokinh_cu_mp: val })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><SoKinhInput onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="10"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_moi_mp || ''} onChange={(val) => setForm({ ...form, sokinh_moi_mp: val })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                            </tr>
-                            {/* Mắt Trái */}
-                            <tr>
-                              <td className="p-1 border font-semibold text-center">MT</td>
-                              <td className="p-1 border"><input data-nav="presc" data-order="2" list="thiluc-list" value={form.thiluc_khongkinh_mt || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mt: e.target.value })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><input data-nav="presc" data-order="4" list="thiluc-list" value={form.thiluc_kinhcu_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mt: e.target.value })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><input data-nav="presc" data-order="6" list="thiluc-list" value={form.thiluc_kinhmoi_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mt: e.target.value })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><SoKinhInput onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="9"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_cu_mt || ''} onChange={(val) => setForm({ ...form, sokinh_cu_mt: val })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                              <td className="p-1 border"><SoKinhInput onCommitNext={() => { const n=document.querySelector<HTMLElement>('[data-nav="presc"][data-order="11"]'); n?.focus(); (n as HTMLInputElement)?.select?.(); }} datalistId="sokinh-list" value={form.sokinh_moi_mt || ''} onChange={(val) => setForm({ ...form, sokinh_moi_mt: val })} className="h-7 w-full border rounded px-1 text-sm bg-yellow-50 focus:bg-yellow-100" /></td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
+{/* Desktop: Keep original table */}
+<div className="hidden sm:block overflow-x-auto">
+  <div className="w-full border border-gray-300 rounded-lg overflow-hidden">
+    <table className="w-full text-sm border-separate border-spacing-0">
+      
+      <thead>
+        <tr className="bg-gray-100">
+          <th className="px-1.5 py-1 border-b border-r border-gray-300 w-16 text-gray-900 font-semibold">Mắt</th>
+          <th className="px-1.5 py-1 border-b border-r border-gray-300 text-center w-32 text-gray-900 font-semibold" colSpan={3}>
+            Thị lực
+          </th>
+          <th className="px-1.5 py-1 border-b border-gray-300 text-center text-gray-900 font-semibold" colSpan={2}>
+            Số kính
+          </th>
+        </tr>
+
+        <tr className="bg-gray-50">
+          <th className="px-1.5 py-1 border-b border-r border-gray-300"></th>
+          <th className="px-1.5 py-1 border-b border-r border-gray-300 font-medium text-xs text-gray-700 w-20">Không kính</th>
+          <th className="px-1.5 py-1 border-b border-r border-gray-300 font-medium text-xs text-gray-700 w-20">Kính cũ</th>
+          <th className="px-1.5 py-1 border-b border-r border-gray-300 font-medium text-xs text-gray-700 w-20">Kính mới</th>
+          <th className="px-1.5 py-1 border-b border-r border-gray-300 font-medium text-xs text-gray-700 w-40">Kính cũ</th>
+          <th className="px-1.5 py-1 border-b border-gray-300 font-medium text-xs text-gray-700 w-40">Kính mới</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {/* Mắt Phải */}
+        <tr className="hover:bg-blue-50/50 transition-colors">
+          <td className="px-1.5 py-1 border-b border-r border-gray-300 font-bold text-center text-gray-900">MP</td>
+
+          <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
+            <input data-nav="presc" data-order="1" data-first-focus="thiluc_khongkinh_mp" list="thiluc-list"
+              value={form.thiluc_khongkinh_mp || ''}
+              onChange={(e) => setForm({ ...form, thiluc_khongkinh_mp: e.target.value })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
+            <input data-nav="presc" data-order="3" list="thiluc-list"
+              value={form.thiluc_kinhcu_mp || ''}
+              onChange={(e) => setForm({ ...form, thiluc_kinhcu_mp: e.target.value })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
+            <input data-nav="presc" data-order="5" list="thiluc-list"
+              value={form.thiluc_kinhmoi_mp || ''}
+              onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mp: e.target.value })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
+            <SoKinhInput
+              onCommitNext={() => {
+                const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="8"]');
+                n?.focus(); (n as HTMLInputElement)?.select?.();
+              }}
+              datalistId="sokinh-list"
+              value={form.sokinh_cu_mp || ''}
+              onChange={(val) => setForm({ ...form, sokinh_cu_mp: val })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-b border-gray-300 bg-white">
+            <SoKinhInput
+              onCommitNext={() => {
+                const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="10"]');
+                n?.focus(); (n as HTMLInputElement)?.select?.();
+              }}
+              datalistId="sokinh-list"
+              value={form.sokinh_moi_mp || ''}
+              onChange={(val) => setForm({ ...form, sokinh_moi_mp: val })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+        </tr>
+
+        {/* Mắt Trái */}
+        <tr className="hover:bg-green-50/50 transition-colors">
+          <td className="px-1.5 py-1 border-r border-gray-300 font-bold text-center text-gray-900">MT</td>
+
+          <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
+            <input data-nav="presc" data-order="2" list="thiluc-list"
+              value={form.thiluc_khongkinh_mt || ''}
+              onChange={(e) => setForm({ ...form, thiluc_khongkinh_mt: e.target.value })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
+            <input data-nav="presc" data-order="4" list="thiluc-list"
+              value={form.thiluc_kinhcu_mt || ''}
+              onChange={(e) => setForm({ ...form, thiluc_kinhcu_mt: e.target.value })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
+            <input data-nav="presc" data-order="6" list="thiluc-list"
+              value={form.thiluc_kinhmoi_mt || ''}
+              onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mt: e.target.value })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
+            <SoKinhInput
+              onCommitNext={() => {
+                const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="9"]');
+                n?.focus(); (n as HTMLInputElement)?.select?.();
+              }}
+              datalistId="sokinh-list"
+              value={form.sokinh_cu_mt || ''}
+              onChange={(val) => setForm({ ...form, sokinh_cu_mt: val })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+
+          <td className="px-1.5 py-1 bg-white">
+            <SoKinhInput
+              onCommitNext={() => {
+                const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="11"]');
+                n?.focus(); (n as HTMLInputElement)?.select?.();
+              }}
+              datalistId="sokinh-list"
+              value={form.sokinh_moi_mt || ''}
+              onChange={(val) => setForm({ ...form, sokinh_moi_mt: val })}
+              className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </td>
+        </tr>
+      </tbody>
+
+    </table>
+  </div>
+</div>
                   </div>
               </div>
 
               {/* Sản phẩm */}
-              <div className="bg-white rounded-xl shadow-sm p-3 space-y-3">
-                  <h3 className="font-bold text-blue-800 text-sm tracking-tight mb-2">Sản phẩm</h3>
+              <div className="bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200">
+                  <h3 className="font-bold text-gray-900 text-sm tracking-tight mb-2">Sản phẩm</h3>
                   <div className="space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <label className="w-full sm:w-28 text-xs font-bold text-gray-500 uppercase whitespace-nowrap flex-shrink-0">Chọn gọng</label>
-                        <div className="flex-1 flex items-center gap-1">
+                      <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Chọn gọng</label>
+                        <div className="flex-1 flex items-center gap-2">
                           <input
                             list="gongkinh-list"
                             value={form.ten_gong || ''}
                             onChange={(e) => handleFrameChange(e.target.value)}
-                            className="h-10 sm:h-8 bg-blue-50 border-none rounded-xl px-4 text-sm font-medium flex-1 focus:ring-2 focus:ring-blue-200"
+                            className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                             placeholder="Chọn loại gọng"
                             data-nav="presc"
                             data-order="11"
@@ -1112,13 +1232,13 @@ export default function KeDonKinh() {
                     </div>
                     <div className="flex flex-col lg:flex-row gap-4">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
-                        <label className="w-full sm:w-28 text-xs font-bold text-gray-500 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MP</label>
-                        <div className="flex-1 flex items-center gap-1">
+                        <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MP</label>
+                        <div className="flex-1 flex items-center gap-2">
                           <input 
                             list="hangtrong-list" 
                             value={form.hangtrong_mp || ''} 
                             onChange={(e) => handleRightEyeLensBrandChange(e.target.value)} 
-                            className="h-10 sm:h-8 bg-blue-50 border-none rounded-xl px-4 text-sm font-medium flex-1 focus:ring-2 focus:ring-blue-200" 
+                            className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow" 
                             placeholder="Chọn hãng tròng MP" 
                             data-nav="presc"
                             data-order="12"
@@ -1141,13 +1261,13 @@ export default function KeDonKinh() {
                       </div>
 
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
-                        <label className="w-full sm:w-28 text-xs font-bold text-gray-500 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MT</label>
-                        <div className="flex-1 flex items-center gap-1">
+                        <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MT</label>
+                        <div className="flex-1 flex items-center gap-2">
                           <input 
                             list="hangtrong-list" 
                             value={form.hangtrong_mt || ''} 
                             onChange={(e) => handleLeftEyeLensBrandChange(e.target.value)} 
-                            className="h-10 sm:h-8 bg-blue-50 border-none rounded-xl px-4 text-sm font-medium flex-1 focus:ring-2 focus:ring-blue-200" 
+                            className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow" 
                             placeholder="Chọn hãng tròng MT" 
                             data-nav="presc"
                             data-order="13"
@@ -1174,9 +1294,9 @@ export default function KeDonKinh() {
 
               {/* Mobile Thanh toán - ẩn trên desktop */}
               <div className="block lg:hidden">
-                <div className="bg-white rounded-xl shadow-sm p-3 space-y-3">
+                <div className="bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-blue-800 text-sm tracking-tight">Thanh toán</h3>
+                      <h3 className="font-bold text-gray-900 text-sm tracking-tight">Thanh toán</h3>
                       {isAdmin && (
                         <button type="button" onClick={() => setShowAdminPanel(!showAdminPanel)} className={`text-gray-400 hover:text-gray-600 p-0.5 touch-manipulation transition-transform ${showAdminPanel ? 'rotate-180' : ''}`} title="Giá nhập">
                           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1198,35 +1318,35 @@ export default function KeDonKinh() {
                     )}
                     {/* Giá tròng - inline */}
                     <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium text-gray-500 whitespace-nowrap shrink-0">Giá tròng</label>
-                      <Input type="number" value={form.giatrong ? (form.giatrong / 1000) : ''} onChange={(e) => setForm({ ...form, giatrong: e.target.value ? Number(e.target.value) * 1000 : 0 })} className="h-8 bg-gray-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-200 flex-1 min-w-0" placeholder="nghìn" />
+                      <label className="text-xs font-medium text-gray-700 whitespace-nowrap shrink-0">Giá tròng</label>
+                      <Input type="number" value={form.giatrong ? (form.giatrong / 1000) : ''} onChange={(e) => setForm({ ...form, giatrong: e.target.value ? Number(e.target.value) * 1000 : 0 })} className="h-9 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex-1 min-w-0" placeholder="nghìn" />
                     </div>
                     {/* Giá gọng - inline */}
                     <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium text-gray-500 whitespace-nowrap shrink-0">Giá gọng</label>
-                      <Input type="number" value={form.giagong ? (form.giagong / 1000) : ''} onChange={(e) => setForm({ ...form, giagong: e.target.value ? Number(e.target.value) * 1000 : 0 })} className="h-8 bg-gray-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-200 flex-1 min-w-0" placeholder="nghìn" />
+                      <label className="text-xs font-medium text-gray-700 whitespace-nowrap shrink-0">Giá gọng</label>
+                      <Input type="number" value={form.giagong ? (form.giagong / 1000) : ''} onChange={(e) => setForm({ ...form, giagong: e.target.value ? Number(e.target.value) * 1000 : 0 })} className="h-9 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex-1 min-w-0" placeholder="nghìn" />
                     </div>
                     {/* Summary */}
                     {ghiNo && (
                       <>
-                        <div className="flex justify-between items-center pb-1 border-b border-gray-100">
-                          <span className="text-xs text-gray-500 font-medium">Đã thanh toán</span>
-                          <span className="text-sm font-bold text-gray-800">{sotienDaThanhToan.toLocaleString()}đ</span>
+                        <div className="flex justify-between items-center pb-1 border-b border-gray-200">
+                          <span className="text-xs text-gray-600 font-medium">Đã thanh toán</span>
+                          <span className="text-xs font-bold text-green-600">{sotienDaThanhToan.toLocaleString()}đ</span>
                         </div>
-                        <div className="flex justify-between items-center pb-1 border-b border-gray-100">
-                          <span className="text-xs text-gray-500 font-medium">Còn nợ</span>
-                          <span className="text-sm font-bold text-red-500">{sotienConNo.toLocaleString()}đ</span>
+                        <div className="flex justify-between items-center pb-1 border-b border-gray-200">
+                          <span className="text-xs text-gray-600 font-medium">Còn nợ</span>
+                          <span className="text-xs font-bold text-red-600">{sotienConNo.toLocaleString()}đ</span>
                         </div>
                       </>
                     )}
-                    <div className="border-t pt-2 flex justify-between items-center">
-                      <span className="text-xs font-bold text-gray-500">Tổng tiền</span>
-                      <span className="text-xl font-extrabold text-blue-700">{tongTien.toLocaleString()}đ</span>
+                    <div className="border-t-2 border-gray-200 pt-2 flex justify-between items-center bg-gray-50 -mx-4 px-4 py-2 rounded-lg">
+                      <span className="text-xs font-bold text-gray-900">Tổng tiền</span>
+                      <span className="text-base font-extrabold text-blue-600">{tongTien.toLocaleString()}đ</span>
                     </div>
                     {/* Khách đưa - inline */}
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <label className="text-xs font-medium text-gray-500 whitespace-nowrap shrink-0">khách đưa</label>
+                        <label className="text-xs font-medium text-gray-700 whitespace-nowrap shrink-0">khách đưa</label>
                         <Input
                           type="number"
                           value={tienKhachDuaInput}
@@ -1249,7 +1369,7 @@ export default function KeDonKinh() {
                               setSotienDaThanhToanInput('');
                             }
                           }}
-                          className="h-8 bg-gray-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-200 flex-1 min-w-0"
+                          className="h-9 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex-1 min-w-0"
                           placeholder="nghìn"
                         />
                       </div>
@@ -1272,14 +1392,14 @@ export default function KeDonKinh() {
                     </div>
                 </div>
                 {/* Nút hành động */}
-                <div className="flex flex-wrap gap-2 pt-3 border-t">
+                <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
                   {!isEditing && (
-                    <button className="w-full bg-blue-700 hover:bg-blue-800 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={luuDonKinh}>Lưu đơn</button>
+                    <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={luuDonKinh}>Lưu đơn</button>
                   )}
                   {isEditing && form.id && (
                     <>
-                      <button className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={handleUpdate}>Sửa đơn</button>
-                      <button className="bg-white border border-gray-200 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation" onClick={handleCopy}>Sao chép</button>
+                      <button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={handleUpdate}>Sửa đơn</button>
+                      <button className="bg-white border border-gray-300 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation" onClick={handleCopy}>Sao chép</button>
                     </>
                   )}
                   <button className="bg-white border border-gray-200 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation" onClick={resetForm}>
@@ -1322,11 +1442,11 @@ export default function KeDonKinh() {
         </div>
 
         {/* ═══ RIGHT SIDEBAR: Thanh toán & Hành động ═══ */}
-        <aside className="hidden lg:flex w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-l border-gray-100 bg-gray-50/50 flex-col h-full">
+        <aside className="hidden lg:flex w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-l border-gray-200 bg-[#f5f6f8] flex-col h-full">
           {/* Scrollable payment zone */}
           <div className="flex-1 overflow-y-auto p-3 min-h-0">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-bold text-blue-800 text-xs tracking-tight">Thanh toán</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-bold text-gray-900 text-sm tracking-tight">Thanh toán</h2>
             {isAdmin && (
               <button type="button" onClick={() => setShowAdminPanel(!showAdminPanel)} className={`text-gray-400 hover:text-gray-600 p-0.5 touch-manipulation transition-transform ${showAdminPanel ? 'rotate-180' : ''}`} title="Giá nhập">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1335,23 +1455,23 @@ export default function KeDonKinh() {
           </div>
 
           {/* Payment inputs */}
-          <div className="bg-white rounded-xl p-2.5 shadow-sm space-y-1.5 mb-2">
+          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-200 space-y-1.5 mb-3">
             {/* Giá nhập - chỉ owner/admin mới thấy */}
             {isAdmin && showAdminPanel && (
-              <div className="space-y-1.5 pb-1.5 mb-1 border-b border-dashed border-gray-200">
+              <div className="space-y-2 pb-2 mb-1.5 border-b border-dashed border-gray-200">
                 <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] font-medium text-gray-400 whitespace-nowrap shrink-0">Nhập tròng</label>
-                  <div className="flex items-center bg-gray-100 rounded-lg px-2 h-7 flex-1 min-w-0">
-                    <input type="number" value={form.gianhap_trong ? (form.gianhap_trong / 1000) : ''} onChange={(e) => setForm({ ...form, gianhap_trong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-[11px] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
+                  <label className="text-[11px] font-medium text-gray-500 whitespace-nowrap shrink-0">Nhập tròng</label>
+                  <div className="flex items-center bg-white border border-gray-300 rounded-lg px-2 h-8 flex-1 min-w-0">
+                    <input type="number" value={form.gianhap_trong ? (form.gianhap_trong / 1000) : ''} onChange={(e) => setForm({ ...form, gianhap_trong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-xs text-gray-900 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
                     {form.gianhap_trong && form.gianhap_trong > 0 && (
                       <span className="text-[11px] text-gray-400 font-mono ml-0.5 shrink-0">.000</span>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] font-medium text-gray-400 whitespace-nowrap shrink-0">Nhập gọng</label>
-                  <div className="flex items-center bg-gray-100 rounded-lg px-2 h-7 flex-1 min-w-0">
-                    <input type="number" value={form.gianhap_gong ? (form.gianhap_gong / 1000) : ''} onChange={(e) => setForm({ ...form, gianhap_gong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-[11px] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
+                  <label className="text-[11px] font-medium text-gray-500 whitespace-nowrap shrink-0">Nhập gọng</label>
+                  <div className="flex items-center bg-white border border-gray-300 rounded-lg px-2 h-8 flex-1 min-w-0">
+                    <input type="number" value={form.gianhap_gong ? (form.gianhap_gong / 1000) : ''} onChange={(e) => setForm({ ...form, gianhap_gong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-xs text-gray-900 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" />
                     {form.gianhap_gong && form.gianhap_gong > 0 && (
                       <span className="text-[11px] text-gray-400 font-mono ml-0.5 shrink-0">.000</span>
                     )}
@@ -1361,9 +1481,9 @@ export default function KeDonKinh() {
             )}
             {/* Giá tròng - inline */}
             <div className="flex items-center gap-1.5">
-              <label className="text-[11px] font-medium text-gray-500 whitespace-nowrap shrink-0">Giá tròng</label>
-              <div className="flex items-center bg-gray-100 rounded-lg px-2 h-7 flex-1 min-w-0">
-                <input type="number" value={form.giatrong ? (form.giatrong / 1000) : ''} onChange={(e) => setForm({ ...form, giatrong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" data-nav="presc" data-order="14" />
+              <label className="text-xs font-medium text-gray-700 whitespace-nowrap shrink-0">Giá tròng</label>
+              <div className="flex items-center bg-white border border-gray-300 rounded-lg px-2 h-8 flex-1 min-w-0">
+                <input type="number" value={form.giatrong ? (form.giatrong / 1000) : ''} onChange={(e) => setForm({ ...form, giatrong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-xs text-gray-900 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" data-nav="presc" data-order="14" />
                 {form.giatrong && form.giatrong > 0 && (
                   <span className="text-xs text-gray-400 font-mono ml-0.5 shrink-0">.000</span>
                 )}
@@ -1371,9 +1491,9 @@ export default function KeDonKinh() {
             </div>
             {/* Giá gọng - inline */}
             <div className="flex items-center gap-1.5">
-              <label className="text-[11px] font-medium text-gray-500 whitespace-nowrap shrink-0">Giá gọng</label>
-              <div className="flex items-center bg-gray-100 rounded-lg px-2 h-7 flex-1 min-w-0">
-                <input type="number" value={form.giagong ? (form.giagong / 1000) : ''} onChange={(e) => setForm({ ...form, giagong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" data-nav="presc" data-order="15" />
+              <label className="text-xs font-medium text-gray-700 whitespace-nowrap shrink-0">Giá gọng</label>
+              <div className="flex items-center bg-white border border-gray-300 rounded-lg px-2 h-8 flex-1 min-w-0">
+                <input type="number" value={form.giagong ? (form.giagong / 1000) : ''} onChange={(e) => setForm({ ...form, giagong: e.target.value ? Number(e.target.value) * 1000 : 0 })} placeholder="Nhập số" className="bg-transparent w-full outline-none text-xs text-gray-900 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]" data-nav="presc" data-order="15" />
                 {form.giagong && form.giagong > 0 && (
                   <span className="text-xs text-gray-400 font-mono ml-0.5 shrink-0">.000</span>
                 )}
@@ -1382,28 +1502,28 @@ export default function KeDonKinh() {
             {/* Summary rows */}
             {ghiNo && (
               <>
-                <div className="flex justify-between items-center pb-1 border-b border-gray-100">
-                  <span className="text-[11px] text-gray-500 font-medium whitespace-nowrap">Đã thanh toán</span>
-                  <span className="text-xs font-bold text-gray-800 whitespace-nowrap">{sotienDaThanhToan.toLocaleString()}đ</span>
+                <div className="flex justify-between items-center pb-1 border-b border-gray-200">
+                  <span className="text-xs text-gray-600 font-medium whitespace-nowrap">Đã thanh toán</span>
+                  <span className="text-xs font-bold text-green-600 whitespace-nowrap">{sotienDaThanhToan.toLocaleString()}đ</span>
                 </div>
-                <div className="flex justify-between items-center pb-1 border-b border-gray-100">
-                  <span className="text-[11px] text-gray-500 font-medium whitespace-nowrap">Còn nợ</span>
-                  <span className="text-xs font-bold text-red-500 whitespace-nowrap">{sotienConNo.toLocaleString()}đ</span>
+                <div className="flex justify-between items-center pb-1 border-b border-gray-200">
+                  <span className="text-xs text-gray-600 font-medium whitespace-nowrap">Còn nợ</span>
+                  <span className="text-xs font-bold text-red-600 whitespace-nowrap">{sotienConNo.toLocaleString()}đ</span>
                 </div>
               </>
             )}
             {/* Tổng cộng */}
-            <div className="pt-1.5 flex justify-between items-center border-t border-gray-100">
-              <span className="font-extrabold text-xs text-blue-800 tracking-tight whitespace-nowrap">TỔNG CỘNG</span>
-              <span className="font-extrabold text-base text-blue-700 whitespace-nowrap">{tongTien.toLocaleString()}đ</span>
+            <div className="pt-1.5 flex justify-between items-center border-t-2 border-gray-200 bg-gray-50 -mx-3 px-3 py-1.5 rounded-lg">
+              <span className="font-bold text-xs text-gray-900 tracking-tight whitespace-nowrap">TỔNG CỘNG</span>
+              <span className="font-extrabold text-sm text-blue-600 whitespace-nowrap">{tongTien.toLocaleString()}đ</span>
             </div>
           </div>
 
           {/* Khách đưa - inline */}
-          <div className="space-y-1 mb-2 px-0.5">
+          <div className="space-y-1.5 mb-3 px-0.5">
             <div className="flex items-center gap-1.5">
-              <label className="text-[11px] font-medium text-gray-500 whitespace-nowrap shrink-0">khách đưa</label>
-              <div className="flex items-center bg-gray-100 rounded-lg px-2 h-7 flex-1 min-w-0">
+              <label className="text-xs font-medium text-gray-700 whitespace-nowrap shrink-0">khách đưa</label>
+              <div className="flex items-center bg-white border border-gray-300 rounded-lg px-2 h-8 flex-1 min-w-0">
                 <input
                   type="number"
                   value={tienKhachDuaInput}
@@ -1427,7 +1547,7 @@ export default function KeDonKinh() {
                     }
                   }}
                   placeholder="Nhập số"
-                  className="bg-transparent w-full outline-none text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+                  className="bg-transparent w-full outline-none text-xs text-gray-900 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
                 />
                 {tienKhachDuaInput && Number(tienKhachDuaInput) !== 0 && (
                   <span className="text-xs text-gray-400 font-mono ml-0.5 shrink-0">.000</span>
@@ -1443,10 +1563,10 @@ export default function KeDonKinh() {
           </div>
 
           {/* Ghi nợ */}
-          <div className="mb-2 px-0.5">
+          <div className="mb-3 px-0.5">
             <div className="flex items-center gap-2">
-              <input type="checkbox" id="ghiNo-desktop" checked={ghiNo} onChange={(e) => setGhiNo(e.target.checked)} className="h-3.5 w-3.5 rounded border-gray-300 text-red-500 focus:ring-red-200" />
-              <label htmlFor="ghiNo-desktop" className={`text-xs font-semibold cursor-pointer ${ghiNo ? 'text-red-500' : 'text-gray-700'}`}>
+              <input type="checkbox" id="ghiNo-desktop" checked={ghiNo} onChange={(e) => setGhiNo(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-red-500 focus:ring-red-200" />
+              <label htmlFor="ghiNo-desktop" className={`text-sm font-semibold cursor-pointer ${ghiNo ? 'text-red-600' : 'text-gray-700'}`}>
                 Ghi nợ{ghiNo && sotienConNo > 0 ? `: ${sotienConNo.toLocaleString()}đ` : ''}
               </label>
             </div>
@@ -1456,14 +1576,14 @@ export default function KeDonKinh() {
           {/* end scrollable zone */}
 
           {/* Fixed-bottom action buttons */}
-          <div className="flex-shrink-0 p-3 border-t border-gray-100 space-y-1.5">
+          <div className="flex-shrink-0 p-3 border-t border-gray-200 space-y-2">
             {!isEditing && (
-              <button className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]" onClick={luuDonKinh}>
+              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]" onClick={luuDonKinh}>
                 ✓ LƯU ĐƠN
               </button>
             )}
             {isEditing && form.id && (
-              <button className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]" onClick={handleUpdate}>
+              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]" onClick={handleUpdate}>
                 ✓ CẬP NHẬT
               </button>
             )}

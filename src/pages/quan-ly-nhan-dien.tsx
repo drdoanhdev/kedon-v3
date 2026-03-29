@@ -3,7 +3,8 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import apiClient from '../lib/apiClient';
-import { Toaster, toast } from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import Link from 'next/link';
@@ -24,6 +25,7 @@ interface FaceEmbedding {
 }
 
 export default function QuanLyNhanDienPage() {
+  const { confirm } = useConfirm();
   const [embeddings, setEmbeddings] = useState<FaceEmbedding[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,7 +58,7 @@ export default function QuanLyNhanDienPage() {
   }, []);
 
   const handleDelete = async (patientId: number, patientName: string) => {
-    if (!confirm(`Xác nhận xóa nhận diện khuôn mặt của bệnh nhân "${patientName}"?`)) {
+    if (!await confirm(`Xác nhận xóa nhận diện khuôn mặt của bệnh nhân "${patientName}"?`)) {
       return;
     }
 
@@ -93,7 +95,6 @@ export default function QuanLyNhanDienPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         <div className="p-4 lg:p-6">
-          <Toaster position="top-right" />
 
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">

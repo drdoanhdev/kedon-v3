@@ -4,6 +4,7 @@ import Link from 'next/link';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 import { getAuthHeaders } from '../lib/fetchWithAuth';
+import toast from 'react-hot-toast';
 
 interface TrialInfo {
   plan: string;
@@ -147,14 +148,14 @@ export default function BillingPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Lỗi tạo đơn thanh toán');
+        toast.error(data.error || 'Lỗi tạo đơn thanh toán');
         return;
       }
       // SePay checkout: set form data and auto-submit
       setSepayCheckout({ url: data.checkoutURL, fields: data.checkoutFields });
       setSelectedPlan(null);
     } catch {
-      alert('Lỗi kết nối');
+      toast.error('Lỗi kết nối');
     } finally {
       setCreating(false);
     }

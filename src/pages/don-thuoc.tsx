@@ -8,7 +8,8 @@ import { Card, CardContent } from '../components/ui/card';
 import { Pagination, SimplePagination } from '../components/ui/pagination';
 import { Pencil, Trash2, Settings, Wallet } from 'lucide-react';
 import axios from 'axios';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -62,6 +63,7 @@ function calcAge(namsinh: string | null): number | "" {
 }
 
 export default function DonThuocPage() {
+  const { confirm } = useConfirm();
   const [donThuocs, setDonThuocs] = useState<DonThuoc[]>([]);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
@@ -214,7 +216,7 @@ export default function DonThuocPage() {
   }, []);
 
   const handleDelete = useCallback(async (id: number) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa đơn thuốc này?')) return;
+    if (!await confirm('Bạn có chắc chắn muốn xóa đơn thuốc này?')) return;
     try {
       await axios.delete(`/api/don-thuoc?id=${id}`);
       setDonThuocs((prev) => prev.filter((dt) => dt.id !== id));
@@ -254,7 +256,7 @@ export default function DonThuocPage() {
   return (
     <ProtectedRoute>
       <div className="p-4 lg:p-4">
-        <Toaster position="top-right" />
+
   <div className="w-full mx-auto">
           {/* Mobile Controls */}
           <div className="block md:hidden mb-4 space-y-3">

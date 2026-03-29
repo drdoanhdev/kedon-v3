@@ -15,7 +15,8 @@ import {
 } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import { Pencil, Trash2 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 
 interface Thuoc {
@@ -30,11 +31,14 @@ interface Thuoc {
   tonkho: number;
   soluongmacdinh: number;
   la_thu_thuat: boolean;
+  ngung_kinh_doanh: boolean;
 }
 
 export default function ThuocPage() {
+  const { confirm } = useConfirm();
   const [thuocs, setThuocs] = useState<Thuoc[]>([]);
   const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<Thuoc>({
@@ -48,6 +52,7 @@ export default function ThuocPage() {
     tonkho: 0,
     soluongmacdinh: 1,
     la_thu_thuat: false,
+    ngung_kinh_doanh: false,
   });
 
   useEffect(() => {
@@ -114,7 +119,7 @@ export default function ThuocPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Bạn có chắc muốn xoá thuốc này?')) {
+    if (await confirm('Bạn có chắc muốn xoá thuốc này?')) {
       try {
         await axios.delete(`/api/thuoc?id=${id}`);
         toast.success('Đã xoá thuốc');
@@ -137,13 +142,13 @@ export default function ThuocPage() {
   };
 
   const filtered = thuocs.filter((t) => {
+    if (!showInactive && t.ngung_kinh_doanh) return false;
     return t.tenthuoc.toLowerCase().includes(search.toLowerCase());
   });
 
   return (
     <ProtectedRoute>
       <div className="p-6 space-y-4">
-        <Toaster position="top-right" />
 
         <div className="flex justify-between items-center">
             <h1 className="text-2xl font-semibold">Danh sách thuốc</h1>
@@ -161,6 +166,7 @@ export default function ThuocPage() {
                   tonkho: 0,
                   soluongmacdinh: 1,
                   la_thu_thuat: false,
+                  ngung_kinh_doanh: false,
                 });
                 setOpen(true);
               }}
@@ -169,12 +175,22 @@ export default function ThuocPage() {
             </Button>
           </div>
 
-          <Input
-            placeholder="Tìm kiếm thuốc..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full md:w-1/2"
-          />
+          <div className="flex items-center gap-3">
+            <Input
+              placeholder="Tìm kiếm thuốc..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full md:w-1/2"
+            />
+            <button
+              onClick={() => setShowInactive(!showInactive)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap border ${
+                showInactive ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {showInactive ? 'Đang xem ngừng KD' : 'Xem ngừng KD'}
+            </button>
+          </div>
 
           <Card>
             <CardContent className="p-0 overflow-x-auto">
@@ -187,18 +203,24 @@ export default function ThuocPage() {
                     <th className="px-2 py-1">Giá bán</th>
                     <th className="px-2 py-1">Tồn</th>
                     <th className="px-2 py-1">Thủ thuật</th>
+                    <th className="px-2 py-1">Trạng thái</th>
                     <th className="px-2 py-1 text-center">Hành động</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((t) => (
-                    <tr key={t.id} className="border-b hover:bg-gray-50">
+                    <tr key={t.id} className={`border-b hover:bg-gray-50 ${t.ngung_kinh_doanh ? 'opacity-50 bg-gray-50' : ''}`}>
                       <td className="px-2 py-1 font-mono">{t.mathuoc}</td>
                       <td className="px-2 py-1">{t.tenthuoc}</td>
                       <td className="px-2 py-1">{t.hoatchat}</td>
                       <td className="px-2 py-1">{t.giaban.toLocaleString()}</td>
                       <td className="px-2 py-1">{t.tonkho}</td>
                       <td className="px-2 py-1">{t.la_thu_thuat ? 'Có' : 'Không'}</td>
+                      <td className="px-2 py-1">
+                        {t.ngung_kinh_doanh
+                          ? <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Ngừng KD</span>
+                          : <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Đang KD</span>}
+                      </td>
                       <td className="px-2 py-1 text-center space-x-1">
                         <Button size="sm" variant="outline" onClick={() => handleEdit(t)}>
                           <Pencil className="w-4 h-4" />
@@ -265,13 +287,26 @@ export default function ThuocPage() {
                 value={form.soluongmacdinh}
                 onChange={(e) => setForm({ ...form, soluongmacdinh: +e.target.value })}
               />
-              <Label>Là thủ thuật</Label>
-              <input
-                type="checkbox"
-                checked={form.la_thu_thuat}
-                onChange={(e) => setForm({ ...form, la_thu_thuat: e.target.checked })}
-                className="w-4 h-4 border-gray-300 rounded focus:ring-blue-500"
-              />
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <Label>Là thủ thuật</Label>
+                  <input
+                    type="checkbox"
+                    checked={form.la_thu_thuat}
+                    onChange={(e) => setForm({ ...form, la_thu_thuat: e.target.checked })}
+                    className="w-4 h-4 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label>Ngừng kinh doanh</Label>
+                  <input
+                    type="checkbox"
+                    checked={form.ngung_kinh_doanh}
+                    onChange={(e) => setForm({ ...form, ngung_kinh_doanh: e.target.checked })}
+                    className="w-4 h-4 border-red-300 rounded focus:ring-red-500"
+                  />
+                </div>
+              </div>
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setOpen(false)}>

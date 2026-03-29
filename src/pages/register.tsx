@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
-import toast, { Toaster } from 'react-hot-toast'
+import toast from 'react-hot-toast'
 
 export default function Register() {
   const [clinicName, setClinicName] = useState('')
@@ -50,7 +50,6 @@ export default function Register() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <Toaster position="top-right" />
       <div className="max-w-md w-full">
         {/* Logo / Header */}
         <div className="text-center mb-8">
