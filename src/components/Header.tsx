@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard } from 'lucide-react';
+import { useNotificationPolling } from '../hooks/useNotificationPolling';
 
 export default function Header() {
   const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole, userRole } = useAuth();
@@ -10,6 +11,7 @@ export default function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAvatarOpen, setIsAvatarOpen] = useState(false);
   const avatarRef = useRef<HTMLDivElement>(null);
+  const { counts } = useNotificationPolling();
 
   // Main navigation items (always visible in nav bar)
   const mainMenuItems = [
@@ -70,6 +72,33 @@ export default function Header() {
             </nav>
           </div>
 
+          {/* Notification & Message icons */}
+          <div className="flex items-center gap-1">
+            <Link
+              href="/thong-bao"
+              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/thong-bao') ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-600'}`}
+              title="Thông báo"
+            >
+              <Bell className="w-4.5 h-4.5" />
+              {counts.thongBao > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                  {counts.thongBao > 9 ? '9+' : counts.thongBao}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/tin-nhan"
+              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/tin-nhan') ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-600'}`}
+              title="Tin nhắn"
+            >
+              <MessageCircle className="w-4.5 h-4.5" />
+              {counts.tinNhan > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
+                  {counts.tinNhan > 9 ? '9+' : counts.tinNhan}
+                </span>
+              )}
+            </Link>
+
           {/* Avatar dropdown */}
           <div className="relative" ref={avatarRef}>
             <button
@@ -125,6 +154,18 @@ export default function Header() {
                   </Link>
                 ))}
 
+                {/* Gói dịch vụ */}
+                <Link
+                  href="/billing"
+                  onClick={() => setIsAvatarOpen(false)}
+                  className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                    isActivePage('/billing') ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                  }`}
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Gói dịch vụ</span>
+                </Link>
+
                 {/* Settings - only for owner/admin */}
                 {(currentRole === 'owner' || currentRole === 'admin') && (
                   <Link
@@ -169,6 +210,7 @@ export default function Header() {
               </div>
             )}
           </div>
+          </div>
         </div>
 
         {/* Mobile Header */}
@@ -177,10 +219,23 @@ export default function Header() {
             <span className="text-base font-extrabold text-emerald-900 tracking-tight">OcularCare</span>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <span className="text-sm text-gray-500 hidden sm:block">
-              {user?.email?.split('@')[0] || 'Guest'}
-            </span>
+          <div className="flex items-center space-x-2">
+            <Link href="/thong-bao" className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100">
+              <Bell className="w-5 h-5" />
+              {counts.thongBao > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                  {counts.thongBao > 9 ? '9+' : counts.thongBao}
+                </span>
+              )}
+            </Link>
+            <Link href="/tin-nhan" className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100">
+              <MessageCircle className="w-5 h-5" />
+              {counts.tinNhan > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
+                  {counts.tinNhan > 9 ? '9+' : counts.tinNhan}
+                </span>
+              )}
+            </Link>
             <button
               onClick={toggleMobileMenu}
               className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
@@ -234,6 +289,17 @@ export default function Header() {
                   </select>
                 </div>
               )}
+
+              <div className="px-3 py-1">
+                <Link
+                  href="/billing"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-sm text-gray-600"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Gói dịch vụ</span>
+                </Link>
+              </div>
 
               {(currentRole === 'owner' || currentRole === 'admin') && (
                 <div className="px-3 py-1">

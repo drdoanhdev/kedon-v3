@@ -87,6 +87,7 @@ async function activatePlan(tenantId: string, plan: string, months: number) {
     .from('tenants')
     .update({
       plan,
+      plan_source: 'payment',
       plan_expires_at: expiresAt.toISOString(),
       status: 'active',
       updated_at: new Date().toISOString(),

@@ -90,8 +90,10 @@ export default function BillingPage() {
       const res = await fetch('/api/tenants/plans');
       if (res.ok) {
         const data = await res.json();
-        if (data.data?.length) {
-          setPlans(data.data.map((p: any) => ({
+        // API trả về mảng trực tiếp hoặc { data: [...] }
+        const planList = Array.isArray(data) ? data : data.data;
+        if (planList?.length) {
+          setPlans(planList.map((p: any) => ({
             name: p.name,
             key: p.plan_key,
             price: p.price === 0 ? 'Miễn phí' : formatVND(p.price),

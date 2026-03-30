@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
-import { fetchWithAuth } from '../lib/fetchWithAuth';
+import { fetchWithAuth, getAuthHeaders } from '../lib/fetchWithAuth';
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Chủ phòng khám',
@@ -53,10 +53,11 @@ interface TenantInfo {
 
 export default function QuanLyPhongKham() {
   const { confirm } = useConfirm();
-  const { currentTenant, currentRole, user } = useAuth();
+  const { currentTenant, currentRole, user, currentTenantId } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
+  const [planInfo, setPlanInfo] = useState<any>(null);
   
   // Form state
   const [editTenant, setEditTenant] = useState(false);
@@ -107,6 +108,16 @@ export default function QuanLyPhongKham() {
 
   useEffect(() => {
     fetchMembers();
+    // Fetch plan info
+    if (currentTenantId) {
+      (async () => {
+        try {
+          const headers = await getAuthHeaders();
+          const res = await fetch('/api/tenants/trial', { headers });
+          if (res.ok) setPlanInfo(await res.json());
+        } catch {}
+      })();
+    }
     if (currentTenant) {
       setTenantInfo({
         id: currentTenant.id,
@@ -262,6 +273,51 @@ export default function QuanLyPhongKham() {
                 <p><span className="font-medium">Trạng thái:</span>{' '}
                   <Badge variant="outline" className="text-green-700">Hoạt động</Badge>
                 </p>
+
+                {/* Thông tin gói dịch vụ */}
+                {planInfo && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="font-medium text-gray-700 mb-2">Gói dịch vụ</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`px-2.5 py-1 rounded-full text-sm font-semibold ${
+                        planInfo.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
+                        planInfo.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {planInfo.plan === 'pro' ? '💎 Chuyên nghiệp' : planInfo.plan === 'basic' ? '🔵 Cơ bản' : '🎁 Dùng thử'}
+                      </span>
+                    </div>
+
+                    {planInfo.plan === 'trial' && planInfo.trial && (
+                      <div className="space-y-1 text-sm text-gray-600">
+                        <p>Ngày còn lại: <span className={`font-semibold ${planInfo.trial.daysRemaining <= 7 ? 'text-red-600' : planInfo.trial.daysRemaining <= 30 ? 'text-yellow-600' : 'text-green-600'}`}>{planInfo.trial.daysRemaining}</span> / {planInfo.trial.totalDays} ngày</p>
+                        <p>Đơn đã dùng: <span className="font-semibold">{planInfo.trial.usedPrescriptions}</span> / {planInfo.trial.maxPrescriptions}</p>
+                        {planInfo.trial.isExpired && (
+                          <p className="text-red-600 font-semibold">⚠️ Gói dùng thử đã hết hạn!</p>
+                        )}
+                      </div>
+                    )}
+
+                    {planInfo.plan !== 'trial' && planInfo.planExpiresAt && (
+                      <p className="text-sm text-gray-600">
+                        Hạn sử dụng:{' '}
+                        <span className={`font-semibold ${new Date(planInfo.planExpiresAt) < new Date() ? 'text-red-600' : 'text-green-600'}`}>
+                          {new Date(planInfo.planExpiresAt).toLocaleDateString('vi-VN')}
+                        </span>
+                        {new Date(planInfo.planExpiresAt) < new Date() && ' (Đã hết hạn)'}
+                      </p>
+                    )}
+
+                    <Link
+                      href="/billing"
+                      className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                    >
+                      {planInfo.plan === 'trial' || (planInfo.planExpiresAt && new Date(planInfo.planExpiresAt) < new Date())
+                        ? '🚀 Nâng cấp gói'
+                        : '💳 Quản lý gói dịch vụ'}
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

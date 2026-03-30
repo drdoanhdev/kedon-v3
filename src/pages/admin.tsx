@@ -70,6 +70,9 @@ function StatsTab() {
 function TenantsTab() {
   const [tenants, setTenants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [planModal, setPlanModal] = useState<{ tenant: any } | null>(null);
+  const [planForm, setPlanForm] = useState({ plan: '', months: '1' });
+  const [savingPlan, setSavingPlan] = useState(false);
 
   const fetchTenants = useCallback(async () => {
     setLoading(true);
@@ -104,9 +107,63 @@ function TenantsTab() {
     } catch { toast.error('Lỗi kết nối'); }
   };
 
+  const openPlanModal = (tenant: any) => {
+    setPlanForm({
+      plan: tenant.plan || 'trial',
+      months: '1',
+    });
+    setPlanModal({ tenant });
+  };
+
+  const handleSavePlan = async () => {
+    if (!planModal) return;
+    setSavingPlan(true);
+    try {
+      const now = new Date();
+      // Tính plan_expires_at: cộng months tháng từ hiện tại (hoặc từ ngày hết hạn cũ nếu còn hạn)
+      let expiresAt: Date;
+      if (planForm.plan === 'trial') {
+        // Trial: không có hạn mới, reset về null
+        expiresAt = new Date(0);
+      } else {
+        const existingExpiry = planModal.tenant.plan_expires_at;
+        if (existingExpiry && new Date(existingExpiry) > now) {
+          expiresAt = new Date(existingExpiry);
+        } else {
+          expiresAt = new Date(now);
+        }
+        expiresAt.setMonth(expiresAt.getMonth() + parseInt(planForm.months));
+      }
+
+      const headers = await getAuthHeaders();
+      const body: any = {
+        tenantId: planModal.tenant.id,
+        plan: planForm.plan,
+        plan_expires_at: planForm.plan === 'trial' ? null : expiresAt.toISOString(),
+      };
+
+      const res = await fetch('/api/admin/tenants', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        toast.success(`Đã ${planForm.plan === 'trial' ? 'chuyển về dùng thử' : `kích hoạt gói ${planForm.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'} (${planForm.months} tháng)`}`);
+        setPlanModal(null);
+        fetchTenants();
+      } else {
+        const err = await res.json();
+        toast.error(err.message || 'Lỗi cập nhật');
+      }
+    } catch { toast.error('Lỗi kết nối'); }
+    finally { setSavingPlan(false); }
+  };
+
   if (loading) return <div className="text-center py-12 text-gray-400">Đang tải...</div>;
 
   return (
+    <>
     <div className="bg-white rounded-xl border overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -134,13 +191,28 @@ function TenantsTab() {
                 <td className="px-2 py-2 text-gray-600 whitespace-nowrap">{t.owner_email || '—'}</td>
                 <td className="px-2 py-2 text-center">{t.member_count}</td>
                 <td className="px-2 py-2 text-center whitespace-nowrap">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    t.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
-                    t.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
-                    'bg-gray-100 text-gray-600'
-                  }`}>
-                    {t.plan === 'pro' ? 'Chuyên nghiệp' : t.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}
-                  </span>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      t.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
+                      t.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {t.plan === 'pro' ? 'Chuyên nghiệp' : t.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}
+                    </span>
+                    <span className={`text-[10px] ${
+                      t.plan_source === 'admin' ? 'text-orange-500' :
+                      t.plan_source === 'payment' ? 'text-green-600' :
+                      'text-gray-400'
+                    }`}>
+                      {t.plan_source === 'admin' ? '🔧 Admin' : t.plan_source === 'payment' ? '💳 Mua' : ''}
+                    </span>
+                    {t.plan_expires_at && t.plan !== 'trial' && (
+                      <span className={`text-[10px] ${new Date(t.plan_expires_at) < new Date() ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                        {new Date(t.plan_expires_at) < new Date() ? 'Hết hạn ' : 'HSD '}
+                        {new Date(t.plan_expires_at).toLocaleDateString('vi-VN')}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-2 py-2 text-center whitespace-nowrap">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -160,15 +232,24 @@ function TenantsTab() {
                     : '—'}
                 </td>
                 <td className="px-2 py-2 text-center whitespace-nowrap">
-                  <select
-                    value={t.status}
-                    onChange={(e) => handleStatusChange(t.id, e.target.value)}
-                    className="text-xs border rounded px-1 py-1"
-                  >
-                    <option value="active">Hoạt động</option>
-                    <option value="suspended">Tạm ngưng</option>
-                    <option value="inactive">Ngưng HĐ</option>
-                  </select>
+                  <div className="flex items-center gap-1 justify-center">
+                    <select
+                      value={t.status}
+                      onChange={(e) => handleStatusChange(t.id, e.target.value)}
+                      className="text-xs border rounded px-1 py-1"
+                    >
+                      <option value="active">Hoạt động</option>
+                      <option value="suspended">Tạm ngưng</option>
+                      <option value="inactive">Ngưng HĐ</option>
+                    </select>
+                    <button
+                      onClick={() => openPlanModal(t)}
+                      className="px-1.5 py-1 bg-purple-50 text-purple-700 text-xs rounded hover:bg-purple-100 font-medium"
+                      title="Kích hoạt / đổi gói"
+                    >
+                      💎
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -179,6 +260,86 @@ function TenantsTab() {
         <div className="text-center py-12 text-gray-400">Chưa có phòng khám nào</div>
       )}
     </div>
+
+      {/* Modal kích hoạt gói */}
+      {planModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Kích hoạt / đổi gói dịch vụ</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {planModal.tenant.name} — Gói hiện tại: <span className="font-medium">{planModal.tenant.plan === 'pro' ? 'Chuyên nghiệp' : planModal.tenant.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}</span>
+              {planModal.tenant.plan_source === 'payment' && <span className="text-green-600 ml-1">(Khách mua)</span>}
+              {planModal.tenant.plan_source === 'admin' && <span className="text-orange-500 ml-1">(Admin cấp)</span>}
+            </p>
+
+            {planModal.tenant.plan_expires_at && planModal.tenant.plan !== 'trial' && (
+              <div className={`text-sm mb-4 p-2 rounded ${new Date(planModal.tenant.plan_expires_at) < new Date() ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                {new Date(planModal.tenant.plan_expires_at) < new Date()
+                  ? `⚠️ Đã hết hạn ngày ${new Date(planModal.tenant.plan_expires_at).toLocaleDateString('vi-VN')}`
+                  : `✅ Còn hạn đến ${new Date(planModal.tenant.plan_expires_at).toLocaleDateString('vi-VN')}`}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Chọn gói</label>
+                <select
+                  value={planForm.plan}
+                  onChange={(e) => setPlanForm({ ...planForm, plan: e.target.value })}
+                  className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                >
+                  <option value="trial">🎁 Dùng thử</option>
+                  <option value="basic">🔵 Cơ bản</option>
+                  <option value="pro">💎 Chuyên nghiệp</option>
+                </select>
+              </div>
+
+              {planForm.plan !== 'trial' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Số tháng kích hoạt</label>
+                  <select
+                    value={planForm.months}
+                    onChange={(e) => setPlanForm({ ...planForm, months: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                  >
+                    {[1, 2, 3, 6, 12].map(m => (
+                      <option key={m} value={m}>{m} tháng</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {planModal.tenant.plan_expires_at && new Date(planModal.tenant.plan_expires_at) > new Date()
+                      ? 'Sẽ cộng dồn vào thời hạn hiện tại'
+                      : 'Tính từ hôm nay'}
+                  </p>
+                </div>
+              )}
+
+              {planForm.plan === 'trial' && planModal.tenant.plan !== 'trial' && (
+                <div className="p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
+                  ⚠️ Chuyển về gói dùng thử sẽ xóa hạn sử dụng gói trả phí.
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSavePlan}
+                disabled={savingPlan}
+                className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition disabled:opacity-50"
+              >
+                {savingPlan ? 'Đang lưu...' : planForm.plan === 'trial' ? 'Chuyển về dùng thử' : `Kích hoạt ${planForm.months} tháng`}
+              </button>
+              <button
+                onClick={() => setPlanModal(null)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

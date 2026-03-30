@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const { data: tenants, error } = await supabaseAdmin
         .from('tenants')
-        .select('id, name, code, phone, status, plan, trial_start, trial_days, trial_max_prescriptions, plan_expires_at, owner_id, created_at')
+        .select('id, name, code, phone, status, plan, plan_source, trial_start, trial_days, trial_max_prescriptions, plan_expires_at, owner_id, created_at')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -85,6 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       if (plan && ['trial', 'basic', 'pro', 'enterprise'].includes(plan)) {
         updateData.plan = plan;
+        updateData.plan_source = 'admin';
       }
       if (plan_expires_at !== undefined) {
         updateData.plan_expires_at = plan_expires_at;

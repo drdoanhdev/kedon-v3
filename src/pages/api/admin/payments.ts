@@ -88,6 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .from('tenants')
           .update({
             plan: order.plan,
+            plan_source: 'payment',
             plan_expires_at: expiresAt.toISOString(),
             status: 'active',
             updated_at: new Date().toISOString(),
