@@ -74,6 +74,20 @@ export default function KeDon() {
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
   const authReady = !authLoading && !tenancyLoading && !!currentTenantId;
 
+  // Auto chuyển trạng thái chờ khám → đang_khám khi mở trang kê đơn
+  useEffect(() => {
+    if (!benhnhanid || !authReady) return;
+    const pid = parseInt(benhnhanid);
+    (async () => {
+      try {
+        await axios.post('/api/cho-kham', { patient_id: pid });
+      } catch {}
+      try {
+        await axios.patch('/api/cho-kham', { benhnhanid: pid, trangthai: 'đang_khám' });
+      } catch {}
+    })();
+  }, [benhnhanid, authReady]);
+
   const [dsThuoc, setDsThuoc] = useState<Thuoc[]>([]);
   const [dsDonCu, setDsDonCu] = useState<DonThuocCu[]>([]);
   const [dsChiTietDonCu, setDsChiTietDonCu] = useState<{ [donthuocid: number]: ChiTietDonThuoc[] }>({});
@@ -535,6 +549,11 @@ export default function KeDon() {
       if (res.ok) {
         saveChandoanToHistory(chandoan);
         toast.success(`Đã ${editDonThuocId ? 'cập nhật' : 'lưu'} đơn thuốc: ${data.data.madonthuoc}`);
+        // Auto chuyển trạng thái chờ khám → đã_xong
+        axios.patch('/api/cho-kham', {
+          benhnhanid: parseInt(benhnhanid!),
+          trangthai: 'đã_xong',
+        }).catch(() => {});
         // Hiển thị cảnh báo tồn kho
         const warnings: string[] = data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));

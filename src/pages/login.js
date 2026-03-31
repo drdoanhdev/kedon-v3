@@ -141,6 +141,11 @@ export default function Login() {
               className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               disabled={loading}
             />
+            <div className="text-right mt-1">
+              <a href="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
+                Quên mật khẩu?
+              </a>
+            </div>
           </div>
 
           <button

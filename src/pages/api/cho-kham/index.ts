@@ -10,17 +10,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { tenantId } = ctx;
 
   if (req.method === 'POST') {
-    return handlePost(req, res);
+    return handlePost(req, res, tenantId);
   } else if (req.method === 'GET') {
-    return handleGet(req, res);
+    return handleGet(req, res, tenantId);
+  } else if (req.method === 'PATCH') {
+    return handlePatch(req, res, tenantId);
   } else if (req.method === 'DELETE') {
-    return handleDelete(req, res);
+    return handleDelete(req, res, tenantId);
   } else {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 }
 
-async function handleGet(req: NextApiRequest, res: NextApiResponse) {
+async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -54,7 +56,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-async function handlePost(req: NextApiRequest, res: NextApiResponse) {
+async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
   try {
     const { patient_id, camera_location, avatar } = req.body;
 
@@ -67,6 +69,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       .from('BenhNhan')
       .select('id, ten')
       .eq('id', patient_id)
+      .eq('tenant_id', tenantId)
       .single();
 
     if (patientError || !patient) {
@@ -81,8 +84,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       .from('ChoKham')
       .select('id, thoigian')
       .eq('benhnhanid', patient_id)
+      .eq('tenant_id', tenantId)
       .gte('thoigian', today.toISOString())
-      .eq('trangthai', 'chờ')
+      .in('trangthai', ['chờ', 'đang_khám'])
       .single();
 
     if (existing) {
@@ -128,7 +132,59 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
+async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
+  try {
+    const { id, benhnhanid, trangthai } = req.body;
+
+    if ((!id && !benhnhanid) || !trangthai) {
+      return res.status(400).json({ success: false, error: 'id or benhnhanid, and trangthai are required' });
+    }
+
+    const validStatuses = ['chờ', 'đang_khám', 'đã_xong'];
+    if (!validStatuses.includes(trangthai)) {
+      return res.status(400).json({ success: false, error: 'Invalid status. Must be: chờ, đang_khám, đã_xong' });
+    }
+
+    if (id) {
+      // Update by record ID
+      const { data, error } = await supabase
+        .from('ChoKham')
+        .update({ trangthai })
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return res.status(200).json({ success: true, data });
+    } else {
+      // Update by benhnhanid — tìm record hôm nay đang chờ/đang khám
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const { data, error } = await supabase
+        .from('ChoKham')
+        .update({ trangthai })
+        .eq('benhnhanid', benhnhanid)
+        .eq('tenant_id', tenantId)
+        .gte('thoigian', today.toISOString())
+        .in('trangthai', ['chờ', 'đang_khám'])
+        .select();
+
+      if (error) throw error;
+
+      return res.status(200).json({
+        success: !!(data && data.length > 0),
+        data: data?.[0] || null,
+      });
+    }
+  } catch (error: any) {
+    console.error('Error updating waiting list status:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+async function handleDelete(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
   try {
     const { id } = req.query;
 
@@ -139,7 +195,8 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
     const { error } = await supabase
       .from('ChoKham')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('tenant_id', tenantId);
 
     if (error) throw error;
 

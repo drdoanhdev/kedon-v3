@@ -22,6 +22,7 @@ import toast from "react-hot-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute'
 import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
+import ChoKhamPanel, { ChoKhamPanelRef } from '@/components/ChoKhamPanel';
 
 interface BenhNhan {
   id?: number;
@@ -137,6 +138,7 @@ export default function BenhNhanPage() {
   const namsinhRef = useRef<HTMLInputElement | null>(null);
   const dienthoaiRef = useRef<HTMLInputElement | null>(null);
   const diachiRef = useRef<HTMLInputElement | null>(null);
+  const choKhamPanelRef = useRef<ChoKhamPanelRef>(null);
 
   // Auto-focus Tên when opening dialog for creating new patient
   useEffect(() => {
@@ -771,25 +773,32 @@ export default function BenhNhanPage() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button size="sm" asChild className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs">
-                        <a
-                          href={`/ke-don?bn=${bn.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Mở tab mới kê đơn thuốc"
-                        >
-                          Kê đơn thuốc
-                        </a>
+                      <Button
+                        size="sm"
+                        className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs text-white"
+                        onClick={async () => {
+                          await choKhamPanelRef.current?.addPatient(bn.id!);
+                          window.open(`/ke-don?bn=${bn.id}`, '_blank');
+                        }}
+                      >
+                        Kê đơn thuốc
                       </Button>
-                      <Button size="sm" asChild className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs">
-                        <a
-                          href={`/ke-don-kinh?bn=${bn.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Mở tab mới kê đơn kính"
-                        >
-                          Kê đơn kính
-                        </a>
+                      <Button
+                        size="sm"
+                        className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs text-white"
+                        onClick={async () => {
+                          await choKhamPanelRef.current?.addPatient(bn.id!);
+                          window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
+                        }}
+                      >
+                        Kê đơn kính
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="flex-1 h-8 bg-yellow-500 hover:bg-yellow-600 text-xs text-white"
+                        onClick={() => choKhamPanelRef.current?.addPatient(bn.id!)}
+                      >
+                        + Chờ khám
                       </Button>
                     </div>
 
@@ -939,7 +948,13 @@ export default function BenhNhanPage() {
         </div>
 
         {/* Desktop Layout - Keep original */}
-  <div className="hidden md:block">
+  <div className="hidden md:flex gap-4">
+          {/* Left: Danh sách chờ khám */}
+          <div className="w-72 shrink-0">
+            <ChoKhamPanel ref={choKhamPanelRef} />
+          </div>
+          {/* Right: Danh sách bệnh nhân */}
+          <div className="flex-1 min-w-0">
           <div className="space-y-2">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -1070,7 +1085,7 @@ export default function BenhNhanPage() {
                       >
                         <div className="flex items-center gap-1">Địa Chỉ {renderSortIndicator('diachi')}</div>
                       </th>
-                      <th className="px-2 py-1 text-center w-[240px]">Hành Động</th>
+                      <th className="px-2 py-1 text-center w-[290px]">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1094,29 +1109,39 @@ export default function BenhNhanPage() {
                           <td className="px-2 py-1">{bn.dienthoai}</td>
                           <td className="px-2 py-1">{bn.diachi}</td>
                           <td className="px-2 py-1 text-center">
-                            <div className="inline-flex items-center gap-1 flex-wrap justify-center max-w-[230px]">
+                            <div className="inline-flex items-center gap-1 flex-wrap justify-center max-w-[280px]">
                               <Button size="sm" variant="outline" onClick={() => handleEdit(bn)} className="h-7 px-2">
                                 <Pencil className="w-3 h-3" />
                               </Button>
-                              <Button size="sm" asChild className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                                <a
-                                  href={`/ke-don?bn=${bn.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="Mở tab mới kê đơn thuốc"
-                                >
-                                  Kê Đơn
-                                </a>
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 bg-yellow-500 hover:bg-yellow-600 text-white text-xs"
+                                onClick={() => choKhamPanelRef.current?.addPatient(bn.id!)}
+                                title="Thêm vào danh sách chờ khám"
+                              >
+                                + Chờ
                               </Button>
-                              <Button size="sm" asChild className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                                <a
-                                  href={`/ke-don-kinh?bn=${bn.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="Mở tab mới kê đơn kính"
-                                >
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                onClick={async () => {
+                                  await choKhamPanelRef.current?.addPatient(bn.id!);
+                                  window.open(`/ke-don?bn=${bn.id}`, '_blank');
+                                }}
+                                title="Thêm vào chờ khám & mở kê đơn thuốc"
+                              >
+                                  Kê Đơn
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                onClick={async () => {
+                                  await choKhamPanelRef.current?.addPatient(bn.id!);
+                                  window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
+                                }}
+                                title="Thêm vào chờ khám & mở kê đơn kính"
+                              >
                                   Kính
-                                </a>
                               </Button>
                               {/* Delete moved into edit dialog */}
                               <button
@@ -1323,6 +1348,7 @@ export default function BenhNhanPage() {
                 }}
               />
             </div>
+          </div>
           </div>
         </div>        {/* Popup Dialog */}
         <Dialog open={open} onOpenChange={setOpen}>

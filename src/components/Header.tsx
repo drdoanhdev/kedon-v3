@@ -50,7 +50,7 @@ export default function Header() {
   const userInitial = (user?.email?.[0] || 'U').toUpperCase();
 
   return (
-    <header className="fixed top-0 w-full z-50 bg-white/85 backdrop-blur-md border-b border-emerald-50/10 shadow-sm">
+    <header className="fixed top-0 w-full z-50 bg-white/85 backdrop-blur-md border-b border-blue-50/10 shadow-sm">
       <div className="px-6 lg:px-8">
         {/* Desktop Header (md and up) */}
         <div className="hidden md:flex items-center justify-between h-10">
@@ -62,8 +62,8 @@ export default function Header() {
                   href={href}
                   className={`text-[13px] font-medium px-3 pb-1.5 pt-1 transition-all ${
                     isActivePage(href)
-                      ? 'text-emerald-700 border-b-2 border-emerald-700'
-                      : 'text-gray-500 hover:text-emerald-600 hover:border-b-2 hover:border-emerald-300'
+                      ? 'text-blue-700 border-b-2 border-blue-700'
+                      : 'text-gray-500 hover:text-blue-600 hover:border-b-2 hover:border-blue-300'
                   }`}
                 >
                   {label}
@@ -76,7 +76,7 @@ export default function Header() {
           <div className="flex items-center gap-1">
             <Link
               href="/thong-bao"
-              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/thong-bao') ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-600'}`}
+              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/thong-bao') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
               title="Thông báo"
             >
               <Bell className="w-4.5 h-4.5" />
@@ -88,7 +88,7 @@ export default function Header() {
             </Link>
             <Link
               href="/tin-nhan"
-              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/tin-nhan') ? 'bg-emerald-100 text-emerald-700' : 'text-gray-500 hover:bg-gray-100 hover:text-emerald-600'}`}
+              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/tin-nhan') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
               title="Tin nhắn"
             >
               <MessageCircle className="w-4.5 h-4.5" />
@@ -105,7 +105,7 @@ export default function Header() {
               onClick={() => setIsAvatarOpen(!isAvatarOpen)}
               className="flex items-center space-x-2 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
             >
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-sm font-bold text-emerald-700 border border-emerald-200">
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700 border border-blue-200">
                 {userInitial}
               </div>
               <span className="text-sm text-gray-600 max-w-[120px] truncate">{user?.email?.split('@')[0] || 'Guest'}</span>
@@ -116,13 +116,13 @@ export default function Header() {
               <div className="absolute right-0 top-full mt-1 w-64 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-100 z-50 py-1 overflow-hidden">
                 {/* Tenant selector (multi-tenant only) */}
                 {tenants.length > 1 && (
-                  <div className="px-4 py-3 border-b border-gray-100 bg-emerald-50/40">
+                  <div className="px-4 py-3 border-b border-gray-100 bg-blue-50/40">
                     <div className="flex items-center space-x-2 mb-1">
-                      <Building2 className="w-4 h-4 text-emerald-600" />
+                      <Building2 className="w-4 h-4 text-blue-600" />
                       <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Chuyển phòng khám</span>
                     </div>
                     <select
-                      className="w-full text-sm rounded-lg px-2 py-1 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-200 bg-white"
+                      className="w-full text-sm rounded-lg px-2 py-1 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
                       value={currentTenantId || ''}
                       onChange={e => switchTenant(e.target.value)}
                     >
@@ -146,7 +146,7 @@ export default function Header() {
                     href={href}
                     onClick={() => setIsAvatarOpen(false)}
                     className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                      isActivePage(href) ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                      isActivePage(href) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -159,7 +159,7 @@ export default function Header() {
                   href="/billing"
                   onClick={() => setIsAvatarOpen(false)}
                   className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                    isActivePage('/billing') ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    isActivePage('/billing') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
                   }`}
                 >
                   <CreditCard className="w-4 h-4" />
@@ -172,7 +172,7 @@ export default function Header() {
                     href="/quan-ly-phong-kham"
                     onClick={() => setIsAvatarOpen(false)}
                     className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                      isActivePage('/quan-ly-phong-kham') ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                      isActivePage('/quan-ly-phong-kham') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
                     }`}
                   >
                     <Settings className="w-4 h-4" />
@@ -216,7 +216,7 @@ export default function Header() {
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between h-10">
           <div className="flex items-center space-x-3">
-            <span className="text-base font-extrabold text-emerald-900 tracking-tight">OcularCare</span>
+            <span className="text-base font-extrabold text-blue-900 tracking-tight">OcularCare</span>
           </div>
           
           <div className="flex items-center space-x-2">
@@ -260,7 +260,7 @@ export default function Header() {
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={`flex items-center space-x-3 px-3 py-3 rounded-xl transition-colors ${
                     isActivePage(href)
-                      ? 'bg-emerald-50 text-emerald-800'
+                      ? 'bg-blue-50 text-blue-800'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
