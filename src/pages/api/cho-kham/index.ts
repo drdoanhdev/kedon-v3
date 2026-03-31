@@ -1,6 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
+// Lấy đầu ngày hôm nay theo giờ Việt Nam (UTC+7)
+function getTodayStartVN(): string {
+  const now = new Date();
+  const vnNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const vnDateStr = vnNow.toISOString().split('T')[0];
+  return new Date(`${vnDateStr}T00:00:00+07:00`).toISOString();
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -24,8 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayStart = getTodayStartVN();
 
     const { data, error } = await supabase
       .from('ChoKham')
@@ -44,7 +51,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
         )
       `)
       .eq('tenant_id', tenantId)
-      .gte('thoigian', today.toISOString())
+      .gte('thoigian', todayStart)
       .order('thoigian', { ascending: true });
 
     if (error) throw error;
@@ -76,16 +83,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
       return res.status(404).json({ success: false, error: 'Patient not found' });
     }
 
-    // Kiểm tra đã có trong danh sách chờ hôm nay chưa
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Kiểm tra đã có trong danh sách chờ hôm nay chưa (theo giờ VN)
+    const todayStart = getTodayStartVN();
 
     const { data: existing } = await supabase
       .from('ChoKham')
       .select('id, thoigian')
       .eq('benhnhanid', patient_id)
       .eq('tenant_id', tenantId)
-      .gte('thoigian', today.toISOString())
+      .gte('thoigian', todayStart)
       .in('trangthai', ['chờ', 'đang_khám'])
       .single();
 
@@ -158,16 +164,15 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: 
       if (error) throw error;
       return res.status(200).json({ success: true, data });
     } else {
-      // Update by benhnhanid — tìm record hôm nay đang chờ/đang khám
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Update by benhnhanid — tìm record hôm nay đang chờ/đang khám (theo giờ VN)
+      const todayStart = getTodayStartVN();
 
       const { data, error } = await supabase
         .from('ChoKham')
         .update({ trangthai })
         .eq('benhnhanid', benhnhanid)
         .eq('tenant_id', tenantId)
-        .gte('thoigian', today.toISOString())
+        .gte('thoigian', todayStart)
         .in('trangthai', ['chờ', 'đang_khám'])
         .select();
 

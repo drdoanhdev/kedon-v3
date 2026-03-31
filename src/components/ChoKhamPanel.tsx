@@ -201,7 +201,7 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef>((_, ref) => {
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate leading-tight">{item.BenhNhan?.ten || 'N/A'}</div>
                       <div className="text-[10px] text-gray-400 leading-tight">
-                        {new Date(item.thoigian).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(item.thoigian).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })}
                         {item.trangthai !== 'đã_xong' && (
                           <span className={`ml-1 ${
                             item.trangthai === 'đang_khám' ? 'text-blue-500' : 

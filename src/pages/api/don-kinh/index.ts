@@ -137,6 +137,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         no,
         sotien_da_thanh_toan,
         lai,
+        pd_mp,
+        pd_mt,
       } = req.body as Record<string, unknown>;
 
       if (!benhnhanid || !ngaykham) {
@@ -196,6 +198,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              no: (Number(giatrong) + Number(giagong) - Number(sotien_da_thanh_toan || 0)) > 0,
              // Profit unified
              lai: (typeof lai === 'number' && !isNaN(lai as number)) ? lai : calcKinhProfit(giatrong, giagong, lensCost, frameCost),
+            pd_mp: pd_mp || '',
+            pd_mt: pd_mt || '',
             tenant_id: tenantId,
           },
         ])
@@ -254,6 +258,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         no,
         sotien_da_thanh_toan,
         lai,
+        pd_mp,
+        pd_mt,
       } = req.body as Record<string, unknown>;
 
       if (!id || !benhnhanid || !ngaykham) {
@@ -309,6 +315,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
        sotien_da_thanh_toan: sotien_da_thanh_toan || 0,
    no: (Number(giatrong) + Number(giagong) - Number(sotien_da_thanh_toan || 0)) > 0,
    lai: (typeof lai === 'number' && !isNaN(lai as number)) ? lai : calcKinhProfit(giatrong, giagong, lensCost, frameCost),
+          pd_mp: pd_mp || '',
+          pd_mt: pd_mt || '',
         })
         .eq('id', id)
         .eq('tenant_id', tenantId)

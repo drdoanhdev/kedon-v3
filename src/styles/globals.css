@@ -143,6 +143,20 @@ input.with-spinner::-webkit-inner-spin-button { -webkit-appearance: auto; margin
 
 /* Clinical UI styles */
 .shadow-clinical { box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02); }
+
+/* Hide datalist dropdown arrow on mobile to save space */
+@media (max-width: 639px) {
+  input[list]::-webkit-calendar-picker-indicator {
+    display: none !important;
+    -webkit-appearance: none;
+  }
+  input[list]::-webkit-list-button {
+    display: none !important;
+  }
+  input[list] {
+    -webkit-appearance: none;
+  }
+}
 .clinical-scrollbar::-webkit-scrollbar { width: 5px; }
 .clinical-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .clinical-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }

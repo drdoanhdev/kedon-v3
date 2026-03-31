@@ -28,7 +28,7 @@ interface ThongBao {
 
 const LOAI_MAP: Record<string, { label: string; icon: typeof Bell; color: string; bg: string }> = {
   system: { label: 'Hệ thống', icon: Info, color: 'text-blue-700', bg: 'bg-blue-50' },
-  admin: { label: 'Quản trị', icon: Megaphone, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+  admin: { label: 'Quản trị', icon: Megaphone, color: 'text-blue-700', bg: 'bg-blue-50' },
   reminder: { label: 'Nhắc nhở', icon: Clock, color: 'text-orange-700', bg: 'bg-orange-50' },
   warning: { label: 'Cảnh báo', icon: AlertTriangle, color: 'text-red-700', bg: 'bg-red-50' },
 };
@@ -49,9 +49,9 @@ function formatTime(dateStr: string) {
 }
 
 export default function ThongBaoPage() {
-  const { currentRole } = useAuth();
+  const { userRole } = useAuth();
   const { confirm } = useConfirm();
-  const isAdmin = currentRole === 'owner' || currentRole === 'admin';
+  const isSuperAdmin = userRole === 'superadmin';
 
   const [data, setData] = useState<ThongBao[]>([]);
   const [loading, setLoading] = useState(false);
@@ -140,7 +140,7 @@ export default function ThongBaoPage() {
         }),
       });
       if (!res.ok) throw new Error();
-      toast.success('Đã gửi thông báo cho tất cả thành viên');
+      toast.success('Đã gửi thông báo đến tất cả người dùng');
       setOpenCreate(false);
       setNewTieuDe('');
       setNewNoiDung('');
@@ -159,7 +159,7 @@ export default function ThongBaoPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Bell className="w-6 h-6 text-emerald-600" />
+            <Bell className="w-6 h-6 text-blue-600" />
             <h1 className="text-xl font-bold text-gray-900">Thông báo</h1>
             {unreadCount > 0 && (
               <span className="px-2.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
@@ -173,8 +173,8 @@ export default function ThongBaoPage() {
                 <CheckCheck className="w-4 h-4 mr-1" /> Đọc tất cả
               </Button>
             )}
-            {isAdmin && (
-              <Button size="sm" onClick={() => setOpenCreate(true)} className="bg-emerald-600 hover:bg-emerald-700">
+            {isSuperAdmin && (
+              <Button size="sm" onClick={() => setOpenCreate(true)} className="bg-blue-600 hover:bg-blue-700">
                 <Plus className="w-4 h-4 mr-1" /> Tạo thông báo
               </Button>
             )}
@@ -184,13 +184,13 @@ export default function ThongBaoPage() {
         {/* Filter */}
         <div className="flex gap-2 mb-4">
           <button
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${!showUnreadOnly ? 'bg-emerald-100 text-emerald-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${!showUnreadOnly ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
             onClick={() => setShowUnreadOnly(false)}
           >
             Tất cả
           </button>
           <button
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${showUnreadOnly ? 'bg-emerald-100 text-emerald-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${showUnreadOnly ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
             onClick={() => setShowUnreadOnly(true)}
           >
             Chưa đọc {unreadCount > 0 && `(${unreadCount})`}
@@ -213,7 +213,7 @@ export default function ThongBaoPage() {
               return (
                 <Card
                   key={tb.id}
-                  className={`transition-all cursor-pointer hover:shadow-md ${!tb.da_doc ? 'border-l-4 border-l-emerald-500 bg-emerald-50/30' : 'opacity-75'}`}
+                  className={`transition-all cursor-pointer hover:shadow-md ${!tb.da_doc ? 'border-l-4 border-l-blue-500 bg-blue-50/30' : 'opacity-75'}`}
                   onClick={() => !tb.da_doc && markAsRead(tb.id)}
                 >
                   <CardContent className="p-4">
@@ -241,14 +241,14 @@ export default function ThongBaoPage() {
                           <div className="flex items-center gap-1">
                             {!tb.da_doc && (
                               <button
-                                className="p-1 text-emerald-500 hover:bg-emerald-100 rounded transition-colors"
+                                className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
                                 onClick={(e) => { e.stopPropagation(); markAsRead(tb.id); }}
                                 title="Đánh dấu đã đọc"
                               >
                                 <Check className="w-4 h-4" />
                               </button>
                             )}
-                            {isAdmin && (
+                            {isSuperAdmin && (
                               <button
                                 className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
                                 onClick={(e) => { e.stopPropagation(); deleteThongBao(tb.id); }}
@@ -276,7 +276,7 @@ export default function ThongBaoPage() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-                Thông báo sẽ được gửi đến <strong>tất cả thành viên</strong> trong phòng khám.
+                Thông báo sẽ được gửi đến <strong>tất cả người dùng</strong> trên hệ thống.
               </div>
               <div>
                 <Label>Loại thông báo</Label>
@@ -325,7 +325,7 @@ export default function ThongBaoPage() {
               <Button
                 onClick={createThongBao}
                 disabled={sending || !newTieuDe.trim() || !newNoiDung.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-blue-600 hover:bg-blue-700"
               >
                 <Send className="w-4 h-4 mr-1" />
                 {sending ? 'Đang gửi...' : 'Gửi thông báo'}

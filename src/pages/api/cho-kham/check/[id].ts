@@ -22,15 +22,18 @@ export default async function handler(
       return res.status(400).json({ error: 'Invalid patient ID' });
     }
 
-    // Kiểm tra trong bảng ChoKham
-    const today = new Date().toISOString().split('T')[0];
+    // Kiểm tra trong bảng ChoKham (theo giờ VN UTC+7)
+    const now = new Date();
+    const vnNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const vnDateStr = vnNow.toISOString().split('T')[0];
+    const todayStart = new Date(`${vnDateStr}T00:00:00+07:00`).toISOString();
     
     const { data, error } = await supabase
       .from('ChoKham')
       .select('id, trangthai')
       .eq('benhnhan_id', patientId)
       .eq('tenant_id', tenantId)
-      .gte('created_at', today)
+      .gte('created_at', todayStart)
       .in('trangthai', ['cho', 'dangkham'])
       .limit(1);
 

@@ -1268,88 +1268,15 @@ export default function KeDonKinh() {
               {/* Sản phẩm */}
               <div className="bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200">
                   <h3 className="font-bold text-gray-900 text-sm tracking-tight mb-2">Sản phẩm</h3>
-                  <div className="space-y-2 sm:space-y-3">
-                    {/* Mobile: inline label + input */}
-                    <div className="flex items-center gap-2 sm:hidden">
-                      <label className="text-[11px] font-medium text-gray-600 uppercase shrink-0 w-14">Gọng</label>
-                      <input
-                        list="gongkinh-list"
-                        value={form.ten_gong || ''}
-                        onChange={(e) => handleFrameChange(e.target.value)}
-                        className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Chọn loại gọng"
-                        data-nav="presc"
-                        data-order="11"
-                      />
-                      {frameStock !== null && (
-                        <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap shrink-0 ${
-                          frameStock <= 0 ? 'bg-red-100 text-red-700' : frameStock <= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
-                        }`}>
-                          {frameStock <= 0 ? 'Hết' : `${frameStock}`}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 sm:hidden">
-                      <label className="text-[11px] font-medium text-gray-600 uppercase shrink-0 w-14">Tròng MP</label>
-                      <input
-                        list="hangtrong-list"
-                        value={form.hangtrong_mp || ''}
-                        onChange={(e) => handleRightEyeLensBrandChange(e.target.value)}
-                        className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Hãng tròng MP"
-                        data-nav="presc"
-                        data-order="12"
-                      />
-                      {lensStockMp && (
-                        <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap shrink-0 ${
-                          lensStockMp.trang_thai === 'HET' || lensStockMp.trang_thai === 'CHUA_CO' ? 'bg-red-100 text-red-700'
-                          : lensStockMp.trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
-                          : lensStockMp.trang_thai === 'DAT_HANG' ? 'bg-blue-100 text-blue-700'
-                          : lensStockMp.trang_thai === 'CHUA_NHAP_DO' ? 'bg-gray-100 text-gray-500'
-                          : 'bg-green-100 text-green-700'
-                        }`}>
-                          {lensStockMp.trang_thai === 'DAT_HANG' ? 'ĐH'
-                          : lensStockMp.trang_thai === 'CHUA_NHAP_DO' ? '...'
-                          : lensStockMp.trang_thai === 'CHUA_CO' ? 'Chưa có'
-                          : lensStockMp.ton !== null ? (lensStockMp.ton <= 0 ? 'Hết' : `${lensStockMp.ton}`) : ''}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 sm:hidden">
-                      <label className="text-[11px] font-medium text-gray-600 uppercase shrink-0 w-14">Tròng MT</label>
-                      <input
-                        list="hangtrong-list"
-                        value={form.hangtrong_mt || ''}
-                        onChange={(e) => handleLeftEyeLensBrandChange(e.target.value)}
-                        className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Hãng tròng MT"
-                        data-nav="presc"
-                        data-order="13"
-                      />
-                      {lensStockMt && (
-                        <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap shrink-0 ${
-                          lensStockMt.trang_thai === 'HET' || lensStockMt.trang_thai === 'CHUA_CO' ? 'bg-red-100 text-red-700'
-                          : lensStockMt.trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
-                          : lensStockMt.trang_thai === 'DAT_HANG' ? 'bg-blue-100 text-blue-700'
-                          : lensStockMt.trang_thai === 'CHUA_NHAP_DO' ? 'bg-gray-100 text-gray-500'
-                          : 'bg-green-100 text-green-700'
-                        }`}>
-                          {lensStockMt.trang_thai === 'DAT_HANG' ? 'ĐH'
-                          : lensStockMt.trang_thai === 'CHUA_NHAP_DO' ? '...'
-                          : lensStockMt.trang_thai === 'CHUA_CO' ? 'Chưa có'
-                          : lensStockMt.ton !== null ? (lensStockMt.ton <= 0 ? 'Hết' : `${lensStockMt.ton}`) : ''}
-                        </span>
-                      )}
-                    </div>
-                    {/* Desktop: original layout */}
-                    <div className="hidden sm:flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                       <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Chọn gọng</label>
                         <div className="flex-1 flex items-center gap-2">
                           <input
                             list="gongkinh-list"
                             value={form.ten_gong || ''}
                             onChange={(e) => handleFrameChange(e.target.value)}
-                            className="h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                            className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                             placeholder="Chọn loại gọng"
                             data-nav="presc"
                             data-order="11"
@@ -1363,15 +1290,15 @@ export default function KeDonKinh() {
                           )}
                         </div>
                     </div>
-                    <div className="hidden sm:flex flex-col lg:flex-row gap-4">
-                      <div className="flex sm:items-center gap-2 lg:flex-1">
-                        <label className="sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MP</label>
+                    <div className="flex flex-col lg:flex-row gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
+                        <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MP</label>
                         <div className="flex-1 flex items-center gap-2">
                           <input 
                             list="hangtrong-list" 
                             value={form.hangtrong_mp || ''} 
                             onChange={(e) => handleRightEyeLensBrandChange(e.target.value)} 
-                            className="h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow" 
+                            className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow" 
                             placeholder="Chọn hãng tròng MP" 
                             data-nav="presc"
                             data-order="12"
@@ -1393,14 +1320,14 @@ export default function KeDonKinh() {
                         </div>
                       </div>
 
-                      <div className="flex sm:items-center gap-2 lg:flex-1">
-                        <label className="sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MT</label>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:flex-1">
+                        <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Hãng tròng MT</label>
                         <div className="flex-1 flex items-center gap-2">
                           <input 
                             list="hangtrong-list" 
                             value={form.hangtrong_mt || ''} 
                             onChange={(e) => handleLeftEyeLensBrandChange(e.target.value)} 
-                            className="h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow" 
+                            className="h-10 sm:h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow" 
                             placeholder="Chọn hãng tròng MT" 
                             data-nav="presc"
                             data-order="13"
