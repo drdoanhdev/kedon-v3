@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 interface UnreadCounts {
   thongBao: number;
   tinNhan: number;
+  tinNhanPlatform: number;
   total: number;
 }
 
@@ -21,7 +22,7 @@ const POLL_INTERVAL_IDLE = 0;         // Dừng hẳn khi user idle > 10 phút
  */
 export function useNotificationPolling() {
   const { user, currentTenantId } = useAuth();
-  const [counts, setCounts] = useState<UnreadCounts>({ thongBao: 0, tinNhan: 0, total: 0 });
+  const [counts, setCounts] = useState<UnreadCounts>({ thongBao: 0, tinNhan: 0, tinNhanPlatform: 0, total: 0 });
   const [loading, setLoading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFocusedRef = useRef(true);
@@ -29,19 +30,21 @@ export function useNotificationPolling() {
 
   const fetchCounts = useCallback(async () => {
     if (!user || !currentTenantId) {
-      setCounts({ thongBao: 0, tinNhan: 0, total: 0 });
+      setCounts({ thongBao: 0, tinNhan: 0, tinNhanPlatform: 0, total: 0 });
       return;
     }
 
     try {
       setLoading(true);
-      const [tbRes, tnRes] = await Promise.all([
+      const [tbRes, tnRes, tpRes] = await Promise.all([
         fetchWithAuth('/api/thong-bao?unread_only=true&limit=1'),
         fetchWithAuth('/api/tin-nhan?limit=1'),
+        fetchWithAuth('/api/tin-nhan-platform?limit=1'),
       ]);
 
       let thongBao = 0;
       let tinNhan = 0;
+      let tinNhanPlatform = 0;
 
       if (tbRes.ok) {
         const tbData = await tbRes.json();
@@ -51,8 +54,12 @@ export function useNotificationPolling() {
         const tnData = await tnRes.json();
         tinNhan = tnData.unreadCount || 0;
       }
+      if (tpRes.ok) {
+        const tpData = await tpRes.json();
+        tinNhanPlatform = tpData.unreadCount || 0;
+      }
 
-      setCounts({ thongBao, tinNhan, total: thongBao + tinNhan });
+      setCounts({ thongBao, tinNhan, tinNhanPlatform, total: thongBao + tinNhan + tinNhanPlatform });
     } catch {
       // Silent fail — sẽ retry lần sau
     } finally {
@@ -115,7 +122,7 @@ export function useNotificationPolling() {
       fetchCounts();
       scheduleNext();
     } else {
-      setCounts({ thongBao: 0, tinNhan: 0, total: 0 });
+      setCounts({ thongBao: 0, tinNhan: 0, tinNhanPlatform: 0, total: 0 });
     }
 
     return () => {

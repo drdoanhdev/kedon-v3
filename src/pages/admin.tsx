@@ -10,7 +10,9 @@ import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 
-type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans';
+import React from 'react';
+
+type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans' | 'messages';
 
 // ========== Thống kê tổng quan ==========
 function StatsTab() {
@@ -932,6 +934,255 @@ function PlansTab() {
   );
 }
 
+// ========== Tin nhắn Platform ==========
+function MessagesTab() {
+  const [inbox, setInbox] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<any[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [newMsg, setNewMsg] = useState('');
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  const fetchInbox = useCallback(async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/tin-nhan-platform?mode=inbox', { headers });
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setInbox(json.data || []);
+    } catch { toast.error('Lỗi tải inbox'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchInbox(); }, [fetchInbox]);
+
+  // Poll inbox every 30s
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchInbox();
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [fetchInbox]);
+
+  const openThread = useCallback(async (tenantId: string) => {
+    setSelectedTenant(tenantId);
+    setThreadLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      // Fetch messages
+      const res = await fetch(`/api/tin-nhan-platform?mode=thread&tenant_id=${tenantId}&limit=50`, { headers });
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setThreadMessages(json.data || []);
+      // Mark as read
+      await fetch('/api/tin-nhan-platform?mode=admin_read', {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: tenantId }),
+      });
+      // Update inbox count
+      setInbox(prev => prev.map(t => t.tenant_id === tenantId ? { ...t, unread_count: 0 } : t));
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 100);
+    } catch { toast.error('Lỗi tải tin nhắn'); }
+    finally { setThreadLoading(false); }
+  }, []);
+
+  // Poll thread every 10s
+  useEffect(() => {
+    if (!selectedTenant) return;
+    const timer = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch(`/api/tin-nhan-platform?mode=thread&tenant_id=${selectedTenant}&limit=50`, { headers });
+        if (!res.ok) return;
+        const json = await res.json();
+        const msgs = json.data || [];
+        setThreadMessages(prev => {
+          if (msgs.length !== prev.length || msgs[msgs.length - 1]?.id !== prev[prev.length - 1]?.id) {
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            return msgs;
+          }
+          return prev;
+        });
+      } catch { /* silent */ }
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [selectedTenant]);
+
+  const sendReply = async () => {
+    if (!newMsg.trim() || !selectedTenant || sending) return;
+    setSending(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/tin-nhan-platform?mode=reply', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: selectedTenant, noi_dung: newMsg }),
+      });
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setThreadMessages(prev => [...prev, { ...json.data, sender_name: 'Bạn (Superadmin)' }]);
+      setNewMsg('');
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch { toast.error('Lỗi gửi tin nhắn'); }
+    finally { setSending(false); }
+  };
+
+  if (loading) return <div className="text-center py-12 text-gray-400">Đang tải...</div>;
+
+  // Thread view (đang xem tin nhắn với 1 tenant)
+  if (selectedTenant) {
+    const tenantInfo = inbox.find(t => t.tenant_id === selectedTenant);
+    return (
+      <div className="flex flex-col" style={{ height: 'calc(100vh - 240px)' }}>
+        {/* Thread header */}
+        <div className="flex items-center gap-3 mb-3 flex-shrink-0">
+          <button
+            onClick={() => { setSelectedTenant(null); fetchInbox(); }}
+            className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            ← Quay lại
+          </button>
+          <div>
+            <h3 className="font-semibold text-gray-900">
+              {tenantInfo?.tenant_name || 'Phòng khám'}
+            </h3>
+            {tenantInfo?.tenant_code && (
+              <span className="text-xs text-gray-400">Mã: {tenantInfo.tenant_code}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto bg-gray-50 rounded-xl border p-4 space-y-3">
+          {threadLoading ? (
+            <div className="text-center py-12 text-gray-400">Đang tải...</div>
+          ) : threadMessages.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">Chưa có tin nhắn</div>
+          ) : (
+            threadMessages.map(msg => {
+              const isSuper = msg.sender_role === 'superadmin';
+              return (
+                <div key={msg.id} className={`flex ${isSuper ? 'justify-end' : 'justify-start'}`}>
+                  <div className="max-w-[75%]">
+                    {!isSuper && (
+                      <p className="text-[10px] text-gray-400 mb-0.5 px-1">
+                        {msg.sender_name || 'User'}
+                      </p>
+                    )}
+                    <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                      isSuper
+                        ? 'bg-purple-600 text-white rounded-br-md'
+                        : 'bg-white text-gray-800 rounded-bl-md border border-gray-200'
+                    }`}>
+                      <p className="whitespace-pre-wrap break-words">{msg.noi_dung}</p>
+                    </div>
+                    <p className={`text-[10px] text-gray-400 mt-0.5 px-1 ${isSuper ? 'text-right' : ''}`}>
+                      {new Date(msg.created_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Reply input */}
+        <div className="flex-shrink-0 mt-3">
+          <div className="flex items-end gap-2">
+            <textarea
+              placeholder="Trả lời phòng khám..."
+              value={newMsg}
+              onChange={e => setNewMsg(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
+              rows={1}
+              className="flex-1 resize-none max-h-32 min-h-[44px] rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+              maxLength={2000}
+              style={{ height: 'auto', minHeight: '44px' }}
+              onInput={(e) => {
+                const t = e.target as HTMLTextAreaElement;
+                t.style.height = 'auto';
+                t.style.height = Math.min(t.scrollHeight, 128) + 'px';
+              }}
+            />
+            <button
+              onClick={sendReply}
+              disabled={!newMsg.trim() || sending}
+              className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white h-11 px-4 rounded-lg transition-colors"
+            >
+              Gửi
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-300 mt-1 text-right">Enter gửi • Shift+Enter xuống dòng</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Inbox view (danh sách tenant)
+  const totalUnread = inbox.reduce((s, t) => s + t.unread_count, 0);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-gray-800">
+          Tin nhắn từ phòng khám
+          {totalUnread > 0 && (
+            <span className="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
+              {totalUnread}
+            </span>
+          )}
+        </h2>
+        <button onClick={() => { setLoading(true); fetchInbox(); }} className="text-sm text-blue-600 hover:underline">
+          Làm mới
+        </button>
+      </div>
+
+      {inbox.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <p>Chưa có phòng khám nào gửi tin nhắn</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {inbox.map(t => (
+            <div
+              key={t.tenant_id}
+              onClick={() => openThread(t.tenant_id)}
+              className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md ${
+                t.unread_count > 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className={`font-medium truncate ${t.unread_count > 0 ? 'text-gray-900' : 'text-gray-600'}`}>
+                    {t.tenant_name}
+                  </h3>
+                  {t.tenant_code && (
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
+                      {t.tenant_code}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Tin nhắn gần nhất: {new Date(t.last_message_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+              {t.unread_count > 0 && (
+                <span className="ml-3 px-2.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                  {t.unread_count}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ========== Helpers ==========
 function formatVND(amount: number): string {
   return amount.toLocaleString('vi-VN') + 'đ';
@@ -944,6 +1195,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'payments', label: 'Thanh toán', icon: '💳' },
   { key: 'users', label: 'Người dùng', icon: '👥' },
   { key: 'plans', label: 'Gói dịch vụ', icon: '💎' },
+  { key: 'messages', label: 'Tin nhắn', icon: '💬' },
 ];
 
 export default function AdminPage() {
@@ -1002,6 +1254,7 @@ export default function AdminPage() {
         {tab === 'payments' && <PaymentsTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'plans' && <PlansTab />}
+        {tab === 'messages' && <MessagesTab />}
       </div>
     </ProtectedRoute>
   );

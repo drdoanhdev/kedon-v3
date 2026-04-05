@@ -18,6 +18,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { isOwnerRole } from '../lib/tenantRoles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
+import PrintDonKinh from '../components/ke-don/PrintDonKinh';
+import CauHinhMauIn, { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
 
 interface BenhNhan {
   id: number;
@@ -205,6 +207,9 @@ export default function KeDonKinh() {
   // Admin panel toggle state
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   
+  // Print config state
+  const [printConfig, setPrintConfig] = useState<PrintConfig>(defaultConfig);
+  
   // Category data states
   const [hangTrongs, setHangTrongs] = useState<HangTrong[]>([]);
   const [gongKinhs, setGongKinhs] = useState<GongKinh[]>([]);
@@ -361,6 +366,13 @@ export default function KeDonKinh() {
     };
 
     fetchCategories();
+  }, []);
+
+  // Fetch print config
+  useEffect(() => {
+    axios.get('/api/cau-hinh-mau-in')
+      .then(res => { if (res.data) setPrintConfig(res.data); })
+      .catch(() => {});
   }, []);
 
   // Helper: Check stock for a lens or frame
@@ -1543,6 +1555,10 @@ export default function KeDonKinh() {
                       <Trash2 className="w-4 h-4 mr-1 inline" /> Xóa
                     </button>
                   )}
+                  {isEditing && form.id && benhNhan && (
+                    <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
+                  )}
+                  <CauHinhMauIn config={printConfig} onConfigChange={setPrintConfig} />
                 </div>
 
                 {/* Mobile History Section - below action buttons */}
@@ -1742,6 +1758,12 @@ export default function KeDonKinh() {
                 Xóa đơn
               </button>
             )}
+            <div className="flex gap-1.5">
+              {isEditing && form.id && benhNhan && (
+                <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
+              )}
+              <CauHinhMauIn config={printConfig} onConfigChange={setPrintConfig} />
+            </div>
           </div>
           <p className="text-[11px] text-gray-400 text-right px-3 pb-1">{(lai / 1000).toFixed(0)}</p>
         </aside>

@@ -111,12 +111,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
       });
     }
 
-    // Thêm mới vào danh sách chờ với avatar
+    // Thêm mới vào danh sách chờ với avatar (lưu giờ VN UTC+7)
+    const vnNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const thoigianVN = vnNow.toISOString().replace('Z', '+07:00');
     const { data: newRecord, error: insertError } = await supabase
       .from('ChoKham')
       .insert({
         benhnhanid: patient_id,
-        thoigian: new Date().toISOString(),
+        thoigian: thoigianVN,
         trangthai: 'chờ',
         avatar_url: avatar || null,
         tenant_id: tenantId

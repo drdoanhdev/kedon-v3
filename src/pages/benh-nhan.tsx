@@ -1161,7 +1161,7 @@ export default function BenhNhanPage() {
                         </tr>
                         {selectedBenhNhanId === bn.id && (
                           <tr>
-                            <td colSpan={7} className="px-2 py-1">
+                            <td colSpan={8} className="px-2 py-1">
                               <Card className="shadow-sm bg-gray-50 border-gray-200">
                                 <CardContent className="p-3">
                                   {/* Tab buttons */}

@@ -92,9 +92,9 @@ export default function Header() {
               title="Tin nhắn"
             >
               <MessageCircle className="w-4.5 h-4.5" />
-              {counts.tinNhan > 0 && (
+              {(counts.tinNhan + counts.tinNhanPlatform) > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
-                  {counts.tinNhan > 9 ? '9+' : counts.tinNhan}
+                  {(counts.tinNhan + counts.tinNhanPlatform) > 9 ? '9+' : (counts.tinNhan + counts.tinNhanPlatform)}
                 </span>
               )}
             </Link>
@@ -230,9 +230,9 @@ export default function Header() {
             </Link>
             <Link href="/tin-nhan" className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100">
               <MessageCircle className="w-5 h-5" />
-              {counts.tinNhan > 0 && (
+              {(counts.tinNhan + counts.tinNhanPlatform) > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
-                  {counts.tinNhan > 9 ? '9+' : counts.tinNhan}
+                  {(counts.tinNhan + counts.tinNhanPlatform) > 9 ? '9+' : (counts.tinNhan + counts.tinNhanPlatform)}
                 </span>
               )}
             </Link>
