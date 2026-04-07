@@ -170,15 +170,55 @@ export default function BillingPage() {
     }
   }, [sepayCheckout]);
 
-  // Handle SePay callback URL params
+  // Handle SePay callback URL params + polling xác thực tự động
   useEffect(() => {
     const { payment, order } = router.query;
     if (!payment) return;
 
     if (payment === 'success') {
-      setPaymentMessage({ type: 'success', text: `Thanh toán thành công! Đơn ${order || ''} đang được kích hoạt.` });
-      fetchTrial();
-      fetchPayments();
+      setPaymentMessage({ type: 'success', text: `Thanh toán thành công! Đơn ${order || ''} đang được xác thực tự động...` });
+
+      // Polling kiểm tra trạng thái xác thực: Webhook → VALIDATE → Activate
+      if (order) {
+        let attempts = 0;
+        const maxAttempts = 30; // Tối đa 30 lần × 3s = 90s
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          try {
+            const headers = await getAuthHeaders();
+            const res = await fetch(`/api/tenants/validate-subscription?order=${order}`, { headers });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.validationStatus === 'activated') {
+                clearInterval(pollInterval);
+                setPaymentMessage({
+                  type: 'success',
+                  text: `Gói ${data.order.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'} đã được kích hoạt thành công! (Xác thực tự động qua webhook)`,
+                });
+                fetchTrial();
+                fetchPayments();
+              } else if (data.validationStatus === 'expired' || data.validationStatus === 'cancelled') {
+                clearInterval(pollInterval);
+                setPaymentMessage({ type: 'error', text: `Đơn ${order} đã ${data.validationStatus === 'expired' ? 'hết hạn' : 'bị hủy'}.` });
+              }
+            }
+          } catch {}
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setPaymentMessage({
+              type: 'success',
+              text: `Thanh toán đã ghi nhận. Hệ thống đang xử lý xác thực — gói sẽ được kích hoạt tự động trong ít phút.`,
+            });
+            fetchTrial();
+            fetchPayments();
+          }
+        }, 3000);
+
+        return () => clearInterval(pollInterval);
+      } else {
+        fetchTrial();
+        fetchPayments();
+      }
     } else if (payment === 'error') {
       setPaymentMessage({ type: 'error', text: `Thanh toán thất bại cho đơn ${order || ''}. Vui lòng thử lại.` });
     } else if (payment === 'cancel') {
@@ -455,7 +495,7 @@ export default function BillingPage() {
                 📞 Gọi điện
               </a>
               <a
-                href="mailto:support@kedon.vn"
+                href="mailto:support@optigo.vn"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-sm font-medium"
               >
                 ✉️ Email

@@ -1,18 +1,22 @@
 /**
- * Webhook nhận thông báo giao dịch ngân hàng từ dịch vụ bên thứ 3
- * (Casso, SePay, PayOS, hoặc tương đương)
+ * SePay Webhook Endpoint
+ * URL: POST /api/webhook/sepay
  * 
- * Quy trình 3 bước: Webhook → VALIDATE → Activate
+ * Đây là endpoint mà SePay gọi đến khi có giao dịch ngân hàng.
+ * Route này forward sang handler chính ở /api/tenants/payment-webhook
  * 
- * Bước 1 — WEBHOOK: Nhận & log payload gốc vào webhook_logs
- * Bước 2 — VALIDATE: Xác thực transfer_code, số tiền, hạn đơn, tenant hợp lệ
- * Bước 3 — ACTIVATE: Kích hoạt gói cho tenant (chỉ khi validation pass)
+ * Cấu hình trên SePay (my.sepay.vn/webhooks):
+ *   - URL: https://app.optigo.vn/api/webhook/sepay
+ *   - Là Webhooks xác thực thanh toán: Đúng
+ *   - Kiểu chứng thực: API Key
+ *   - API Key: (giá trị PAYMENT_WEBHOOK_SECRET trong .env)
+ *   - Request Content type: application/json
+ *   - Trạng thái: Kích hoạt
  * 
- * Domain: OptiGo.vn
+ * SePay gửi header: "Authorization": "Apikey <API_KEY>"
  * 
- * Hỗ trợ 2 format phổ biến:
- * 1. Casso format: { data: [{ description, amount, when, ... }] }
- * 2. SePay format: { transferType, content, transferAmount, ... }
+ * Quy trình: Webhook → VALIDATE → Activate
+ * Domain: app.optigo.vn
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
@@ -23,7 +27,6 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-// Webhook secret để xác thực request (đặt trong env)
 const WEBHOOK_SECRET = process.env.PAYMENT_WEBHOOK_SECRET || '';
 
 interface BankTransaction {
@@ -40,34 +43,15 @@ interface ValidationResult {
   transferCode?: string;
 }
 
-// ===== BƯỚC 1: PARSE — Trích xuất giao dịch từ payload =====
-
-function detectSource(body: any): 'casso' | 'sepay' | 'generic' {
-  if (body.data && Array.isArray(body.data)) return 'casso';
-  if (body.transferType) return 'sepay';
-  return 'generic';
-}
+// ===== PARSE =====
 
 function extractTransferCode(description: string): string | null {
   const match = description.toUpperCase().match(/KD[A-Z0-9]{6}/);
   return match ? match[0] : null;
 }
 
-function parseCassoPayload(body: any): BankTransaction[] {
-  if (body.data && Array.isArray(body.data)) {
-    return body.data
-      .filter((t: any) => t.amount > 0)
-      .map((t: any) => ({
-        amount: t.amount,
-        description: t.description || '',
-        when: t.when || new Date().toISOString(),
-        bankRef: t.tid?.toString() || t.id?.toString(),
-      }));
-  }
-  return [];
-}
-
 function parseSePayPayload(body: any): BankTransaction[] {
+  // SePay format: { transferType: 'in', transferAmount, content, transactionDate, referenceCode, ... }
   if (body.transferType === 'in' && body.transferAmount > 0) {
     return [{
       amount: body.transferAmount,
@@ -79,26 +63,9 @@ function parseSePayPayload(body: any): BankTransaction[] {
   return [];
 }
 
-function parseTransactions(body: any): BankTransaction[] {
-  const source = detectSource(body);
-  if (source === 'casso') return parseCassoPayload(body);
-  if (source === 'sepay') return parseSePayPayload(body);
-  // Generic
-  if (body.amount && body.description) {
-    return [{
-      amount: body.amount,
-      description: body.description,
-      when: body.when || new Date().toISOString(),
-      bankRef: body.bankRef || body.referenceCode,
-    }];
-  }
-  return [];
-}
-
-// ===== BƯỚC 1.5: LOG — Ghi webhook vào DB để audit =====
+// ===== LOG =====
 
 async function logWebhook(
-  source: string,
   rawPayload: any,
   transferCode: string | null,
   amount: number | null,
@@ -108,7 +75,7 @@ async function logWebhook(
     const { data } = await supabaseAdmin
       .from('webhook_logs')
       .insert({
-        source,
+        source: 'sepay',
         raw_payload: rawPayload,
         transfer_code: transferCode,
         amount,
@@ -119,7 +86,7 @@ async function logWebhook(
       .single();
     return data?.id || null;
   } catch (err) {
-    console.error('⚠️ Không thể ghi webhook_logs:', err);
+    console.error('⚠️ [OptiGo] Không thể ghi webhook_logs:', err);
     return null;
   }
 }
@@ -141,23 +108,21 @@ async function updateWebhookLog(
       })
       .eq('id', logId);
   } catch (err) {
-    console.error('⚠️ Không thể cập nhật webhook_logs:', err);
+    console.error('⚠️ [OptiGo] Không thể cập nhật webhook_logs:', err);
   }
 }
 
-// ===== BƯỚC 2: VALIDATE — Xác thực toàn diện =====
+// ===== VALIDATE =====
 
 async function validateTransaction(tx: BankTransaction): Promise<ValidationResult> {
   const errors: string[] = [];
 
-  // 2.1 Trích xuất mã chuyển khoản
   const transferCode = extractTransferCode(tx.description);
   if (!transferCode) {
     errors.push('Không tìm thấy mã chuyển khoản (KD + 6 ký tự) trong nội dung');
     return { valid: false, errors };
   }
 
-  // 2.2 Tìm đơn thanh toán pending
   const { data: order, error: orderErr } = await supabaseAdmin
     .from('payment_orders')
     .select('*')
@@ -175,13 +140,11 @@ async function validateTransaction(tx: BankTransaction): Promise<ValidationResul
     return { valid: false, errors, transferCode };
   }
 
-  // 2.3 Kiểm tra đơn chưa hết hạn (24h)
   if (order.expires_at && new Date(order.expires_at) < new Date()) {
     errors.push(`Đơn ${transferCode} đã hết hạn thanh toán (quá 24h)`);
     return { valid: false, errors, transferCode, order };
   }
 
-  // 2.4 Kiểm tra số tiền (cho phép sai lệch ±1%)
   const tolerance = order.amount * 0.01;
   if (tx.amount < order.amount - tolerance) {
     errors.push(
@@ -190,7 +153,6 @@ async function validateTransaction(tx: BankTransaction): Promise<ValidationResul
     return { valid: false, errors, transferCode, order };
   }
 
-  // 2.5 Kiểm tra tenant tồn tại và hợp lệ
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
     .select('id, name, status')
@@ -202,24 +164,21 @@ async function validateTransaction(tx: BankTransaction): Promise<ValidationResul
     return { valid: false, errors, transferCode, order };
   }
 
-  // 2.6 Kiểm tra plan hợp lệ
   const validPlans = ['basic', 'pro', 'enterprise'];
   if (!validPlans.includes(order.plan)) {
     errors.push(`Gói "${order.plan}" không hợp lệ`);
     return { valid: false, errors, transferCode, order };
   }
 
-  // 2.7 Kiểm tra months hợp lệ
   if (!order.months || order.months < 1 || order.months > 12) {
     errors.push(`Số tháng ${order.months} không hợp lệ (1-12)`);
     return { valid: false, errors, transferCode, order };
   }
 
-  // ✅ Tất cả validation passed
   return { valid: true, errors: [], order, transferCode };
 }
 
-// ===== BƯỚC 3: ACTIVATE — Kích hoạt gói sau khi validation pass =====
+// ===== ACTIVATE =====
 
 async function activatePlan(
   orderId: string,
@@ -231,7 +190,6 @@ async function activatePlan(
 ) {
   const now = new Date();
 
-  // Đánh dấu đơn đã validated
   await supabaseAdmin
     .from('payment_orders')
     .update({
@@ -240,7 +198,6 @@ async function activatePlan(
     })
     .eq('id', orderId);
 
-  // Lấy ngày hết hạn hiện tại (nếu đang dùng gói trả phí, cộng dồn)
   const { data: tenant } = await supabaseAdmin
     .from('tenants')
     .select('plan_expires_at')
@@ -255,7 +212,6 @@ async function activatePlan(
   }
   expiresAt.setMonth(expiresAt.getMonth() + months);
 
-  // Cập nhật đơn thành paid
   await supabaseAdmin
     .from('payment_orders')
     .update({
@@ -266,7 +222,6 @@ async function activatePlan(
     })
     .eq('id', orderId);
 
-  // Kích hoạt gói cho tenant
   await supabaseAdmin
     .from('tenants')
     .update({
@@ -279,23 +234,23 @@ async function activatePlan(
     .eq('id', tenantId);
 
   console.log(
-    `✅ [OptiGo.vn] Webhook→Validate→Activate: plan=${plan}, tenant=${tenantId}, expires=${expiresAt.toISOString()}`
+    `✅ [OptiGo] SePay Webhook→Validate→Activate: plan=${plan}, tenant=${tenantId}, expires=${expiresAt.toISOString()}`
   );
 }
 
-// ===== HANDLER CHÍNH =====
+// ===== HANDLER =====
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Xác thực webhook secret (API Key)
+  // Xác thực API Key từ SePay
   // SePay gửi header: "Authorization": "Apikey <API_KEY_CUA_BAN>"
-  // Casso gửi header: "Authorization": "Bearer xxx" hoặc x-api-key
   if (WEBHOOK_SECRET) {
     const authHeader = req.headers.authorization || '';
     const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+    // Hỗ trợ cả: "Apikey xxx", "Bearer xxx", hoặc header x-api-key
     const apiKeyHeader = req.headers['x-api-key'] || '';
     const apiKey = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader;
     
@@ -305,21 +260,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .trim();
     
     if (secret !== WEBHOOK_SECRET && apiKey !== WEBHOOK_SECRET) {
-      console.warn('⛔ [OptiGo.vn] Webhook bị từ chối: sai API Key');
+      console.warn('⛔ [OptiGo] SePay webhook bị từ chối: sai API Key');
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
 
   try {
-    const source = detectSource(req.body);
-    const transactions = parseTransactions(req.body);
+    const transactions = parseSePayPayload(req.body);
 
-    console.log(`📩 [OptiGo.vn] Webhook nhận ${transactions.length} giao dịch từ ${source}`);
+    console.log(`📩 [OptiGo] SePay webhook nhận ${transactions.length} giao dịch`);
 
-    // Nếu không parse được giao dịch nào, vẫn log webhook gốc
     if (transactions.length === 0) {
-      await logWebhook(source, req.body, null, null, null);
-      return res.status(200).json({ success: true, processed: 0, message: 'Không có giao dịch hợp lệ' });
+      // Vẫn log payload gốc để debug
+      await logWebhook(req.body, null, null, null);
+      return res.status(200).json({ success: true, processed: 0, message: 'Không có giao dịch tiền vào' });
     }
 
     let processed = 0;
@@ -328,71 +282,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     for (const tx of transactions) {
       const transferCode = extractTransferCode(tx.description);
 
-      // BƯỚC 1: LOG webhook
-      const logId = await logWebhook(source, req.body, transferCode, tx.amount, tx.bankRef || null);
+      // BƯỚC 1: LOG
+      const logId = await logWebhook(req.body, transferCode, tx.amount, tx.bankRef || null);
 
       // BƯỚC 2: VALIDATE
       const validation = await validateTransaction(tx);
 
       if (!validation.valid) {
-        console.warn(
-          `❌ [OptiGo.vn] Validation FAILED cho ${transferCode || 'unknown'}:`,
-          validation.errors
-        );
-
-        // Cập nhật log với kết quả validation thất bại
+        console.warn(`❌ [OptiGo] Validation FAILED cho ${transferCode || 'unknown'}:`, validation.errors);
         if (logId) {
           await updateWebhookLog(logId, 'invalid', validation.errors, validation.order?.id);
         }
-
-        results.push({
-          transferCode: validation.transferCode || null,
-          status: 'invalid',
-          errors: validation.errors,
-        });
+        results.push({ transferCode: validation.transferCode || null, status: 'invalid', errors: validation.errors });
         continue;
       }
 
-      // BƯỚC 3: ACTIVATE (chỉ khi validation pass)
+      // BƯỚC 3: ACTIVATE
       const order = validation.order!;
-
       try {
-        await activatePlan(
-          order.id,
-          order.tenant_id,
-          order.plan,
-          order.months,
-          tx.when,
-          tx.bankRef
-        );
-
-        // Cập nhật log thành công
+        await activatePlan(order.id, order.tenant_id, order.plan, order.months, tx.when, tx.bankRef);
         if (logId) {
           await updateWebhookLog(logId, 'valid', [], order.id);
         }
-
         results.push({ transferCode: validation.transferCode!, status: 'activated' });
         processed++;
       } catch (activateErr: any) {
-        console.error(`⚠️ [OptiGo.vn] Lỗi kích hoạt gói cho ${transferCode}:`, activateErr);
-
+        console.error(`⚠️ [OptiGo] Lỗi kích hoạt gói cho ${transferCode}:`, activateErr);
         if (logId) {
           await updateWebhookLog(logId, 'invalid', [`Lỗi kích hoạt: ${activateErr.message}`], order.id);
         }
-
-        results.push({
-          transferCode: validation.transferCode!,
-          status: 'error',
-          errors: [`Activation failed: ${activateErr.message}`],
-        });
+        results.push({ transferCode: validation.transferCode!, status: 'error', errors: [`Activation failed: ${activateErr.message}`] });
       }
     }
 
-    console.log(`📊 [OptiGo.vn] Webhook xử lý xong: ${processed}/${transactions.length} thành công`);
-
+    console.log(`📊 [OptiGo] SePay webhook xử lý xong: ${processed}/${transactions.length} thành công`);
     return res.status(200).json({ success: true, processed, total: transactions.length, results });
   } catch (error: any) {
-    console.error('💥 [OptiGo.vn] Webhook error:', error);
+    console.error('💥 [OptiGo] SePay webhook error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }

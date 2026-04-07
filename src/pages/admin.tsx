@@ -12,7 +12,7 @@ import Link from 'next/link';
 
 import React from 'react';
 
-type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans' | 'messages';
+type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans' | 'messages' | 'webhooks';
 
 // ========== Thống kê tổng quan ==========
 function StatsTab() {
@@ -418,6 +418,7 @@ function PaymentsTab() {
                   <th className="px-4 py-3 text-center font-medium text-gray-600">Gói</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-600">Số tiền</th>
                   <th className="px-4 py-3 text-center font-medium text-gray-600">Trạng thái</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">Xác thực</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Ngày tạo</th>
                   <th className="px-4 py-3 text-center font-medium text-gray-600">Thao tác</th>
                 </tr>
@@ -441,6 +442,19 @@ function PaymentsTab() {
                       }`}>
                         {p.status === 'paid' ? 'Đã thanh toán' : p.status === 'pending' ? 'Chờ thanh toán' : p.status === 'cancelled' ? 'Đã hủy' : p.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {p.validated_at ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700" title={new Date(p.validated_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}>
+                          ✅ Webhook
+                        </span>
+                      ) : p.status === 'paid' ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                          🔧 Admin
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {new Date(p.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
@@ -470,6 +484,128 @@ function PaymentsTab() {
           </div>
           {payments.length === 0 && (
             <div className="text-center py-12 text-gray-400">Không có đơn nào</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========== Webhook Logs — Audit quy trình Webhook → VALIDATE → Activate ==========
+function WebhooksTab() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+
+  const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/admin/webhook-logs?status=${filter}`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.data || []);
+      }
+    } catch { toast.error('Lỗi kết nối'); }
+    finally { setLoading(false); }
+  }, [filter]);
+
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          {['all', 'valid', 'invalid', 'pending'].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                filter === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f === 'all' ? 'Tất cả' : f === 'valid' ? '✅ Valid' : f === 'invalid' ? '❌ Invalid' : '⏳ Pending'}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={fetchLogs}
+          className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200"
+        >
+          🔄 Làm mới
+        </button>
+      </div>
+
+      <p className="text-xs text-gray-500">
+        Quy trình xác thực tự động: <span className="font-medium">Webhook → VALIDATE → Activate</span> &middot; OptiGo.vn
+      </p>
+
+      {loading ? (
+        <div className="text-center py-12 text-gray-400">Đang tải...</div>
+      ) : (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Thời gian</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">Nguồn</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Mã GD</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-600">Số tiền</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">Validation</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Phòng khám</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {logs.map((log: any) => (
+                  <tr key={log.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                      {new Date(log.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                        {log.source}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                      {log.transfer_code || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium">
+                      {log.amount ? formatVND(log.amount) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        log.validation_status === 'valid' ? 'bg-green-100 text-green-700' :
+                        log.validation_status === 'invalid' ? 'bg-red-100 text-red-700' :
+                        'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {log.validation_status === 'valid' ? '✅ Valid' :
+                         log.validation_status === 'invalid' ? '❌ Invalid' : '⏳ Pending'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 text-xs">
+                      {log.payment_orders?.tenants?.name || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {log.validation_errors?.length > 0 && (
+                        <span className="text-red-600" title={log.validation_errors.join('; ')}>
+                          {log.validation_errors[0]}{log.validation_errors.length > 1 ? ` (+${log.validation_errors.length - 1})` : ''}
+                        </span>
+                      )}
+                      {log.validation_status === 'valid' && log.payment_orders && (
+                        <span className="text-green-600">
+                          Gói {log.payment_orders.plan} · {log.payment_orders.months} tháng
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {logs.length === 0 && (
+            <div className="text-center py-12 text-gray-400">Không có webhook log nào</div>
           )}
         </div>
       )}
@@ -1193,6 +1329,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'stats', label: 'Tổng quan', icon: '📊' },
   { key: 'tenants', label: 'Phòng khám', icon: '🏥' },
   { key: 'payments', label: 'Thanh toán', icon: '💳' },
+  { key: 'webhooks', label: 'Webhook Logs', icon: '🔗' },
   { key: 'users', label: 'Người dùng', icon: '👥' },
   { key: 'plans', label: 'Gói dịch vụ', icon: '💎' },
   { key: 'messages', label: 'Tin nhắn', icon: '💬' },
@@ -1252,6 +1389,7 @@ export default function AdminPage() {
         {tab === 'stats' && <StatsTab />}
         {tab === 'tenants' && <TenantsTab />}
         {tab === 'payments' && <PaymentsTab />}
+        {tab === 'webhooks' && <WebhooksTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'plans' && <PlansTab />}
         {tab === 'messages' && <MessagesTab />}

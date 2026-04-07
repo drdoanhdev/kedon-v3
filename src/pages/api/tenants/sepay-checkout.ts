@@ -21,7 +21,7 @@ async function getPlanPrice(supabase: any, planKey: string): Promise<number | nu
   return FALLBACK_PRICES[planKey] ?? null;
 }
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://kedon.pro.vn';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.optigo.vn';
 
 function getSePayClient() {
   return new SePayPgClient({
