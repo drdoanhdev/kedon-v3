@@ -151,12 +151,27 @@ async function updateWebhookLog(
  * Tìm đơn thanh toán pending phù hợp với giao dịch.
  * 
  * Chiến lược matching (theo thứ tự ưu tiên):
- * 1. Exact KD code: tìm mã KD + 6 ký tự trong content/description
- * 2. Amount fallback: khi thanh toán qua QR (SePay/Casso), ngân hàng không giữ mã KD.
- *    → Match theo số tiền chính xác + đơn pending chưa hết hạn (gần nhất).
+ * 1. SePay PAY code: webhook có field `code` = "PAYxxx", match với `sepay_order_id`
+ * 2. Exact KD code: tìm mã KD + 6 ký tự trong content/description
+ * 3. Amount fallback: match theo số tiền chính xác + đơn pending chưa hết hạn
  */
-async function findMatchingOrder(tx: BankTransaction): Promise<{ order: any; matchMethod: string } | null> {
-  // Thử 1: Match bằng mã KD
+async function findMatchingOrder(tx: BankTransaction, sepayCode?: string): Promise<{ order: any; matchMethod: string } | null> {
+  const now = new Date().toISOString();
+
+  // Thử 1: Match bằng mã PAY từ SePay
+  if (sepayCode) {
+    const { data: order } = await supabaseAdmin
+      .from('payment_orders')
+      .select('*')
+      .eq('sepay_order_id', sepayCode)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (order) {
+      return { order, matchMethod: `SePay code: ${sepayCode}` };
+    }
+  }
+
+  // Thử 2: Match bằng mã KD
   const transferCode = extractTransferCode(tx.description);
   if (transferCode) {
     const { data: order } = await supabaseAdmin
@@ -170,8 +185,7 @@ async function findMatchingOrder(tx: BankTransaction): Promise<{ order: any; mat
     }
   }
 
-  // Thử 2: Match bằng số tiền cho đơn pending
-  const now = new Date().toISOString();
+  // Thử 3: Match bằng số tiền cho đơn pending
   const { data: orders } = await supabaseAdmin
     .from('payment_orders')
     .select('*')
@@ -188,12 +202,12 @@ async function findMatchingOrder(tx: BankTransaction): Promise<{ order: any; mat
   return null;
 }
 
-async function validateTransaction(tx: BankTransaction): Promise<ValidationResult> {
+async function validateTransaction(tx: BankTransaction, sepayCode?: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const transferCode = extractTransferCode(tx.description);
 
-  // Tìm đơn matching
-  const match = await findMatchingOrder(tx);
+  // Tìm đơn matching (SePay code → KD code → amount)
+  const match = await findMatchingOrder(tx, sepayCode);
 
   if (!match) {
     if (!transferCode) {
@@ -345,8 +359,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const source = detectSource(req.body);
     const transactions = parseTransactions(req.body);
+    // SePay/Casso webhook payload có thể chứa field `code` = "PAYxxx"
+    const sepayCode: string | undefined = req.body.code || undefined;
 
-    console.log(`📩 [OptiGo.vn] Webhook nhận ${transactions.length} giao dịch từ ${source}`);
+    console.log(`📩 [OptiGo.vn] Webhook nhận ${transactions.length} giao dịch từ ${source}, code=${sepayCode || 'none'}`);
 
     // Nếu không parse được giao dịch nào, vẫn log webhook gốc
     if (transactions.length === 0) {
@@ -363,8 +379,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // BƯỚC 1: LOG webhook
       const logId = await logWebhook(source, req.body, transferCode, tx.amount, tx.bankRef || null);
 
-      // BƯỚC 2: VALIDATE (tìm đơn bằng KD code HOẶC amount matching)
-      const validation = await validateTransaction(tx);
+      // BƯỚC 2: VALIDATE (tìm đơn bằng SePay PAY code → KD code → amount)
+      const validation = await validateTransaction(tx, sepayCode);
 
       // Cập nhật log với transfer_code từ matched order (nếu match bằng amount)
       if (!transferCode && validation.transferCode && logId) {

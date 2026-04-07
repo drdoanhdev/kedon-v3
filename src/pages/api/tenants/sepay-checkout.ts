@@ -118,6 +118,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       cancel_url: `${APP_URL}/billing?payment=cancel&order=${transferCode}`,
     });
 
+    // Trích xuất SePay order_id (PAY code) từ checkoutURL hoặc checkoutFields
+    // Khi thanh toán qua QR, ngân hàng dùng mã PAY thay vì mã KD
+    // Webhook sẽ match bằng mã PAY này
+    let sepayOrderId: string | null = null;
+    try {
+      // Thử lấy từ checkoutFields (cast vì type definition không có order_id)
+      const fields = checkoutFields as unknown as Record<string, unknown>;
+      if (fields?.order_id && typeof fields.order_id === 'string') {
+        sepayOrderId = fields.order_id;
+      }
+      // Thử parse từ checkoutURL query params
+      if (!sepayOrderId && typeof checkoutURL === 'string' && checkoutURL.includes('order_id=')) {
+        const urlMatch = checkoutURL.match(/order_id=([^&]+)/);
+        if (urlMatch) sepayOrderId = decodeURIComponent(urlMatch[1]);
+      }
+      // Lưu sepay_order_id vào payment_orders để webhook match
+      if (sepayOrderId) {
+        await supabase
+          .from('payment_orders')
+          .update({ sepay_order_id: sepayOrderId, updated_at: new Date().toISOString() })
+          .eq('id', order.id);
+        console.log(`📋 [OptiGo] Saved sepay_order_id=${sepayOrderId} for order ${transferCode}`);
+      }
+    } catch (e) {
+      console.warn('⚠️ [OptiGo] Không thể lưu sepay_order_id:', e);
+    }
+
     return res.status(201).json({
       order,
       checkoutURL,

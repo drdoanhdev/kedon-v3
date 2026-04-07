@@ -27,6 +27,10 @@ CREATE INDEX IF NOT EXISTS idx_webhook_logs_created_at ON webhook_logs(created_a
 -- 2. Thêm cột validated_at vào payment_orders (đánh dấu thời điểm xác thực thành công)
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ;
 
+-- 2b. Thêm cột sepay_order_id để lưu mã PAY từ SePay (dùng match webhook QR)
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS sepay_order_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_payment_orders_sepay_order_id ON payment_orders(sepay_order_id) WHERE sepay_order_id IS NOT NULL;
+
 -- 3. RLS cho webhook_logs (chỉ admin đọc, service role ghi)
 ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
 
