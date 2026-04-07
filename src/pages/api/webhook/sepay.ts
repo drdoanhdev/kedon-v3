@@ -114,45 +114,84 @@ async function updateWebhookLog(
 
 // ===== VALIDATE =====
 
-async function validateTransaction(tx: BankTransaction): Promise<ValidationResult> {
-  const errors: string[] = [];
-
+/**
+ * Tìm đơn thanh toán pending phù hợp với giao dịch.
+ * 
+ * Chiến lược matching (theo thứ tự ưu tiên):
+ * 1. Exact KD code: tìm mã KD + 6 ký tự trong content/description
+ * 2. SePay QR fallback: khi thanh toán qua SePay QR, ngân hàng không giữ mã KD.
+ *    → Match theo số tiền chính xác + đơn pending chưa hết hạn (gần nhất trước).
+ */
+async function findMatchingOrder(tx: BankTransaction): Promise<{ order: any; matchMethod: string } | null> {
+  // Thử 1: Match bằng mã KD
   const transferCode = extractTransferCode(tx.description);
-  if (!transferCode) {
-    errors.push('Không tìm thấy mã chuyển khoản (KD + 6 ký tự) trong nội dung');
-    return { valid: false, errors };
+  if (transferCode) {
+    const { data: order } = await supabaseAdmin
+      .from('payment_orders')
+      .select('*')
+      .eq('transfer_code', transferCode)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (order) {
+      return { order, matchMethod: `KD code: ${transferCode}` };
+    }
   }
 
-  const { data: order, error: orderErr } = await supabaseAdmin
+  // Thử 2: Match bằng số tiền cho đơn pending (SePay QR payment)
+  // Khi thanh toán qua SePay QR, nội dung GD = "CT DEN:xxx SEVQR PAYxxx"
+  // → không chứa mã KD, phải match theo amount
+  const now = new Date().toISOString();
+  const { data: orders } = await supabaseAdmin
     .from('payment_orders')
     .select('*')
-    .eq('transfer_code', transferCode)
     .eq('status', 'pending')
-    .maybeSingle();
+    .eq('amount', tx.amount)
+    .gt('expires_at', now)
+    .order('created_at', { ascending: false })
+    .limit(1);
 
-  if (orderErr) {
-    errors.push(`Lỗi truy vấn đơn: ${orderErr.message}`);
-    return { valid: false, errors, transferCode };
+  if (orders && orders.length > 0) {
+    return { order: orders[0], matchMethod: `Amount match: ${tx.amount.toLocaleString()}đ` };
   }
 
-  if (!order) {
-    errors.push(`Không tìm thấy đơn pending với mã ${transferCode}`);
-    return { valid: false, errors, transferCode };
+  return null;
+}
+
+async function validateTransaction(tx: BankTransaction): Promise<ValidationResult> {
+  const errors: string[] = [];
+  const transferCode = extractTransferCode(tx.description);
+
+  // Tìm đơn matching
+  const match = await findMatchingOrder(tx);
+
+  if (!match) {
+    if (!transferCode) {
+      errors.push('Không tìm thấy mã KD trong nội dung và không match được đơn pending nào theo số tiền');
+    } else {
+      errors.push(`Không tìm thấy đơn pending với mã ${transferCode}`);
+    }
+    return { valid: false, errors, transferCode: transferCode || undefined };
   }
 
+  const order = match.order;
+  console.log(`🔍 [OptiGo] Matched order ${order.transfer_code} via ${match.matchMethod}`);
+
+  // Kiểm tra đơn chưa hết hạn
   if (order.expires_at && new Date(order.expires_at) < new Date()) {
-    errors.push(`Đơn ${transferCode} đã hết hạn thanh toán (quá 24h)`);
-    return { valid: false, errors, transferCode, order };
+    errors.push(`Đơn ${order.transfer_code} đã hết hạn thanh toán (quá 24h)`);
+    return { valid: false, errors, transferCode: order.transfer_code, order };
   }
 
+  // Kiểm tra số tiền (±1%)
   const tolerance = order.amount * 0.01;
   if (tx.amount < order.amount - tolerance) {
     errors.push(
       `Số tiền không khớp: nhận ${tx.amount.toLocaleString()}đ, cần ${order.amount.toLocaleString()}đ (±1%)`
     );
-    return { valid: false, errors, transferCode, order };
+    return { valid: false, errors, transferCode: order.transfer_code, order };
   }
 
+  // Kiểm tra tenant
   const { data: tenant, error: tenantErr } = await supabaseAdmin
     .from('tenants')
     .select('id, name, status')
@@ -161,21 +200,23 @@ async function validateTransaction(tx: BankTransaction): Promise<ValidationResul
 
   if (tenantErr || !tenant) {
     errors.push(`Tenant ${order.tenant_id} không tồn tại`);
-    return { valid: false, errors, transferCode, order };
+    return { valid: false, errors, transferCode: order.transfer_code, order };
   }
 
+  // Kiểm tra plan hợp lệ
   const validPlans = ['basic', 'pro', 'enterprise'];
   if (!validPlans.includes(order.plan)) {
     errors.push(`Gói "${order.plan}" không hợp lệ`);
-    return { valid: false, errors, transferCode, order };
+    return { valid: false, errors, transferCode: order.transfer_code, order };
   }
 
+  // Kiểm tra months hợp lệ
   if (!order.months || order.months < 1 || order.months > 12) {
     errors.push(`Số tháng ${order.months} không hợp lệ (1-12)`);
-    return { valid: false, errors, transferCode, order };
+    return { valid: false, errors, transferCode: order.transfer_code, order };
   }
 
-  return { valid: true, errors: [], order, transferCode };
+  return { valid: true, errors: [], order, transferCode: order.transfer_code };
 }
 
 // ===== ACTIVATE =====
@@ -285,8 +326,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // BƯỚC 1: LOG
       const logId = await logWebhook(req.body, transferCode, tx.amount, tx.bankRef || null);
 
-      // BƯỚC 2: VALIDATE
+      // BƯỚC 2: VALIDATE (tìm đơn bằng KD code HOẶC amount matching)
       const validation = await validateTransaction(tx);
+
+      // Cập nhật log với transfer_code từ matched order (nếu match bằng amount)
+      if (!transferCode && validation.transferCode && logId) {
+        try {
+          await supabaseAdmin
+            .from('webhook_logs')
+            .update({ transfer_code: validation.transferCode })
+            .eq('id', logId);
+        } catch {}
+      }
 
       if (!validation.valid) {
         console.warn(`❌ [OptiGo] Validation FAILED cho ${transferCode || 'unknown'}:`, validation.errors);
