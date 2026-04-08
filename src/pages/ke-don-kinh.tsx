@@ -883,7 +883,7 @@ export default function KeDonKinh() {
       <div className="flex flex-col lg:flex-row" style={{ height: 'calc(100vh - 72px)' }}>
         
         {/* History sidebar - Hidden on mobile, shown on desktop */}
-        <aside className="hidden md:block w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
+        <aside className="hidden lg:block w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
           <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
         </aside>
 
@@ -1562,7 +1562,7 @@ export default function KeDonKinh() {
                 </div>
 
                 {/* Mobile History Section - below action buttons */}
-                <div className="block md:hidden mt-4 pt-4 border-t border-gray-200">
+                <div className="block lg:hidden mt-4 pt-4 border-t border-gray-200">
                   <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
                 </div>
               </div>

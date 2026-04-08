@@ -98,6 +98,7 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
         .footer-note { margin-top: 16px; text-align: center; font-style: italic; font-size: 11px; color: #666; border-top: 1px dashed #ccc; padding-top: 8px; }
         .signer-section { margin-top: 20px; display: flex; justify-content: flex-end; }
         .signer-section .signer-inner { text-align: center; min-width: 180px; }
+        .signer-section .signer-date { font-style: italic; font-size: 12px; margin-bottom: 4px; }
         .signer-section .signer-title { font-weight: 600; font-size: 13px; }
         .signer-section .signer-signature { margin: 8px 0; min-height: 50px; }
         .signer-section .signer-signature img { max-height: 60px; max-width: 180px; }
@@ -241,6 +242,11 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
           {(config.hien_thi_nguoi_ky_thuoc ?? true) && (config.chuc_danh_nguoi_ky || config.ho_ten_nguoi_ky || config.chu_ky_url) && (
             <div className="signer-section">
               <div className="signer-inner">
+                {(config.hien_thi_ngay_kham_thuoc ?? true) && ngayKham && (
+                  <div className="signer-date">
+                    {(() => { const d = new Date(ngayKham); return `Ng\u00e0y ${String(d.getDate()).padStart(2,'0')} th\u00e1ng ${String(d.getMonth()+1).padStart(2,'0')} n\u0103m ${d.getFullYear()}`; })()}
+                  </div>
+                )}
                 {config.chuc_danh_nguoi_ky && <div className="signer-title">{config.chuc_danh_nguoi_ky}</div>}
                 <div className="signer-signature">
                   {config.chu_ky_url && <img src={config.chu_ky_url} alt="Chữ ký" />}

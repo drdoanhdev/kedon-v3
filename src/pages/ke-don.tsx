@@ -776,11 +776,11 @@ export default function KeDon() {
 
   return (
     <ProtectedRoute>
-  {/* Mobile: Stack layout, Desktop: Keep current grid (md and up) */}
-  <div className="flex flex-col md:block">
+  {/* Mobile: Stack layout, Desktop: Keep current grid (lg and up) */}
+  <div className="flex flex-col lg:block">
 
         {/* Mobile layout - Clinical blue theme */}
-  <div className="block md:hidden p-2 space-y-2 bg-[#f5f6f8] min-h-screen">
+  <div className="block lg:hidden p-2 space-y-2 bg-[#f5f6f8] min-h-screen">
 
           {/* Patient Mini Card - Mobile */}
           {benhNhan ? (
@@ -1347,8 +1347,8 @@ export default function KeDon() {
           </div>
         </div>
 
-  {/* Desktop layout - Clinical 3-panel design (md and up) */}
-  <div className="hidden md:flex h-[calc(100vh-76px)] overflow-hidden">
+  {/* Desktop layout - Clinical 3-panel design (lg and up) */}
+  <div className="hidden lg:flex h-[calc(100vh-76px)] overflow-hidden">
 
     {/* ═══ LEFT SIDEBAR: Quá trình điều trị + Diễn tiến ═══ */}
     <aside className="w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] flex flex-col overflow-hidden">
