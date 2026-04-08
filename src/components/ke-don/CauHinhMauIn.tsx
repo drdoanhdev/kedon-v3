@@ -20,6 +20,11 @@ interface PrintConfig {
   hien_thi_gia: boolean;
   hien_thi_ghi_chu: boolean;
   ghi_chu_cuoi: string;
+  chuc_danh_nguoi_ky: string;
+  ho_ten_nguoi_ky: string;
+  chu_ky_url: string;
+  hien_thi_nguoi_ky: boolean;
+  hien_thi_ngay_kham: boolean;
 }
 
 const defaultConfig: PrintConfig = {
@@ -37,6 +42,11 @@ const defaultConfig: PrintConfig = {
   hien_thi_gia: true,
   hien_thi_ghi_chu: true,
   ghi_chu_cuoi: '',
+  chuc_danh_nguoi_ky: '',
+  ho_ten_nguoi_ky: '',
+  chu_ky_url: '',
+  hien_thi_nguoi_ky: true,
+  hien_thi_ngay_kham: true,
 };
 
 interface CauHinhMauInProps {

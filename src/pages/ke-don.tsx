@@ -139,9 +139,11 @@ export default function KeDon() {
   const [printConfig, setPrintConfig] = useState<{
     ten_cua_hang: string; dia_chi: string; dien_thoai: string; logo_url: string;
     hien_thi_logo_thuoc: boolean; hien_thi_chan_doan_thuoc: boolean; hien_thi_gia_thuoc: boolean; hien_thi_ghi_chu_thuoc: boolean; ghi_chu_cuoi_thuoc: string;
+    chuc_danh_nguoi_ky: string; ho_ten_nguoi_ky: string; chu_ky_url: string; hien_thi_nguoi_ky_thuoc: boolean; hien_thi_ngay_kham_thuoc: boolean;
   }>({
     ten_cua_hang: '', dia_chi: '', dien_thoai: '', logo_url: '',
     hien_thi_logo_thuoc: true, hien_thi_chan_doan_thuoc: true, hien_thi_gia_thuoc: false, hien_thi_ghi_chu_thuoc: true, ghi_chu_cuoi_thuoc: '',
+    chuc_danh_nguoi_ky: '', ho_ten_nguoi_ky: '', chu_ky_url: '', hien_thi_nguoi_ky_thuoc: true, hien_thi_ngay_kham_thuoc: true,
   });
 
   const loadChandoanHistory = useCallback(() => {
@@ -203,7 +205,7 @@ export default function KeDon() {
     axios.get('/api/cau-hinh-mau-in')
       .then(res => {
         const d = res.data?.data || res.data;
-        if (d) setPrintConfig(d);
+        if (d) setPrintConfig(prev => ({ ...prev, ...d }));
       })
       .catch(() => {});
     const fetchData = async () => {

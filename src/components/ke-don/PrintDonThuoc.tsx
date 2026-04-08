@@ -10,6 +10,11 @@ interface PrintConfig {
   hien_thi_gia_thuoc: boolean;
   hien_thi_ghi_chu_thuoc: boolean;
   ghi_chu_cuoi_thuoc: string;
+  chuc_danh_nguoi_ky: string;
+  ho_ten_nguoi_ky: string;
+  chu_ky_url: string;
+  hien_thi_nguoi_ky_thuoc: boolean;
+  hien_thi_ngay_kham_thuoc: boolean;
 }
 
 interface ChiTietThuoc {
@@ -91,6 +96,12 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
         .notes { margin: 10px 0; font-size: 12px; }
         .notes .label { font-weight: 600; }
         .footer-note { margin-top: 16px; text-align: center; font-style: italic; font-size: 11px; color: #666; border-top: 1px dashed #ccc; padding-top: 8px; }
+        .signer-section { margin-top: 20px; display: flex; justify-content: flex-end; }
+        .signer-section .signer-inner { text-align: center; min-width: 180px; }
+        .signer-section .signer-title { font-weight: 600; font-size: 13px; }
+        .signer-section .signer-signature { margin: 8px 0; min-height: 50px; }
+        .signer-section .signer-signature img { max-height: 60px; max-width: 180px; }
+        .signer-section .signer-name { font-weight: 600; font-size: 13px; }
         @media print {
           body { padding: 0; }
           @page { margin: 10mm; size: A5; }
@@ -144,6 +155,7 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
                   <td className="label">Năm sinh:</td>
                   <td>{benhNhan.namsinh || ''}</td>
                 </tr>
+                {(config.hien_thi_ngay_kham_thuoc ?? true) && (
                 <tr>
                   <td className="label">Ngày khám:</td>
                   <td>{formatDate(ngayKham)}</td>
@@ -154,6 +166,7 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
                     </>
                   )}
                 </tr>
+                )}
                 {benhNhan.diachi && (
                   <tr>
                     <td className="label">Địa chỉ:</td>
@@ -222,6 +235,19 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
           {/* Footer note */}
           {config.ghi_chu_cuoi_thuoc && (
             <div className="footer-note">{config.ghi_chu_cuoi_thuoc}</div>
+          )}
+
+          {/* Signer section */}
+          {(config.hien_thi_nguoi_ky_thuoc ?? true) && (config.chuc_danh_nguoi_ky || config.ho_ten_nguoi_ky || config.chu_ky_url) && (
+            <div className="signer-section">
+              <div className="signer-inner">
+                {config.chuc_danh_nguoi_ky && <div className="signer-title">{config.chuc_danh_nguoi_ky}</div>}
+                <div className="signer-signature">
+                  {config.chu_ky_url && <img src={config.chu_ky_url} alt="Chữ ký" />}
+                </div>
+                {config.ho_ten_nguoi_ky && <div className="signer-name">{config.ho_ten_nguoi_ky}</div>}
+              </div>
+            </div>
           )}
         </div>
       </div>

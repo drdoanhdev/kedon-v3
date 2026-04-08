@@ -18,35 +18,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) throw error;
 
-      // Return default config if none exists
+      // Defaults for all fields (handles existing rows missing new columns)
+      const defaults = {
+        tenant_id: tenantId,
+        ten_cua_hang: '',
+        dia_chi: '',
+        dien_thoai: '',
+        logo_url: '',
+        hien_thi_logo: true,
+        hien_thi_chan_doan: true,
+        hien_thi_sokinh_cu: false,
+        hien_thi_thiluc: true,
+        hien_thi_pd: true,
+        hien_thi_gong: true,
+        hien_thi_trong: true,
+        hien_thi_gia: false,
+        hien_thi_ghi_chu: true,
+        ghi_chu_cuoi: '',
+        hien_thi_logo_thuoc: true,
+        hien_thi_chan_doan_thuoc: true,
+        hien_thi_gia_thuoc: false,
+        hien_thi_ghi_chu_thuoc: true,
+        ghi_chu_cuoi_thuoc: '',
+        chuc_danh_nguoi_ky: '',
+        ho_ten_nguoi_ky: '',
+        chu_ky_url: '',
+        hien_thi_nguoi_ky: true,
+        hien_thi_nguoi_ky_thuoc: true,
+        hien_thi_ngay_kham: true,
+        hien_thi_ngay_kham_thuoc: true,
+      };
+
       if (!data) {
-        return res.status(200).json({
-          data: {
-            tenant_id: tenantId,
-            ten_cua_hang: '',
-            dia_chi: '',
-            dien_thoai: '',
-            logo_url: '',
-            hien_thi_logo: true,
-            hien_thi_chan_doan: true,
-            hien_thi_sokinh_cu: false,
-            hien_thi_thiluc: true,
-            hien_thi_pd: true,
-            hien_thi_gong: true,
-            hien_thi_trong: true,
-            hien_thi_gia: false,
-            hien_thi_ghi_chu: true,
-            ghi_chu_cuoi: '',
-            hien_thi_logo_thuoc: true,
-            hien_thi_chan_doan_thuoc: true,
-            hien_thi_gia_thuoc: false,
-            hien_thi_ghi_chu_thuoc: true,
-            ghi_chu_cuoi_thuoc: '',
-          },
-        });
+        return res.status(200).json({ data: defaults });
       }
 
-      res.status(200).json({ data });
+      // Merge defaults for any null/missing fields in existing rows
+      const merged: Record<string, unknown> = { ...defaults };
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== null && v !== undefined) merged[k] = v;
+      }
+      res.status(200).json({ data: merged });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: 'Lỗi khi lấy cấu hình mẫu in', details: message });
@@ -73,6 +85,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_gia_thuoc,
         hien_thi_ghi_chu_thuoc,
         ghi_chu_cuoi_thuoc,
+        chuc_danh_nguoi_ky,
+        ho_ten_nguoi_ky,
+        chu_ky_url,
+        hien_thi_nguoi_ky,
+        hien_thi_nguoi_ky_thuoc,
+        hien_thi_ngay_kham,
+        hien_thi_ngay_kham_thuoc,
       } = req.body;
 
       const payload = {
@@ -96,6 +115,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_gia_thuoc: hien_thi_gia_thuoc ?? false,
         hien_thi_ghi_chu_thuoc: hien_thi_ghi_chu_thuoc ?? true,
         ghi_chu_cuoi_thuoc: ghi_chu_cuoi_thuoc || '',
+        chuc_danh_nguoi_ky: chuc_danh_nguoi_ky || '',
+        ho_ten_nguoi_ky: ho_ten_nguoi_ky || '',
+        chu_ky_url: chu_ky_url || '',
+        hien_thi_nguoi_ky: hien_thi_nguoi_ky ?? true,
+        hien_thi_nguoi_ky_thuoc: hien_thi_nguoi_ky_thuoc ?? true,
+        hien_thi_ngay_kham: hien_thi_ngay_kham ?? true,
+        hien_thi_ngay_kham_thuoc: hien_thi_ngay_kham_thuoc ?? true,
         updated_at: new Date().toISOString(),
       };
 

@@ -31,6 +31,15 @@ CREATE TABLE IF NOT EXISTS cau_hinh_mau_in (
   hien_thi_ghi_chu_thuoc BOOLEAN DEFAULT true,
   -- Ghi chú cuối phiếu đơn thuốc
   ghi_chu_cuoi_thuoc TEXT DEFAULT '',
+  -- Người ký & chữ ký (dùng chung)
+  chuc_danh_nguoi_ky TEXT DEFAULT '',
+  ho_ten_nguoi_ky TEXT DEFAULT '',
+  chu_ky_url TEXT DEFAULT '',
+  -- Toggle hiển thị người ký & ngày khám
+  hien_thi_nguoi_ky BOOLEAN DEFAULT true,
+  hien_thi_nguoi_ky_thuoc BOOLEAN DEFAULT true,
+  hien_thi_ngay_kham BOOLEAN DEFAULT true,
+  hien_thi_ngay_kham_thuoc BOOLEAN DEFAULT true,
   -- Timestamps
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

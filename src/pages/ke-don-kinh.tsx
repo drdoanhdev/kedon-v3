@@ -375,7 +375,7 @@ export default function KeDonKinh() {
     axios.get('/api/cau-hinh-mau-in')
       .then(res => {
         const d = res.data?.data || res.data;
-        if (d) setPrintConfig(d);
+        if (d) setPrintConfig(prev => ({ ...prev, ...d }));
       })
       .catch(() => {});
   }, []);

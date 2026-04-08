@@ -15,6 +15,11 @@ interface PrintConfig {
   hien_thi_gia: boolean;
   hien_thi_ghi_chu: boolean;
   ghi_chu_cuoi: string;
+  chuc_danh_nguoi_ky: string;
+  ho_ten_nguoi_ky: string;
+  chu_ky_url: string;
+  hien_thi_nguoi_ky: boolean;
+  hien_thi_ngay_kham: boolean;
 }
 
 interface DonKinhData {
@@ -107,6 +112,12 @@ const PrintDonKinh: React.FC<PrintDonKinhProps> = ({ config, don, benhNhan }) =>
         .notes { margin: 10px 0; font-size: 12px; }
         .notes .label { font-weight: 600; }
         .footer-note { margin-top: 16px; text-align: center; font-style: italic; font-size: 11px; color: #666; border-top: 1px dashed #ccc; padding-top: 8px; }
+        .signer-section { margin-top: 20px; display: flex; justify-content: flex-end; }
+        .signer-section .signer-inner { text-align: center; min-width: 180px; }
+        .signer-section .signer-title { font-weight: 600; font-size: 13px; }
+        .signer-section .signer-signature { margin: 8px 0; min-height: 50px; }
+        .signer-section .signer-signature img { max-height: 60px; max-width: 180px; }
+        .signer-section .signer-name { font-weight: 600; font-size: 13px; }
         @media print {
           body { padding: 0; }
           @page { margin: 10mm; size: A5; }
@@ -164,8 +175,9 @@ const PrintDonKinh: React.FC<PrintDonKinhProps> = ({ config, don, benhNhan }) =>
                   <td className="label">Năm sinh:</td>
                   <td>{benhNhan.namsinh || ''}</td>
                 </tr>
+                {(config.hien_thi_ngay_kham ?? true) && (
                 <tr>
-                  <td className="label">Ngày khám:</td>
+                  <td className="label">Ngày đo:</td>
                   <td>{formatDate(don.ngaykham)}</td>
                   {benhNhan.dienthoai && (
                     <>
@@ -174,6 +186,7 @@ const PrintDonKinh: React.FC<PrintDonKinhProps> = ({ config, don, benhNhan }) =>
                     </>
                   )}
                 </tr>
+                )}
                 {config.hien_thi_chan_doan && don.chandoan && (
                   <tr>
                     <td className="label">Chẩn đoán:</td>
@@ -277,6 +290,19 @@ const PrintDonKinh: React.FC<PrintDonKinhProps> = ({ config, don, benhNhan }) =>
           {/* Footer note */}
           {config.ghi_chu_cuoi && (
             <div className="footer-note">{config.ghi_chu_cuoi}</div>
+          )}
+
+          {/* Signer section */}
+          {(config.hien_thi_nguoi_ky ?? true) && (config.chuc_danh_nguoi_ky || config.ho_ten_nguoi_ky || config.chu_ky_url) && (
+            <div className="signer-section">
+              <div className="signer-inner">
+                {config.chuc_danh_nguoi_ky && <div className="signer-title">{config.chuc_danh_nguoi_ky}</div>}
+                <div className="signer-signature">
+                  {config.chu_ky_url && <img src={config.chu_ky_url} alt="Chữ ký" />}
+                </div>
+                {config.ho_ten_nguoi_ky && <div className="signer-name">{config.ho_ten_nguoi_ky}</div>}
+              </div>
+            </div>
           )}
         </div>
       </div>

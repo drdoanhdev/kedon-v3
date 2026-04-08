@@ -31,6 +31,15 @@ interface PrintConfig {
   hien_thi_gia_thuoc: boolean;
   hien_thi_ghi_chu_thuoc: boolean;
   ghi_chu_cuoi_thuoc: string;
+  // Người ký & Chữ ký (dùng chung)
+  chuc_danh_nguoi_ky: string;
+  ho_ten_nguoi_ky: string;
+  chu_ky_url: string;
+  // Toggle hiện người ký / ngày khám
+  hien_thi_nguoi_ky: boolean;
+  hien_thi_nguoi_ky_thuoc: boolean;
+  hien_thi_ngay_kham: boolean;
+  hien_thi_ngay_kham_thuoc: boolean;
 }
 
 const defaultConfig: PrintConfig = {
@@ -53,6 +62,13 @@ const defaultConfig: PrintConfig = {
   hien_thi_gia_thuoc: false,
   hien_thi_ghi_chu_thuoc: true,
   ghi_chu_cuoi_thuoc: '',
+  chuc_danh_nguoi_ky: '',
+  ho_ten_nguoi_ky: '',
+  chu_ky_url: '',
+  hien_thi_nguoi_ky: true,
+  hien_thi_nguoi_ky_thuoc: true,
+  hien_thi_ngay_kham: true,
+  hien_thi_ngay_kham_thuoc: true,
 };
 
 export default function CauHinhIn() {
@@ -187,6 +203,14 @@ export default function CauHinhIn() {
                 {label}
               </label>
             ))}
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.hien_thi_ngay_kham as boolean} onChange={e => handleChange('hien_thi_ngay_kham', e.target.checked)} className="rounded border-gray-300" />
+              Ngày đo
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.hien_thi_nguoi_ky as boolean} onChange={e => handleChange('hien_thi_nguoi_ky', e.target.checked)} className="rounded border-gray-300" />
+              Người ký
+            </label>
           </div>
           <div className="pt-2 border-t border-gray-100">
             <Label className="text-sm">Ghi chú cuối phiếu đơn kính</Label>
@@ -222,6 +246,14 @@ export default function CauHinhIn() {
               <input type="checkbox" checked={form.hien_thi_ghi_chu_thuoc as boolean} onChange={e => handleChange('hien_thi_ghi_chu_thuoc', e.target.checked)} className="rounded border-gray-300" />
               Ghi chú
             </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.hien_thi_ngay_kham_thuoc as boolean} onChange={e => handleChange('hien_thi_ngay_kham_thuoc', e.target.checked)} className="rounded border-gray-300" />
+              Ngày khám
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={form.hien_thi_nguoi_ky_thuoc as boolean} onChange={e => handleChange('hien_thi_nguoi_ky_thuoc', e.target.checked)} className="rounded border-gray-300" />
+              Người ký
+            </label>
           </div>
           <div className="pt-2 border-t border-gray-100">
             <Label className="text-sm">Ghi chú cuối phiếu đơn thuốc</Label>
@@ -231,6 +263,65 @@ export default function CauHinhIn() {
               placeholder="VD: Tái khám sau 1 tuần nếu không đỡ."
               rows={2}
             />
+          </div>
+        </div>
+
+        {/* Người ký & Chữ ký */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">✍️</span>
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Người ký & Chữ ký</h2>
+          </div>
+          <p className="text-xs text-gray-500">Thông tin người ký dùng chung cho cả đơn kính và đơn thuốc. Bật/tắt hiển thị riêng ở từng mục phía trên.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label className="text-sm">Chức danh người ký</Label>
+              <select
+                value={['Bác sĩ', 'Kỹ thuật viên khúc xạ', 'Dược sĩ', ''].includes(form.chuc_danh_nguoi_ky) ? form.chuc_danh_nguoi_ky : '__custom__'}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === '__custom__') handleChange('chuc_danh_nguoi_ky', '');
+                  else handleChange('chuc_danh_nguoi_ky', v);
+                }}
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">-- Chọn chức danh --</option>
+                <option value="Bác sĩ">Bác sĩ</option>
+                <option value="Kỹ thuật viên khúc xạ">Kỹ thuật viên khúc xạ</option>
+                <option value="Dược sĩ">Dược sĩ</option>
+                <option value="__custom__">Tự nhập...</option>
+              </select>
+              {!['Bác sĩ', 'Kỹ thuật viên khúc xạ', 'Dược sĩ', ''].includes(form.chuc_danh_nguoi_ky) && (
+                <Input
+                  className="mt-2"
+                  value={form.chuc_danh_nguoi_ky}
+                  onChange={e => handleChange('chuc_danh_nguoi_ky', e.target.value)}
+                  placeholder="Nhập chức danh tùy chỉnh"
+                />
+              )}
+            </div>
+            <div>
+              <Label className="text-sm">Họ tên người ký</Label>
+              <Input
+                value={form.ho_ten_nguoi_ky}
+                onChange={e => handleChange('ho_ten_nguoi_ky', e.target.value)}
+                placeholder="VD: Nguyễn Văn A"
+              />
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm">URL Chữ ký (ảnh)</Label>
+            <Input
+              value={form.chu_ky_url}
+              onChange={e => handleChange('chu_ky_url', e.target.value)}
+              placeholder="https://... (ảnh chữ ký nền trong suốt)"
+            />
+            {form.chu_ky_url && (
+              <div className="mt-2 flex items-center gap-2">
+                <img src={form.chu_ky_url} alt="Chữ ký preview" className="max-h-16 max-w-[200px] rounded border border-gray-200 bg-gray-50" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                <span className="text-xs text-gray-400">Xem trước</span>
+              </div>
+            )}
           </div>
         </div>
 
