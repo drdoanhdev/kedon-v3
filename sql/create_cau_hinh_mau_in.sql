@@ -1,6 +1,7 @@
 -- ============================================
--- CẤU HÌNH MẪU IN ĐƠN KÍNH (Print Template Config)
+-- CẤU HÌNH MẪU IN (Print Template Config)
 -- Mỗi tenant có 1 bản cấu hình duy nhất
+-- Đơn kính và đơn thuốc có cài đặt tách bạch
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS cau_hinh_mau_in (
@@ -11,7 +12,7 @@ CREATE TABLE IF NOT EXISTS cau_hinh_mau_in (
   dia_chi TEXT DEFAULT '',
   dien_thoai TEXT DEFAULT '',
   logo_url TEXT DEFAULT '',
-  -- Toggle hiển thị các trường trên phiếu in
+  -- Toggle hiển thị các trường trên phiếu in ĐƠN KÍNH
   hien_thi_logo BOOLEAN DEFAULT true,
   hien_thi_chan_doan BOOLEAN DEFAULT true,
   hien_thi_sokinh_cu BOOLEAN DEFAULT false,
@@ -21,8 +22,15 @@ CREATE TABLE IF NOT EXISTS cau_hinh_mau_in (
   hien_thi_trong BOOLEAN DEFAULT true,
   hien_thi_gia BOOLEAN DEFAULT false,
   hien_thi_ghi_chu BOOLEAN DEFAULT true,
-  -- Ghi chú cuối phiếu
+  -- Ghi chú cuối phiếu đơn kính
   ghi_chu_cuoi TEXT DEFAULT '',
+  -- Toggle hiển thị các trường trên phiếu in ĐƠN THUỐC
+  hien_thi_logo_thuoc BOOLEAN DEFAULT true,
+  hien_thi_chan_doan_thuoc BOOLEAN DEFAULT true,
+  hien_thi_gia_thuoc BOOLEAN DEFAULT false,
+  hien_thi_ghi_chu_thuoc BOOLEAN DEFAULT true,
+  -- Ghi chú cuối phiếu đơn thuốc
+  ghi_chu_cuoi_thuoc TEXT DEFAULT '',
   -- Timestamps
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

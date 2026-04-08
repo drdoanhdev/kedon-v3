@@ -15,11 +15,12 @@ import SoKinhInput from '../components/SoKinhInput';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Link from 'next/link';
 import { useAuth } from '../contexts/AuthContext';
+import { useFooter } from '../contexts/FooterContext';
 import { isOwnerRole } from '../lib/tenantRoles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import PrintDonKinh from '../components/ke-don/PrintDonKinh';
-import CauHinhMauIn, { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
+import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
 
 interface BenhNhan {
   id: number;
@@ -149,6 +150,7 @@ export default function KeDonKinh() {
   const searchParams = useSearchParams();
   const benhnhanid = searchParams.get('bn');
   const { currentRole } = useAuth();
+  const { setLai: setFooterLai } = useFooter();
   const isAdmin = isOwnerRole(currentRole);
 
   // Auto chuyển trạng thái chờ khám → đang_khám khi mở trang kê đơn kính
@@ -371,7 +373,10 @@ export default function KeDonKinh() {
   // Fetch print config
   useEffect(() => {
     axios.get('/api/cau-hinh-mau-in')
-      .then(res => { if (res.data) setPrintConfig(res.data); })
+      .then(res => {
+        const d = res.data?.data || res.data;
+        if (d) setPrintConfig(d);
+      })
       .catch(() => {});
   }, []);
 
@@ -610,6 +615,9 @@ export default function KeDonKinh() {
     const costFrame = form.gianhap_gong ?? form.ax_mt ?? 0;
     return (form.giatrong || 0) - costLens + (form.giagong || 0) - costFrame;
   }, [form.giatrong, form.gianhap_trong, form.ax_mp, form.giagong, form.gianhap_gong, form.ax_mt]);
+
+  // Sync lãi lên Footer
+  useEffect(() => { setFooterLai((lai / 1000).toFixed(0)); return () => setFooterLai(null); }, [lai, setFooterLai]);
 
   // Lưu đơn kính
   const luuDonKinh = async () => {
@@ -881,10 +889,6 @@ export default function KeDonKinh() {
 
         {/* Main content area */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-[#f5f6f8]">
-          {/* Profit display - Mobile only */}
-          <div className="fixed top-1 right-1 text-sm p-1 bg-white rounded-lg shadow lg:hidden">
-            {(lai / 1000).toFixed(0)}
-          </div>
             {/* Patient info */}
             {benhNhan ? (
               <div className="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3 border border-gray-200">
@@ -1532,9 +1536,6 @@ export default function KeDonKinh() {
                         Ghi nợ{ghiNo && sotienConNo > 0 ? `: ${sotienConNo.toLocaleString()}đ` : ''}
                       </span>
                     </div>
-                    <div className="border-t pt-2 text-sm">
-                      Lãi: <span className="font-bold text-blue-800">{(lai / 1000).toFixed(0)}</span>
-                    </div>
                 </div>
                 {/* Nút hành động */}
                 <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
@@ -1558,7 +1559,6 @@ export default function KeDonKinh() {
                   {isEditing && form.id && benhNhan && (
                     <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
                   )}
-                  <CauHinhMauIn config={printConfig} onConfigChange={setPrintConfig} />
                 </div>
 
                 {/* Mobile History Section - below action buttons */}
@@ -1762,10 +1762,8 @@ export default function KeDonKinh() {
               {isEditing && form.id && benhNhan && (
                 <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
               )}
-              <CauHinhMauIn config={printConfig} onConfigChange={setPrintConfig} />
             </div>
           </div>
-          <p className="text-[11px] text-gray-400 text-right px-3 pb-1">{(lai / 1000).toFixed(0)}</p>
         </aside>
       </div>
       {/* Edit Patient Dialog */}

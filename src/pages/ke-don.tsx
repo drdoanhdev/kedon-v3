@@ -18,7 +18,9 @@ import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
+import { useFooter } from '../contexts/FooterContext';
 import { searchByStartsWith } from '@/lib/utils';
+import PrintDonThuoc from '../components/ke-don/PrintDonThuoc';
 
 interface Thuoc {
   id: number;
@@ -72,6 +74,7 @@ export default function KeDon() {
   const searchParams = useSearchParams();
   const benhnhanid = searchParams.get('bn');
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
+  const { setLai: setFooterLai } = useFooter();
   const authReady = !authLoading && !tenancyLoading && !!currentTenantId;
 
   // Auto chuyển trạng thái chờ khám → đang_khám khi mở trang kê đơn
@@ -132,6 +135,15 @@ export default function KeDon() {
   const [dsMau, setDsMau] = useState<any[]>([]);
   const [loadingMau, setLoadingMau] = useState(false);
 
+  // Print config
+  const [printConfig, setPrintConfig] = useState<{
+    ten_cua_hang: string; dia_chi: string; dien_thoai: string; logo_url: string;
+    hien_thi_logo_thuoc: boolean; hien_thi_chan_doan_thuoc: boolean; hien_thi_gia_thuoc: boolean; hien_thi_ghi_chu_thuoc: boolean; ghi_chu_cuoi_thuoc: string;
+  }>({
+    ten_cua_hang: '', dia_chi: '', dien_thoai: '', logo_url: '',
+    hien_thi_logo_thuoc: true, hien_thi_chan_doan_thuoc: true, hien_thi_gia_thuoc: false, hien_thi_ghi_chu_thuoc: true, ghi_chu_cuoi_thuoc: '',
+  });
+
   const loadChandoanHistory = useCallback(() => {
     try {
       const saved = localStorage.getItem('chandoan_history');
@@ -187,6 +199,13 @@ export default function KeDon() {
   // Fetch initial data - đợi auth sẵn sàng trước khi gọi API
   useEffect(() => {
     if (!authReady) return;
+    // Fetch print config
+    axios.get('/api/cau-hinh-mau-in')
+      .then(res => {
+        const d = res.data?.data || res.data;
+        if (d) setPrintConfig(d);
+      })
+      .catch(() => {});
     const fetchData = async () => {
       try {
         // Thêm cache-busting parameters
@@ -299,6 +318,9 @@ export default function KeDon() {
   );
   const sotienConNo = useMemo(() => Math.max(0, tongTien - sotienDaThanhToan), [tongTien, sotienDaThanhToan]);
   const tienTraLai = useMemo(() => Math.max(0, tienKhachDua - tongTien), [tienKhachDua, tongTien]);
+
+  // Sync lãi lên Footer
+  useEffect(() => { setFooterLai(lai); return () => setFooterLai(null); }, [lai, setFooterLai]);
 
   // Fetch tồn kho thuốc khi dsChon thay đổi (debounce)
   useEffect(() => {
@@ -1194,6 +1216,16 @@ export default function KeDon() {
                   Xóa đơn thuốc
                 </button>
               )}
+              {editDonThuocId && benhNhan && (
+                <PrintDonThuoc
+                  config={printConfig}
+                  chandoan={chandoan}
+                  ngayKham={ngayKham}
+                  dsThuoc={dsChon}
+                  benhNhan={benhNhan}
+                  tongTien={tongTien}
+                />
+              )}
             </div>
           </div>
 
@@ -1939,7 +1971,17 @@ export default function KeDon() {
             Xóa đơn
           </button>
         )}
-      </div>      <p className="text-[11px] text-gray-400 text-right mt-2">{lai}</p>
+        {editDonThuocId && benhNhan && (
+          <PrintDonThuoc
+            config={printConfig}
+            chandoan={chandoan}
+            ngayKham={ngayKham}
+            dsThuoc={dsChon}
+            benhNhan={benhNhan}
+            tongTien={tongTien}
+          />
+        )}
+      </div>      
     </aside>
   </div>
       </div>

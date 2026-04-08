@@ -6,6 +6,7 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import { FooterProvider } from '../contexts/FooterContext';
 import { initializeApiAuthHeaders } from '../lib/apiAuthHeaders';
 import { Toaster } from 'react-hot-toast';
 
@@ -19,6 +20,7 @@ export default function App({ Component, pageProps }: AppProps) {
   const showHeader = !noHeaderPages.includes(router.pathname);
   return (
     <AuthProvider>
+      <FooterProvider>
       <ConfirmProvider>
       <div className="min-h-screen bg-[#f6faf7]">
         <Head>
@@ -74,6 +76,7 @@ export default function App({ Component, pageProps }: AppProps) {
         />
       </div>
       </ConfirmProvider>
+      </FooterProvider>
     </AuthProvider>
   );
 }

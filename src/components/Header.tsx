@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer } from 'lucide-react';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 
 export default function Header() {
@@ -166,6 +166,18 @@ export default function Header() {
                   <span>Gói dịch vụ</span>
                 </Link>
 
+                {/* Cấu hình in */}
+                <Link
+                  href="/cau-hinh-in"
+                  onClick={() => setIsAvatarOpen(false)}
+                  className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                    isActivePage('/cau-hinh-in') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                  }`}
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cấu hình in</span>
+                </Link>
+
                 {/* Settings - only for owner/admin */}
                 {(currentRole === 'owner' || currentRole === 'admin') && (
                   <Link
@@ -216,7 +228,7 @@ export default function Header() {
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between h-10">
           <div className="flex items-center space-x-3">
-            <span className="text-base font-extrabold text-blue-900 tracking-tight">OcularCare</span>
+            <span className="text-base font-extrabold text-blue-900 tracking-tight">OptiGo</span>
           </div>
           
           <div className="flex items-center space-x-2">
@@ -298,6 +310,17 @@ export default function Header() {
                 >
                   <CreditCard className="w-4 h-4" />
                   <span>Gói dịch vụ</span>
+                </Link>
+              </div>
+
+              <div className="px-3 py-1">
+                <Link
+                  href="/cau-hinh-in"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-sm text-gray-600"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cấu hình in</span>
                 </Link>
               </div>
 

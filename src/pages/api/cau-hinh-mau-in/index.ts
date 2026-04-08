@@ -37,6 +37,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             hien_thi_gia: false,
             hien_thi_ghi_chu: true,
             ghi_chu_cuoi: '',
+            hien_thi_logo_thuoc: true,
+            hien_thi_chan_doan_thuoc: true,
+            hien_thi_gia_thuoc: false,
+            hien_thi_ghi_chu_thuoc: true,
+            ghi_chu_cuoi_thuoc: '',
           },
         });
       }
@@ -63,6 +68,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_gia,
         hien_thi_ghi_chu,
         ghi_chu_cuoi,
+        hien_thi_logo_thuoc,
+        hien_thi_chan_doan_thuoc,
+        hien_thi_gia_thuoc,
+        hien_thi_ghi_chu_thuoc,
+        ghi_chu_cuoi_thuoc,
       } = req.body;
 
       const payload = {
@@ -81,6 +91,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_gia: hien_thi_gia ?? false,
         hien_thi_ghi_chu: hien_thi_ghi_chu ?? true,
         ghi_chu_cuoi: ghi_chu_cuoi || '',
+        hien_thi_logo_thuoc: hien_thi_logo_thuoc ?? true,
+        hien_thi_chan_doan_thuoc: hien_thi_chan_doan_thuoc ?? true,
+        hien_thi_gia_thuoc: hien_thi_gia_thuoc ?? false,
+        hien_thi_ghi_chu_thuoc: hien_thi_ghi_chu_thuoc ?? true,
+        ghi_chu_cuoi_thuoc: ghi_chu_cuoi_thuoc || '',
         updated_at: new Date().toISOString(),
       };
 

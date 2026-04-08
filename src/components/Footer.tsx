@@ -1,9 +1,11 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useFooter } from '../contexts/FooterContext';
 import { useRouter } from 'next/router';
 
 export default function Footer() {
   const { currentTenant } = useAuth();
+  const { lai } = useFooter();
   const router = useRouter();
 
   // Phím tắt theo trang
@@ -16,6 +18,7 @@ export default function Footer() {
     <footer className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-100 text-xs z-40 hidden md:block">
       <div className="px-6 lg:px-8 py-1.5 flex items-center justify-between">
         <span className="text-gray-400 font-medium">{currentTenant?.name || ''}</span>
+        <div className="flex items-center gap-4">
         {shortcuts.length > 0 && (
           <div className="flex items-center gap-4">
             {shortcuts.map((s, i) => (
@@ -26,6 +29,10 @@ export default function Footer() {
             ))}
           </div>
         )}
+        {lai !== null && (router.pathname === '/ke-don' || router.pathname === '/ke-don-kinh') && (
+          <span className="text-gray-400">{lai}</span>
+        )}
+        </div>
       </div>
     </footer>
   );
