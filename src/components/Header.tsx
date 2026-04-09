@@ -28,6 +28,7 @@ export default function Header() {
   const avatarMenuItems = [
     { href: '/danh-muc', label: 'Danh mục', icon: List },
     { href: '/bao-cao', label: 'Báo cáo', icon: BarChart },
+    { href: '/bao-cao-super', label: 'Báo cáo Pro', icon: BarChart },
   ];
 
   const isActivePage = (href: string) => router.pathname === href;
