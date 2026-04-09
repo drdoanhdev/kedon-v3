@@ -3,6 +3,22 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { withDebtFields, calcDebt, calcKinhProfit } from '../../../lib/debt';
 
+// Cache: whether FK columns exist in DonKinh table
+let hasFkColumns: boolean | null = null;
+async function checkFkColumns(): Promise<boolean> {
+  if (hasFkColumns !== null) return hasFkColumns;
+  try {
+    const { error } = await supabase
+      .from('DonKinh')
+      .select('hang_trong_mp_id')
+      .limit(0);
+    hasFkColumns = !error;
+  } catch {
+    hasFkColumns = false;
+  }
+  return hasFkColumns;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -159,16 +175,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const frameCost = (req.body as any).gianhap_gong ?? 0;
 
       // === Resolve FK IDs from text names ===
-      const fkIds = await resolveForeignKeys(supabase, tenantId, {
+      const useFk = await checkFkColumns();
+      const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, {
         hangtrong_mp: hangtrong_mp as string,
         hangtrong_mt: hangtrong_mt as string,
         ten_gong: ten_gong as string,
-      });
+      }) : { hang_trong_mp_id: null, hang_trong_mt_id: null, gong_kinh_id: null };
 
-      const { data, error } = await supabase
-        .from('DonKinh')
-        .insert([
-          {
+      const insertPayload: Record<string, unknown> = {
             id: nextId, // Chỉ định ID cụ thể
             benhnhanid,
             chandoan: (chandoan as string) || '',
@@ -184,16 +198,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             sokinh_cu_mp: sokinh_cu_mp || '',
             sokinh_moi_mp: sokinh_moi_mp || '',
             hangtrong_mp: hangtrong_mp || '',
-            hang_trong_mp_id: fkIds.hang_trong_mp_id,
             thiluc_khongkinh_mt: thiluc_khongkinh_mt || '',
             thiluc_kinhcu_mt: thiluc_kinhcu_mt || '',
             thiluc_kinhmoi_mt: thiluc_kinhmoi_mt || '',
             sokinh_cu_mt: sokinh_cu_mt || '',
             sokinh_moi_mt: sokinh_moi_mt || '',
             hangtrong_mt: hangtrong_mt || '',
-            hang_trong_mt_id: fkIds.hang_trong_mt_id,
             ten_gong: ten_gong || '',
-            gong_kinh_id: fkIds.gong_kinh_id,
             sotien_da_thanh_toan: sotien_da_thanh_toan || 0,
              no: (Number(giatrong) + Number(giagong) - Number(sotien_da_thanh_toan || 0)) > 0,
              // Profit unified
@@ -201,8 +212,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             pd_mp: pd_mp || '',
             pd_mt: pd_mt || '',
             tenant_id: tenantId,
-          },
-        ])
+      };
+      if (useFk) {
+        insertPayload.hang_trong_mp_id = fkIds.hang_trong_mp_id;
+        insertPayload.hang_trong_mt_id = fkIds.hang_trong_mt_id;
+        insertPayload.gong_kinh_id = fkIds.gong_kinh_id;
+      }
+
+      const { data, error } = await supabase
+        .from('DonKinh')
+        .insert([insertPayload])
   .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();
 
       if (error) throw error;
@@ -279,15 +298,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .single();
 
       // === Resolve FK IDs from text names ===
-      const fkIds = await resolveForeignKeys(supabase, tenantId, {
+      const useFk = await checkFkColumns();
+      const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, {
         hangtrong_mp: hangtrong_mp as string,
         hangtrong_mt: hangtrong_mt as string,
         ten_gong: ten_gong as string,
-      });
+      }) : { hang_trong_mp_id: null, hang_trong_mt_id: null, gong_kinh_id: null };
 
-      const { data, error } = await supabase
-        .from('DonKinh')
-        .update({
+      const updatePayload: Record<string, unknown> = {
           benhnhanid,
           chandoan: (chandoan as string) || '',
           ngaykham,
@@ -302,22 +320,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sokinh_cu_mp: sokinh_cu_mp || '',
           sokinh_moi_mp: sokinh_moi_mp || '',
           hangtrong_mp: hangtrong_mp || '',
-          hang_trong_mp_id: fkIds.hang_trong_mp_id,
           thiluc_khongkinh_mt: thiluc_khongkinh_mt || '',
           thiluc_kinhcu_mt: thiluc_kinhcu_mt || '',
           thiluc_kinhmoi_mt: thiluc_kinhmoi_mt || '',
           sokinh_cu_mt: sokinh_cu_mt || '',
           sokinh_moi_mt: sokinh_moi_mt || '',
           hangtrong_mt: hangtrong_mt || '',
-          hang_trong_mt_id: fkIds.hang_trong_mt_id,
           ten_gong: ten_gong || '',
-          gong_kinh_id: fkIds.gong_kinh_id,
        sotien_da_thanh_toan: sotien_da_thanh_toan || 0,
    no: (Number(giatrong) + Number(giagong) - Number(sotien_da_thanh_toan || 0)) > 0,
    lai: (typeof lai === 'number' && !isNaN(lai as number)) ? lai : calcKinhProfit(giatrong, giagong, lensCost, frameCost),
           pd_mp: pd_mp || '',
           pd_mt: pd_mt || '',
-        })
+      };
+      if (useFk) {
+        updatePayload.hang_trong_mp_id = fkIds.hang_trong_mp_id;
+        updatePayload.hang_trong_mt_id = fkIds.hang_trong_mt_id;
+        updatePayload.gong_kinh_id = fkIds.gong_kinh_id;
+      }
+
+      const { data, error } = await supabase
+        .from('DonKinh')
+        .update(updatePayload)
         .eq('id', id)
         .eq('tenant_id', tenantId)
   .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();

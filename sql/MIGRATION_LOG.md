@@ -83,7 +83,7 @@ Theo dõi trạng thái migration trên từng database.
 
 | #    | File | Mô tả | Optigo | Sáng Mắt |
 |------|------|-------|:------:|:--------:|
-| | | | | |
+| V036 | V036_add_fk_columns_donkinh.sql | Thêm hang_trong_mp_id, hang_trong_mt_id, gong_kinh_id vào DonKinh | ✅ | ❌ |
 
 ---
 
