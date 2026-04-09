@@ -160,15 +160,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!benhnhanid || !ngaykham) {
         return res.status(400).json({ message: 'Thiếu thông tin bắt buộc (benhnhanid hoặc ngaykham)' });
       }
-      // Tìm ID cao nhất và dùng ID tiếp theo để tránh conflict
-      const { data: maxIdData } = await supabase
-        .from('DonKinh')
-        .select('id')
-        .order('id', { ascending: false })
-        .limit(1);
-      
-      const nextId = (maxIdData?.[0]?.id || 0) + 1;
-      console.log(`🔧 Sử dụng ID mới: ${nextId}`);
 
       // Backward compatibility: if new cost fields not provided use ax_mp/ax_mt
   const lensCost = (req.body as any).gianhap_trong ?? 0;
@@ -183,7 +174,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }) : { hang_trong_mp_id: null, hang_trong_mt_id: null, gong_kinh_id: null };
 
       const insertPayload: Record<string, unknown> = {
-            id: nextId, // Chỉ định ID cụ thể
             benhnhanid,
             chandoan: (chandoan as string) || '',
             ngaykham,
