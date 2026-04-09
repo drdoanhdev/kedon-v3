@@ -27,6 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data, error } = await supabase.rpc('merge_patients', {
       p_main_patient_id: mainPatientId,
       p_merged_patient_ids: patientIdsToMerge,
+      p_tenant_id: tenantId,
     });
 
     if (error) {
