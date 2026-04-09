@@ -41,8 +41,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Tính thêm số lượng cần nhập
       const result = (data || []).map((item: any) => ({
         ...item,
-        can_nhap_them: item.ton_hien_tai <= item.muc_ton_toi_thieu
-          ? Math.max(item.muc_nhap_goi_y - item.ton_hien_tai, 0)
+        can_nhap_them: item.ton_hien_tai < item.muc_ton_can_co
+          ? Math.max(item.muc_ton_can_co - item.ton_hien_tai, 0)
           : 0,
       }));
 
@@ -51,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // POST: Tạo dòng kho mới (1 tổ hợp độ)
     if (req.method === 'POST') {
-      const { hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_toi_thieu, muc_nhap_goi_y } = req.body;
+      const { hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_can_co } = req.body;
 
       if (!hang_trong_id || sph === undefined) {
         return res.status(400).json({ error: 'hang_trong_id và sph là bắt buộc' });
@@ -65,8 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         add_power: add_power ? parseFloat(add_power) : null,
         ton_dau_ky: parseInt(ton_dau_ky) || 0,
         ton_hien_tai: parseInt(ton_dau_ky) || 0,
-        muc_ton_toi_thieu: parseInt(muc_ton_toi_thieu) || 2,
-        muc_nhap_goi_y: parseInt(muc_nhap_goi_y) || 10,
+        muc_ton_can_co: parseInt(muc_ton_can_co) || 10,
       };
       // mat chỉ dùng cho đa tròng (khi có add_power)
       if (mat && ['trai', 'phai'].includes(mat)) insertData.mat = mat;
@@ -88,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // PUT: Cập nhật tất cả thông tin lens_stock
     if (req.method === 'PUT') {
-      const { id, hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_toi_thieu, muc_nhap_goi_y } = req.body;
+      const { id, hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_can_co } = req.body;
 
       if (!id) return res.status(400).json({ error: 'Thiếu id' });
 
@@ -107,8 +106,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
 
       // Thông số kho
-      if (muc_ton_toi_thieu !== undefined) updateFields.muc_ton_toi_thieu = parseInt(muc_ton_toi_thieu) || 2;
-      if (muc_nhap_goi_y !== undefined) updateFields.muc_nhap_goi_y = parseInt(muc_nhap_goi_y) || 10;
+      if (muc_ton_can_co !== undefined) updateFields.muc_ton_can_co = parseInt(muc_ton_can_co) || 10;
 
       // Tồn đầu kỳ: điều chỉnh tồn hiện tại theo delta
       if (ton_dau_ky !== undefined) {

@@ -20,7 +20,7 @@ interface ThuocStock {
   giaban: number;
   gianhap: number;
   tonkho: number | null;
-  muc_ton_toi_thieu: number | null;
+  muc_ton_can_co: number | null;
   trang_thai: string;
   ngung_kinh_doanh?: boolean;
 }
@@ -310,7 +310,7 @@ export default function QuanLyKhoThuoc() {
                                   {t.mathuoc && <span className="text-gray-400 text-sm ml-2">({t.mathuoc})</span>}
                                 </div>
                                 <div className="flex items-center gap-3">
-                                  <span className="text-sm text-gray-500">Tồn: <strong>{t.tonkho ?? 0}</strong> / {t.muc_ton_toi_thieu ?? 10}</span>
+                                  <span className="text-sm text-gray-500">Tồn: <strong>{t.tonkho ?? 0}</strong> / {t.muc_ton_can_co ?? 10}</span>
                                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${trangThaiColor(t.trang_thai)}`}>
                                     {trangThaiLabel(t.trang_thai)}
                                   </span>

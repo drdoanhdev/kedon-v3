@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     let query = supabase
       .from('Thuoc')
-      .select('id, mathuoc, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_toi_thieu, ngung_kinh_doanh')
+      .select('id, mathuoc, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_can_co, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
       .order('tenthuoc', { ascending: true });
 
@@ -40,7 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Tính trạng thái tồn kho
     const items = (data || []).map((item: any) => {
       const tonkho = item.tonkho ?? 0;
-      const mucMin = item.muc_ton_toi_thieu ?? 10;
+      const mucMin = item.muc_ton_can_co ?? 10;
       let trang_thai = 'DU';
       if (tonkho <= 0) trang_thai = 'HET';
       else if (tonkho <= mucMin) trang_thai = 'SAP_HET';

@@ -73,14 +73,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 6. Tròng kính sắp hết / hết
       supabase
         .from('lens_stock')
-        .select('id, sph, cyl, add_power, ton_hien_tai, muc_ton_toi_thieu, trang_thai_ton, HangTrong(ten_hang)')
+        .select('id, sph, cyl, add_power, ton_hien_tai, trang_thai_ton, HangTrong(ten_hang)')
         .eq('tenant_id', tenantId)
         .in('trang_thai_ton', ['HET', 'SAP_HET']),
 
       // 7. Gọng kính sắp hết / hết
       supabase
         .from('GongKinh')
-        .select('id, ten_gong, mau_sac, ton_kho, muc_ton_toi_thieu')
+        .select('id, ten_gong, mau_sac, ton_kho, muc_ton_can_co')
         .eq('tenant_id', tenantId)
         .not('trang_thai', 'eq', false),
 
@@ -124,7 +124,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Gọng kính alerts
     const frameAlertsAll = (frameLowRes.data || []).filter((f: any) =>
-      (f.ton_kho ?? 0) <= (f.muc_ton_toi_thieu ?? 2)
+      (f.ton_kho ?? 0) <= (f.muc_ton_can_co ?? 2)
     );
     const frameAlerts = frameAlertsAll.map((item: any) => ({
       id: item.id,

@@ -23,8 +23,7 @@ interface LensStock {
   mat: string | null;
   ton_dau_ky: number;
   ton_hien_tai: number;
-  muc_ton_toi_thieu: number;
-  muc_nhap_goi_y: number;
+  muc_ton_can_co: number;
   trang_thai_ton: string;
   can_nhap_them: number;
   HangTrong?: { id: number; ten_hang: string; loai_trong: string; kieu_quan_ly: string; gia_nhap: number; gia_ban: number };
@@ -95,7 +94,7 @@ export default function QuanLyKho() {
   const [selectedStock, setSelectedStock] = useState<LensStock | null>(null);
 
   // Form states
-  const [newStock, setNewStock] = useState({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', mat: '', ton_dau_ky: '0', muc_ton_toi_thieu: '2', muc_nhap_goi_y: '10' });
+  const [newStock, setNewStock] = useState({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', mat: '', ton_dau_ky: '0', muc_ton_can_co: '10' });
   const [importForm, setImportForm] = useState({ so_luong: '', don_gia: '', ghi_chu: '' });
   const [damagedForm, setDamagedForm] = useState({ so_luong: '', ly_do: 'cat_vo', ghi_chu: '' });
 
@@ -105,7 +104,7 @@ export default function QuanLyKho() {
 
   // Edit stock dialog
   const [showEditStock, setShowEditStock] = useState(false);
-  const [editStockForm, setEditStockForm] = useState({ hang_trong_id: '', sph: '', cyl: '', add_power: '', mat: '', ton_dau_ky: '', muc_ton_toi_thieu: '', muc_nhap_goi_y: '' });
+  const [editStockForm, setEditStockForm] = useState({ hang_trong_id: '', sph: '', cyl: '', add_power: '', mat: '', ton_dau_ky: '', muc_ton_can_co: '' });
 
   // Show inactive brands
   const [showInactive, setShowInactive] = useState(false);
@@ -171,7 +170,7 @@ export default function QuanLyKho() {
       await axios.post('/api/inventory/lens-stock', newStock);
       toast.success('Đã thêm dòng kho mới');
       setShowAddStock(false);
-      setNewStock({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', mat: '', ton_dau_ky: '0', muc_ton_toi_thieu: '2', muc_nhap_goi_y: '10' });
+      setNewStock({ hang_trong_id: '', sph: '', cyl: '0', add_power: '', mat: '', ton_dau_ky: '0', muc_ton_can_co: '10' });
       fetchLensStocks();
       fetchAlerts();
     } catch (err: any) {
@@ -236,8 +235,7 @@ export default function QuanLyKho() {
         add_power: editStockForm.add_power || null,
         mat: editStockForm.add_power ? editStockForm.mat || null : null,
         ton_dau_ky: editStockForm.ton_dau_ky,
-        muc_ton_toi_thieu: editStockForm.muc_ton_toi_thieu,
-        muc_nhap_goi_y: editStockForm.muc_nhap_goi_y,
+        muc_ton_can_co: editStockForm.muc_ton_can_co,
       });
       toast.success('Đã cập nhật thông số kho');
       setShowEditStock(false);
@@ -299,8 +297,7 @@ export default function QuanLyKho() {
         else if (matRaw === 'r' || matRaw === 'phai' || matRaw === 'right') r.mat = 'phai';
         else r.mat = null;
         r.ton_dau_ky = parseInt(row['Tồn đầu kỳ'] ?? row['ton_dau_ky'] ?? '0') || 0;
-        r.muc_ton_toi_thieu = parseInt(row['Tồn tối thiểu'] ?? row['muc_ton_toi_thieu'] ?? '2') || 2;
-        r.muc_nhap_goi_y = parseInt(row['Tồn mục tiêu'] ?? row['Nhập gợi ý'] ?? row['muc_nhap_goi_y'] ?? '10') || 10;
+        r.muc_ton_can_co = parseInt(row['Tồn cần có'] ?? row['Tồn mục tiêu'] ?? row['Nhập gợi ý'] ?? row['muc_ton_can_co'] ?? row['muc_nhap_goi_y'] ?? '10') || 10;
         return r;
       }).filter(r => r.ten_hang && !isNaN(r.sph));
       setImportRows(mapped);
@@ -335,9 +332,9 @@ export default function QuanLyKho() {
 
   const downloadTemplate = () => {
     const templateData = [
-      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 10, 'Tồn tối thiểu': 2, 'Tồn mục tiêu': 10 },
-      { 'Hãng tròng': 'Hoya', 'SPH': -2.50, 'CYL': -0.75, 'ADD': 1.50, 'Mắt': 'L', 'Tồn đầu kỳ': 5, 'Tồn tối thiểu': 2, 'Tồn mục tiêu': 10 },
-      { 'Hãng tròng': 'Essilor', 'SPH': 'Plano', 'CYL': 'Plano', 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 20, 'Tồn tối thiểu': 5, 'Tồn mục tiêu': 20 },
+      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 10, 'Tồn cần có': 10 },
+      { 'Hãng tròng': 'Hoya', 'SPH': -2.50, 'CYL': -0.75, 'ADD': 1.50, 'Mắt': 'L', 'Tồn đầu kỳ': 5, 'Tồn cần có': 10 },
+      { 'Hãng tròng': 'Essilor', 'SPH': 'Plano', 'CYL': 'Plano', 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 20, 'Tồn cần có': 20 },
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
@@ -573,7 +570,6 @@ export default function QuanLyKho() {
                                 <th className="pb-2 font-medium">Tên</th>
                                 <th className="pb-2 font-medium">Chi tiết</th>
                                 <th className="pb-2 font-medium text-center">Tồn</th>
-                                <th className="pb-2 font-medium text-center">Tối thiểu</th>
                                 <th className="pb-2 font-medium text-center">Cần nhập</th>
                                 <th className="pb-2 font-medium text-center">Trạng thái</th>
                               </tr>
@@ -589,7 +585,6 @@ export default function QuanLyKho() {
                                   <td className="py-2 font-medium">{a.ten}</td>
                                   <td className="py-2 text-gray-500 font-mono text-xs">{a.chi_tiet}</td>
                                   <td className="py-2 text-center font-bold">{a.ton_kho}</td>
-                                  <td className="py-2 text-center text-gray-500">{a.muc_toi_thieu}</td>
                                   <td className="py-2 text-center font-bold text-blue-600">{a.can_nhap}</td>
                                   <td className="py-2 text-center">
                                     <span className={`text-xs px-2 py-0.5 rounded-full ${trangThaiColor(a.trang_thai)}`}>
@@ -683,8 +678,7 @@ export default function QuanLyKho() {
                               <th className="p-2 sm:p-3 font-medium text-center">Mắt</th>
                               <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn đầu kỳ</th>
                               <th className="p-2 sm:p-3 font-medium text-center">Tồn</th>
-                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tối thiểu</th>
-                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn mục tiêu</th>
+                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn cần có</th>
                               <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">Nhập</span><span className="hidden sm:inline">Cần nhập</span></th>
                               <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">TT</span><span className="hidden sm:inline">Trạng thái</span></th>
                               <th className="p-2 sm:p-3 font-medium text-center"><span className="hidden sm:inline">Thao tác</span></th>
@@ -692,7 +686,7 @@ export default function QuanLyKho() {
                           </thead>
                           <tbody>
                             {lensStocks.length === 0 ? (
-                              <tr><td colSpan={12} className="p-8 text-center text-gray-400">
+                              <tr><td colSpan={11} className="p-8 text-center text-gray-400">
                                 Chưa có dữ liệu kho tròng. Bấm "Thêm độ mới" để bắt đầu.
                               </td></tr>
                             ) : lensStocks.map(stock => {
@@ -713,12 +707,11 @@ export default function QuanLyKho() {
                                 </td>
                                 <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.ton_dau_ky}</td>
                                 <td className="p-2 sm:p-3 text-center">
-                                  <span className={`font-bold text-base sm:text-lg ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai <= stock.muc_ton_toi_thieu ? 'text-yellow-600' : 'text-green-600'}`}>
+                                  <span className={`font-bold text-base sm:text-lg ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai < stock.muc_ton_can_co ? 'text-yellow-600' : 'text-green-600'}`}>
                                     {stock.ton_hien_tai}
                                   </span>
                                 </td>
-                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_ton_toi_thieu}</td>
-                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_nhap_goi_y}</td>
+                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_ton_can_co}</td>
                                 <td className="p-2 sm:p-3 text-center">
                                   {stock.can_nhap_them > 0 ? (
                                     <span className="font-bold text-blue-600">{stock.can_nhap_them}</span>
@@ -743,8 +736,7 @@ export default function QuanLyKho() {
                                           add_power: stock.add_power != null ? String(stock.add_power) : '',
                                           mat: stock.mat || '',
                                           ton_dau_ky: String(stock.ton_dau_ky),
-                                          muc_ton_toi_thieu: String(stock.muc_ton_toi_thieu),
-                                          muc_nhap_goi_y: String(stock.muc_nhap_goi_y),
+                                          muc_ton_can_co: String(stock.muc_ton_can_co),
                                         });
                                         setShowEditStock(true);
                                       }}
@@ -923,14 +915,9 @@ export default function QuanLyKho() {
                       onChange={e => setNewStock({ ...newStock, ton_dau_ky: e.target.value })} />
                   </div>
                   <div>
-                    <Label>Tồn tối thiểu</Label>
-                    <Input type="number" value={newStock.muc_ton_toi_thieu}
-                      onChange={e => setNewStock({ ...newStock, muc_ton_toi_thieu: e.target.value })} />
-                  </div>
-                  <div>
-                    <Label>Tồn mục tiêu</Label>
-                    <Input type="number" value={newStock.muc_nhap_goi_y}
-                      onChange={e => setNewStock({ ...newStock, muc_nhap_goi_y: e.target.value })} />
+                    <Label>Tồn cần có</Label>
+                    <Input type="number" value={newStock.muc_ton_can_co}
+                      onChange={e => setNewStock({ ...newStock, muc_ton_can_co: e.target.value })} />
                   </div>
                 </div>
               </div>
@@ -1088,14 +1075,9 @@ export default function QuanLyKho() {
                         onChange={e => setEditStockForm({ ...editStockForm, ton_dau_ky: e.target.value })} />
                     </div>
                     <div>
-                      <Label>Tồn tối thiểu</Label>
-                      <Input type="number" value={editStockForm.muc_ton_toi_thieu}
-                        onChange={e => setEditStockForm({ ...editStockForm, muc_ton_toi_thieu: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label>Tồn mục tiêu</Label>
-                      <Input type="number" value={editStockForm.muc_nhap_goi_y}
-                        onChange={e => setEditStockForm({ ...editStockForm, muc_nhap_goi_y: e.target.value })} />
+                      <Label>Tồn cần có</Label>
+                      <Input type="number" value={editStockForm.muc_ton_can_co}
+                        onChange={e => setEditStockForm({ ...editStockForm, muc_ton_can_co: e.target.value })} />
                     </div>
                   </div>
                 </div>
@@ -1141,8 +1123,7 @@ export default function QuanLyKho() {
                           <th className="p-2 font-medium">ADD</th>
                           <th className="p-2 font-medium">Mắt</th>
                           <th className="p-2 font-medium">Tồn ĐK</th>
-                          <th className="p-2 font-medium">Tối thiểu</th>
-                          <th className="p-2 font-medium">Tồn MT</th>
+                          <th className="p-2 font-medium">Tồn cần có</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1155,8 +1136,7 @@ export default function QuanLyKho() {
                             <td className="p-2 font-mono">{r.add_power ?? '-'}</td>
                             <td className="p-2">{r.mat === 'trai' ? 'L' : r.mat === 'phai' ? 'R' : '-'}</td>
                             <td className="p-2">{r.ton_dau_ky}</td>
-                            <td className="p-2">{r.muc_ton_toi_thieu}</td>
-                            <td className="p-2">{r.muc_nhap_goi_y}</td>
+                            <td className="p-2">{r.muc_ton_can_co}</td>
                           </tr>
                         ))}
                       </tbody>

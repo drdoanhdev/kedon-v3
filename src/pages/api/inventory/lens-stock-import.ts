@@ -17,7 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { rows } = req.body as { rows: Array<{
       ten_hang: string; sph: number; cyl: number; add_power?: number | null;
       mat?: string | null;
-      ton_dau_ky?: number; muc_ton_toi_thieu?: number; muc_nhap_goi_y?: number;
+      ton_dau_ky?: number; muc_ton_can_co?: number;
     }> };
 
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
@@ -81,8 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         mat: mat,
         ton_dau_ky: tonDauKy,
         ton_hien_tai: tonDauKy,
-        muc_ton_toi_thieu: row.muc_ton_toi_thieu ?? 2,
-        muc_nhap_goi_y: row.muc_nhap_goi_y ?? 10,
+        muc_ton_can_co: row.muc_ton_can_co ?? 10,
       });
 
       if (error) {

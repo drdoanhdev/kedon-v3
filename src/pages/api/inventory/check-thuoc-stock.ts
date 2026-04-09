@@ -28,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data, error } = await supabase
       .from('Thuoc')
-      .select('id, tonkho, muc_ton_toi_thieu')
+      .select('id, tonkho, muc_ton_can_co')
       .eq('tenant_id', tenantId)
       .in('id', ids);
 
@@ -38,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const result: Record<number, { tonkho: number; trang_thai: string }> = {};
     for (const item of (data || [])) {
       const tonkho = item.tonkho ?? 0;
-      const mucMin = item.muc_ton_toi_thieu ?? 10;
+      const mucMin = item.muc_ton_can_co ?? 10;
       let trang_thai = 'DU';
       if (tonkho <= 0) trang_thai = 'HET';
       else if (tonkho <= mucMin) trang_thai = 'SAP_HET';

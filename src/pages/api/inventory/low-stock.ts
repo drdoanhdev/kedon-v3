@@ -22,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (type !== 'thuoc') {
     const { data: lensAlerts } = await supabase
       .from('lens_stock')
-      .select('id, sph, cyl, add_power, ton_hien_tai, muc_ton_toi_thieu, muc_nhap_goi_y, trang_thai_ton, HangTrong(ten_hang)')
+      .select('id, sph, cyl, add_power, ton_hien_tai, muc_ton_can_co, trang_thai_ton, HangTrong(ten_hang)')
       .eq('tenant_id', tenantId)
       .in('trang_thai_ton', ['HET', 'SAP_HET']);
 
@@ -32,8 +32,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ten: item.HangTrong?.ten_hang || '',
         chi_tiet: `${item.sph}/${item.cyl}${item.add_power != null ? ` ADD:${item.add_power}` : ''}`,
         ton_kho: item.ton_hien_tai,
-        muc_toi_thieu: item.muc_ton_toi_thieu,
-        can_nhap: Math.max(item.muc_nhap_goi_y - item.ton_hien_tai, 0),
+        muc_toi_thieu: item.muc_ton_can_co,
+        can_nhap: Math.max(item.muc_ton_can_co - item.ton_hien_tai, 0),
         trang_thai: item.trang_thai_ton,
       });
     });
@@ -43,20 +43,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (type !== 'thuoc') {
     const { data: frameAlerts } = await supabase
       .from('GongKinh')
-      .select('id, ten_gong, mau_sac, ton_kho, muc_ton_toi_thieu')
+      .select('id, ten_gong, mau_sac, ton_kho, muc_ton_can_co')
       .eq('tenant_id', tenantId)
       .not('trang_thai', 'eq', false);
 
     (frameAlerts || []).filter((f: any) =>
-      (f.ton_kho ?? 0) <= (f.muc_ton_toi_thieu ?? 2)
+      (f.ton_kho ?? 0) <= (f.muc_ton_can_co ?? 2)
     ).forEach((item: any) => {
       alerts.push({
         loai_hang: 'gong_kinh',
         ten: item.ten_gong,
         chi_tiet: item.mau_sac || '',
         ton_kho: item.ton_kho ?? 0,
-        muc_toi_thieu: item.muc_ton_toi_thieu ?? 2,
-        can_nhap: Math.max((item.muc_ton_toi_thieu ?? 2) - (item.ton_kho ?? 0), 0),
+        muc_toi_thieu: item.muc_ton_can_co ?? 2,
+        can_nhap: Math.max((item.muc_ton_can_co ?? 2) - (item.ton_kho ?? 0), 0),
         trang_thai: (item.ton_kho ?? 0) <= 0 ? 'HET' : 'SAP_HET',
       });
     });
@@ -66,16 +66,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (type !== 'kinh') {
     const { data: thuocAlerts } = await supabase
       .from('Thuoc')
-      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_toi_thieu, ngung_kinh_doanh')
+      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_can_co, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
       .or('la_thu_thuat.is.null,la_thu_thuat.eq.false')
       .or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
 
     (thuocAlerts || []).filter((t: any) =>
-      (t.tonkho ?? 0) <= (t.muc_ton_toi_thieu ?? 10)
+      (t.tonkho ?? 0) <= (t.muc_ton_can_co ?? 10)
     ).forEach((item: any) => {
       const tonkho = item.tonkho ?? 0;
-      const mucMin = item.muc_ton_toi_thieu ?? 10;
+      const mucMin = item.muc_ton_can_co ?? 10;
       alerts.push({
         loai_hang: 'thuoc',
         ten: item.tenthuoc,

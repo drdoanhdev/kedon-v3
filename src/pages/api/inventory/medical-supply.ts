@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      const { ma_vat_tu, ten_vat_tu, don_vi_tinh, gia_nhap, gia_ban, ton_kho, muc_ton_toi_thieu, nha_cung_cap_id, mo_ta } = req.body;
+      const { ma_vat_tu, ten_vat_tu, don_vi_tinh, gia_nhap, gia_ban, ton_kho, muc_ton_can_co, nha_cung_cap_id, mo_ta } = req.body;
 
       if (!ten_vat_tu) {
         return res.status(400).json({ error: 'ten_vat_tu là bắt buộc' });
@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           gia_nhap: parseInt(gia_nhap) || 0,
           gia_ban: parseInt(gia_ban) || 0,
           ton_kho: parseInt(ton_kho) || 0,
-          muc_ton_toi_thieu: parseInt(muc_ton_toi_thieu) || 5,
+          muc_ton_can_co: parseInt(muc_ton_can_co) || 5,
           nha_cung_cap_id: nha_cung_cap_id ? parseInt(nha_cung_cap_id) : null,
           mo_ta: mo_ta || null,
         })
