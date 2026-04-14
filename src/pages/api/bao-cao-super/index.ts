@@ -256,7 +256,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     const dtByDayArray = Object.entries(dtByDay)
       .map(([day, v]) => ({ day, ...v }))
-      .sort((a, b) => a.day.localeCompare(b.day));
+      .sort((a, b) => b.day.localeCompare(a.day));
 
     // Revenue by month
     const dtByMonth: Record<string, { doanhthu: number; lai: number; no: number; count: number }> = {};
@@ -270,7 +270,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     const dtByMonthArray = Object.entries(dtByMonth)
       .map(([month, v]) => ({ month, ...v }))
-      .sort((a, b) => a.month.localeCompare(b.month));
+      .sort((a, b) => b.month.localeCompare(a.month));
 
     // Top selling drugs
     const drugSales: Record<number, { id: number; ten: string; doanhthu: number; lai: number; soluong: number }> = {};
@@ -383,10 +383,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .map(([h, count]) => ({ hour: parseInt(h), count: count as number }))
       .sort((a, b) => a.hour - b.hour);
 
-    // By chuyen_khoa
-    const matCount = donThuocs.filter((d: any) => d.chuyen_khoa === 'Mắt').length;
-    const tmhCount = donThuocs.filter((d: any) => d.chuyen_khoa !== 'Mắt').length;
-
     // ===================== RESPONSE =====================
     res.status(200).json({
       data: {
@@ -440,7 +436,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           donKinhTBNgay: Math.round(donKinhTBNgay * 10) / 10,
           tyLeThanhToanDu: Math.round(tyLeThanhToanDu * 10) / 10,
           visitByHour: visitByHourArray,
-          chuyenKhoa: { mat: matCount, tmh: tmhCount },
           soNgayCoDoanhThu: dtByDayArray.length,
           dtTBNgay: dtByDayArray.length > 0 ? tongDT / dtByDayArray.length : 0,
         },

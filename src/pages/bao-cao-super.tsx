@@ -47,7 +47,6 @@ interface SuperReport {
   hieuSuat: {
     soLuotKham: number; donThuocTBNgay: number; donKinhTBNgay: number;
     tyLeThanhToanDu: number; visitByHour: HourData[];
-    chuyenKhoa: { mat: number; tmh: number };
     soNgayCoDoanhThu: number; dtTBNgay: number;
   };
 }
@@ -266,17 +265,17 @@ export default function BaoCaoSuperPage() {
   const donutColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
   const chartDayData = tc?.dtByDay?.map(d => ({
-    label: d.day.substring(5), // MM-DD
+    label: format(new Date(d.day), 'dd/MM'),
     value: d.lai,
     secondaryValue: d.doanhthu,
-    tooltip: `${d.day}: DT ${fmtMoney(d.doanhthu)}, Lãi ${fmtMoney(d.lai)} (${d.count} GD)`,
+    tooltip: `${format(new Date(d.day), 'dd/MM/yyyy')}: DT ${fmtMoney(d.doanhthu)}, Lãi ${fmtMoney(d.lai)} (${d.count} GD)`,
   })) || [];
 
   const chartMonthData = tc?.dtByMonth?.map(d => ({
-    label: d.month.substring(2), // YY-MM
+    label: format(new Date(d.month + '-01'), 'MM/yy'),
     value: d.lai,
     secondaryValue: d.doanhthu,
-    tooltip: `${d.month}: DT ${fmtMoney(d.doanhthu)}, Lãi ${fmtMoney(d.lai)} (${d.count} GD)`,
+    tooltip: `${format(new Date(d.month + '-01'), 'MM/yyyy')}: DT ${fmtMoney(d.doanhthu)}, Lãi ${fmtMoney(d.lai)} (${d.count} GD)`,
   })) || [];
 
   // ── MAIN RENDER ──
@@ -414,6 +413,68 @@ export default function BaoCaoSuperPage() {
                     <KpiCard label="DT trung bình/ngày" value={fmtMoney(hs!.dtTBNgay)} color="blue" sub={`${hs!.soNgayCoDoanhThu} ngày có DT`} />
                     <KpiCard label="ARPU" value={fmtMoney(bn!.arpu)} color="purple" sub="Doanh thu TB/bệnh nhân" />
                   </div>
+
+                  {/* Daily summary table */}
+                  {(tc!.dtByMonth?.length || 0) <= 1 && tc!.dtByDay?.length > 0 && (
+                    <Card className="border-0 shadow-sm mt-4">
+                      <CardContent className="p-4">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-3">📅 Chi tiết theo ngày</h3>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="px-3 py-2 text-left">Ngày</th>
+                                <th className="px-3 py-2 text-center">Giao dịch</th>
+                                <th className="px-3 py-2 text-right">Doanh thu</th>
+                                <th className="px-3 py-2 text-right">Lãi</th>
+                                <th className="px-3 py-2 text-right">Nợ</th>
+                                <th className="px-3 py-2 text-right">Tỷ lệ lãi</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tc!.dtByDay.map((d, i) => (
+                                <tr key={i} className="border-b hover:bg-gray-50">
+                                  <td className="px-3 py-2 font-medium">{format(new Date(d.day), 'dd/MM/yyyy')}</td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                      {d.count}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-semibold text-blue-600">{fmtMoney(d.doanhthu)}</td>
+                                  <td className="px-3 py-2 text-right font-semibold text-green-600">{fmtMoney(d.lai)}</td>
+                                  <td className="px-3 py-2 text-right font-semibold text-red-600">{fmtMoney(d.no)}</td>
+                                  <td className="px-3 py-2 text-right font-semibold text-purple-600">{d.doanhthu > 0 ? ((d.lai / d.doanhthu) * 100).toFixed(1) : '0'}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {/* Summary */}
+                        {tc!.dtByDay.length > 0 && (
+                          <div className="border-t bg-gray-50 p-3 mt-3">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                              <div className="text-center">
+                                <div className="font-semibold text-blue-600">{tc!.dtByDay.length}</div>
+                                <div className="text-gray-600 text-xs">Ngày có DT</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="font-semibold text-blue-600">{tc!.dtByDay.reduce((sum, d) => sum + d.count, 0)}</div>
+                                <div className="text-gray-600 text-xs">Tổng GD</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="font-semibold text-green-600">{fmtMoney(tc!.dtByDay.reduce((sum, d) => sum + d.doanhthu, 0))}</div>
+                                <div className="text-gray-600 text-xs">Tổng DT</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="font-semibold text-purple-600">{fmtMoney(tc!.dtByDay.length > 0 ? tc!.dtByDay.reduce((sum, d) => sum + d.doanhthu, 0) / tc!.dtByDay.length : 0)}</div>
+                                <div className="text-gray-600 text-xs">TB/ngày</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Top drugs & Aging side by side */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
@@ -599,7 +660,7 @@ export default function BaoCaoSuperPage() {
                             <tbody>
                               {tc!.dtByMonth.map((m, i) => (
                                 <tr key={i} className="border-b hover:bg-purple-50/50">
-                                  <td className="px-3 py-2 font-medium">{m.month}</td>
+                                  <td className="px-3 py-2 font-medium">{format(new Date(m.month + '-01'), 'MM/yyyy')}</td>
                                   <td className="px-3 py-2 text-right">{m.count}</td>
                                   <td className="px-3 py-2 text-right text-blue-600 font-semibold">{fmtMoney(m.doanhthu)}</td>
                                   <td className="px-3 py-2 text-right text-green-600 font-semibold">{fmtMoney(m.lai)}</td>
@@ -786,32 +847,6 @@ export default function BaoCaoSuperPage() {
                         ) : (
                           <p className="text-gray-400 text-sm text-center py-6">Không có dữ liệu chờ khám</p>
                         )}
-                      </CardContent>
-                    </Card>
-
-                    {/* Chuyen khoa breakdown */}
-                    <Card className="border-0 shadow-sm">
-                      <CardContent className="p-4">
-                        <h3 className="text-sm font-semibold text-gray-700 mb-3">🏥 Phân bổ đơn thuốc theo chuyên khoa</h3>
-                        <div className="space-y-4">
-                          <DonutChart
-                            data={[
-                              { label: 'Mắt', value: hs!.chuyenKhoa.mat, color: '' },
-                              { label: 'TMH', value: hs!.chuyenKhoa.tmh, color: '' },
-                            ]}
-                            colors={['#3b82f6', '#10b981']}
-                          />
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-blue-50 rounded-lg p-3 text-center">
-                              <div className="text-xl font-bold text-blue-600">{hs!.chuyenKhoa.mat}</div>
-                              <div className="text-xs text-gray-500">Đơn Mắt</div>
-                            </div>
-                            <div className="bg-green-50 rounded-lg p-3 text-center">
-                              <div className="text-xl font-bold text-green-600">{hs!.chuyenKhoa.tmh}</div>
-                              <div className="text-xs text-gray-500">Đơn TMH</div>
-                            </div>
-                          </div>
-                        </div>
                       </CardContent>
                     </Card>
                   </div>
