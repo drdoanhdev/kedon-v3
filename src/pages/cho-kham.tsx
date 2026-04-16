@@ -1,16 +1,18 @@
+'use client';
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import apiClient from '../lib/apiClient';
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import Link from 'next/link';
-import { Trash2, RefreshCw } from 'lucide-react';
+import { Trash2, RefreshCw, Clock, Users, ChevronDown, ChevronUp, Stethoscope, Glasses, Phone, MapPin, Calendar } from 'lucide-react';
+import { Input } from '../components/ui/input';
 
 interface BenhNhan {
   id: number;
@@ -26,6 +28,7 @@ interface ChoKham {
   benhnhanid: number;
   thoigian: string;
   trangthai: string;
+  avatar_url?: string;
   BenhNhan: BenhNhan;
 }
 
@@ -76,40 +79,37 @@ interface DienTien {
   noidung: string;
 }
 
-interface ChoKhamRecord {
-  id: number;
-  benhnhanid: number;
-  thoigian: string;
-  trangthai: string;
-  avatar_url?: string;
-  BenhNhan: {
-    id: number;
-    ten: string;
-    dienthoai?: string;
-    namsinh?: string;
-    diachi?: string;
-  };
+function getWaitColor(thoigian: string): string {
+  try {
+    const diffMs = Date.now() - new Date(thoigian).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 15) return 'text-green-700 bg-green-50 border-green-200';
+    if (mins < 30) return 'text-yellow-700 bg-yellow-50 border-yellow-200';
+    if (mins < 60) return 'text-orange-700 bg-orange-50 border-orange-200';
+    return 'text-red-700 bg-red-50 border-red-200';
+  } catch {
+    return 'text-gray-600 bg-gray-50 border-gray-200';
+  }
 }
 
 export default function ChoKhamPage() {
   const { confirm } = useConfirm();
   const [danhSachCho, setDanhSachCho] = useState<ChoKham[]>([]);
-  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState(30);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
+  const [search, setSearch] = useState('');
+
   // States cho lịch sử khám bệnh
   const [selectedBenhNhanId, setSelectedBenhNhanId] = useState<number | null>(null);
   const [donThuocs, setDonThuocs] = useState<DonThuoc[]>([]);
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]);
   const [chiTietDonThuocs, setChiTietDonThuocs] = useState<Record<number, ChiTietDonThuoc[]>>({});
   const [dienTiens, setDienTiens] = useState<Record<number, DienTien[]>>({});
-  const [activeTab, setActiveTab] = useState<string>("don-thuoc");
+  const [activeTab, setActiveTab] = useState<string>('don-thuoc');
 
-  // Đặt tiêu đề trang
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.title = 'Chờ khám';
@@ -130,7 +130,6 @@ export default function ChoKhamPage() {
       }
     } catch (error) {
       console.error('Lỗi khi tải danh sách chờ:', error);
-      // Chỉ hiển thị toast khi refresh thủ công
       if (showToast) {
         toast.error('Không thể tải danh sách chờ khám');
       }
@@ -139,40 +138,27 @@ export default function ChoKhamPage() {
     }
   }, []);
 
-  // Auto refresh mỗi 30 giây
   useEffect(() => {
-    // Fetch lần đầu
     fetchDanhSachCho();
-    
-    // Setup auto refresh interval
     refreshIntervalRef.current = setInterval(() => {
       fetchDanhSachCho();
     }, 30000);
-
-    // Setup countdown interval
     countdownIntervalRef.current = setInterval(() => {
       setCountdown((prev) => (prev > 0 ? prev - 1 : 30));
     }, 1000);
-
     return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-      }
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     };
   }, [fetchDanhSachCho]);
 
-  // Hàm refresh thủ công
   const handleManualRefresh = () => {
     fetchDanhSachCho(true);
   };
 
-  // Fetch lịch sử khám bệnh
   const fetchDonThuoc = useCallback(async (benhnhanid: number): Promise<void> => {
     if (!benhnhanid || isNaN(benhnhanid)) {
-      toast.error("Mã bệnh nhân không hợp lệ");
+      toast.error('Mã bệnh nhân không hợp lệ');
       setDonThuocs([]);
       setDonKinhs([]);
       setChiTietDonThuocs({});
@@ -181,24 +167,18 @@ export default function ChoKhamPage() {
     }
     try {
       const timestamp = Date.now();
-      const resDon = await axios.get(`/api/don-thuoc?benhnhanid=${benhnhanid}&limit=20&_t=${timestamp}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
+      const headers = {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      };
+
+      const resDon = await axios.get(`/api/don-thuoc?benhnhanid=${benhnhanid}&limit=20&_t=${timestamp}`, { headers });
       const donThuocList: DonThuoc[] = resDon.data.data || [];
       setDonThuocs(donThuocList);
 
       const chiTietPromises = donThuocList.map((don) =>
-        axios.get(`/api/chi-tiet-don-thuoc?donthuocid=${don.id}&_t=${timestamp}`, {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        })
+        axios.get(`/api/chi-tiet-don-thuoc?donthuocid=${don.id}&_t=${timestamp}`, { headers })
       );
       const chiTietResponses = await Promise.all(chiTietPromises);
       const chiTietMap: Record<number, ChiTietDonThuoc[]> = {};
@@ -211,23 +191,10 @@ export default function ChoKhamPage() {
       });
       setChiTietDonThuocs(chiTietMap);
 
-      const resDienTien = await axios.get(`/api/dien-tien?benhnhanid=${benhnhanid}&_t=${timestamp}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
+      const resDienTien = await axios.get(`/api/dien-tien?benhnhanid=${benhnhanid}&_t=${timestamp}`, { headers });
       setDienTiens({ [benhnhanid]: resDienTien.data.data || [] });
 
-      // Fetch đơn kính
-      const resDonKinh = await axios.get(`/api/don-kinh?benhnhanid=${benhnhanid}&limit=20&_t=${timestamp}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
+      const resDonKinh = await axios.get(`/api/don-kinh?benhnhanid=${benhnhanid}&limit=20&_t=${timestamp}`, { headers });
       setDonKinhs(resDonKinh.data.data || []);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -251,32 +218,30 @@ export default function ChoKhamPage() {
         setDonKinhs([]);
         setChiTietDonThuocs({});
         setDienTiens({});
-        setActiveTab("don-thuoc");
+        setActiveTab('don-thuoc');
       } else {
         setSelectedBenhNhanId(benhnhanid);
-        setActiveTab("don-thuoc");
+        setActiveTab('don-thuoc');
         fetchDonThuoc(benhnhanid);
       }
     },
     [selectedBenhNhanId, fetchDonThuoc]
   );
 
-  // Xóa khỏi danh sách chờ
   const handleRemoveFromQueue = useCallback(async (choKhamId: number) => {
-    if (!await confirm('Bạn có chắc muốn xóa bệnh nhân này khỏi danh sách chờ?')) return;
-    
+    if (!(await confirm('Bạn có chắc muốn xóa bệnh nhân này khỏi danh sách chờ?'))) return;
     try {
       await axios.delete(`/api/cho-kham?id=${choKhamId}`);
       toast.success('Đã xóa khỏi danh sách chờ');
       fetchDanhSachCho();
-    } catch (error) {
+    } catch {
       toast.error('Không thể xóa khỏi danh sách chờ');
     }
-  }, []);
+  }, [confirm, fetchDanhSachCho]);
 
   const formatThoiGian = (thoigian: string) => {
     try {
-      return format(new Date(thoigian), 'HH:mm - dd/MM/yyyy', { locale: vi });
+      return format(new Date(thoigian), 'HH:mm', { locale: vi });
     } catch {
       return thoigian;
     }
@@ -284,30 +249,43 @@ export default function ChoKhamPage() {
 
   const calculateWaitTime = (thoigian: string) => {
     try {
-      const now = new Date();
-      const startTime = new Date(thoigian);
-      const diffMs = now.getTime() - startTime.getTime();
+      const diffMs = Date.now() - new Date(thoigian).getTime();
       const diffMins = Math.floor(diffMs / 60000);
-      
-      if (diffMins < 60) {
-        return `${diffMins} phút`;
-      } else {
-        const hours = Math.floor(diffMins / 60);
-        const mins = diffMins % 60;
-        return `${hours} giờ ${mins} phút`;
-      }
+      if (diffMins < 60) return `${diffMins} phút`;
+      const hours = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      return `${hours}h ${mins}p`;
     } catch {
       return 'N/A';
     }
   };
 
-  // Format lịch sử khám và đơn thuốc
+  const avgWaitMinutes = useMemo(() => {
+    if (danhSachCho.length === 0) return 0;
+    return Math.round(
+      danhSachCho.reduce((sum, item) => {
+        const diffMs = Date.now() - new Date(item.thoigian).getTime();
+        return sum + diffMs / 60000;
+      }, 0) / danhSachCho.length
+    );
+  }, [danhSachCho]);
+
+  const filteredDanhSach = useMemo(() => {
+    if (!search.trim()) return danhSachCho;
+    const s = search.toLowerCase().trim();
+    return danhSachCho.filter(
+      (item) =>
+        item.BenhNhan.ten.toLowerCase().includes(s) ||
+        String(item.BenhNhan.id).includes(s) ||
+        (item.BenhNhan.dienthoai && item.BenhNhan.dienthoai.includes(s))
+    );
+  }, [danhSachCho, search]);
+
   const filteredDonThuocs = useMemo(() => {
     return donThuocs.map((don) => {
       const chiTiet = chiTietDonThuocs[don.id] || [];
-      const dieuTri = chiTiet
-        .map((ct) => `${ct.thuoc.tenthuoc} x ${ct.soluong}`)
-        .join(', ') || '-';
+      const dieuTri =
+        chiTiet.map((ct) => `${ct.thuoc.tenthuoc} x ${ct.soluong}`).join(', ') || '-';
       const dienTien = (dienTiens[selectedBenhNhanId!] || []).find(
         (dt: DienTien) => dt.ngay.slice(0, 10) === don.ngay_kham.slice(0, 10)
       );
@@ -319,503 +297,420 @@ export default function ChoKhamPage() {
     });
   }, [donThuocs, chiTietDonThuocs, dienTiens, selectedBenhNhanId]);
 
+  const renderHistoryPanel = (benhnhan: BenhNhan) => (
+    <div className="border-t bg-gray-50 p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-gray-700">Lịch sử khám - {benhnhan.ten}</h4>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setActiveTab('don-thuoc')}
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              activeTab === 'don-thuoc'
+                ? 'bg-white text-gray-900 border-gray-300 shadow-sm font-medium'
+                : 'text-gray-500 border-transparent hover:bg-gray-200'
+            }`}
+          >
+            Đơn thuốc ({donThuocs.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('don-kinh')}
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              activeTab === 'don-kinh'
+                ? 'bg-white text-gray-900 border-gray-300 shadow-sm font-medium'
+                : 'text-gray-500 border-transparent hover:bg-gray-200'
+            }`}
+          >
+            Đơn kính ({donKinhs.length})
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'don-thuoc' ? (
+        filteredDonThuocs.length === 0 ? (
+          <p className="text-xs text-gray-400 py-4 text-center">Chưa có đơn thuốc nào</p>
+        ) : (
+          <div className="space-y-2">
+            {filteredDonThuocs.map((don) => (
+              <div key={don.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500">
+                    {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
+                  </span>
+                  <span className="text-sm font-semibold text-emerald-600">
+                    {(don.tongtien / 1000).toFixed(0)}k
+                  </span>
+                </div>
+                <p className="text-sm font-medium text-gray-800 mb-1">{don.chandoan}</p>
+                <p className="text-xs text-gray-500 truncate">{don.dieuTri}</p>
+                {don.dienTien !== '-' && (
+                  <p className="text-xs text-blue-600 mt-1 truncate">Diễn tiến: {don.dienTien}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      ) : donKinhs.length === 0 ? (
+        <p className="text-xs text-gray-400 py-4 text-center">Chưa có đơn kính nào</p>
+      ) : (
+        <div className="space-y-2">
+          {donKinhs.map((don) => (
+            <div key={don.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-500">
+                  {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-blue-600">
+                    {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k
+                  </span>
+                  {(don.no || 0) > 0 && (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                      Nợ {((don.no || 0) / 1000).toFixed(0)}k
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-xs text-gray-600">
+                <div>
+                  <span className="text-gray-400">MP:</span>{' '}
+                  S{don.cauphai || 0} C{don.truphai || 0} A{don.trucphai || 0}
+                </div>
+                <div>
+                  <span className="text-gray-400">MT:</span>{' '}
+                  S{don.cautrai || 0} C{don.trutrai || 0} A{don.tructrai || 0}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-        <div className="p-4 lg:p-6">
-
-          {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-            <div>
-              <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">
-                ⏱️ Danh sách chờ khám
-              </h1>
-              <p className="text-gray-600">
-                Hiển thị bệnh nhân đang chờ khám - <strong>Click vào tên</strong> để xem lịch sử
-              </p>
-              {/* Auto refresh indicator */}
-              <p className="text-sm text-gray-500 mt-1">
+        {/* Top header bar */}
+        <div className="bg-white border-b px-4 py-3">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-semibold text-gray-900">Chờ khám</h1>
+              <span className="text-xs text-gray-400">
                 {lastRefreshTime && (
                   <>
-                    Cập nhật lúc: {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
-                    {' '} • Tự động cập nhật sau: <span className={`font-medium ${countdown <= 5 ? 'text-orange-500' : 'text-blue-500'}`}>{countdown}s</span>
+                    Cập nhật {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
+                    {' '}· <span className={countdown <= 5 ? 'text-orange-500 font-medium' : ''}>{countdown}s</span>
                   </>
                 )}
-              </p>
+              </span>
             </div>
-            <div className="flex gap-2 mt-4 md:mt-0">
+            <div className="flex items-center gap-2">
               <Button
                 onClick={handleManualRefresh}
                 disabled={refreshing}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                size="sm"
+                variant="outline"
               >
-                {refreshing ? (
-                  <>
-                    <RefreshCw className="animate-spin -ml-1 mr-2 h-4 w-4 inline" />
-                    Đang tải...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="-ml-1 mr-2 h-4 w-4 inline" />
-                    Làm mới
-                  </>
-                )}
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+                Làm mới
               </Button>
               <Link href="/benh-nhan">
-                <Button variant="outline">
-                  👥 Quản lý bệnh nhân
+                <Button size="sm" variant="outline">
+                  <Users className="w-4 h-4 mr-1.5" />
+                  Bệnh nhân
                 </Button>
               </Link>
             </div>
           </div>
+        </div>
 
-          {/* Thống kê nhanh */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Đang chờ</p>
-                    <p className="text-3xl font-bold text-red-600">{danhSachCho.length}</p>
-                  </div>
-                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">⏱️</span>
-                  </div>
+        <div className="max-w-7xl mx-auto p-4 space-y-4">
+          {/* Stat cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <Card className="cursor-default">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Đang chờ</p>
+                  <p className="text-2xl font-bold text-gray-900">{danhSachCho.length}</p>
                 </div>
               </CardContent>
             </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Trung bình chờ</p>
-                    <p className="text-3xl font-bold text-orange-600">
-                      {danhSachCho.length > 0
-                        ? Math.round(
-                            danhSachCho.reduce((sum, item) => {
-                              const diffMs = new Date().getTime() - new Date(item.thoigian).getTime();
-                              return sum + diffMs / 60000;
-                            }, 0) / danhSachCho.length
-                          )
-                        : 0}
-                      <span className="text-lg"> phút</span>
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">⏰</span>
-                  </div>
+            <Card className="cursor-default">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">TB chờ</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {avgWaitMinutes}<span className="text-sm font-normal text-gray-400"> phút</span>
+                  </p>
                 </div>
               </CardContent>
             </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Cập nhật</p>
-                    <p className="text-xl font-bold text-blue-600">
-                      {format(new Date(), 'HH:mm:ss', { locale: vi })}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-2xl">🕐</span>
-                  </div>
+            <Card className="cursor-default">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <Calendar className="w-5 h-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Hôm nay</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {format(new Date(), 'dd/MM', { locale: vi })}
+                  </p>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Danh sách chờ */}
+          {/* Search */}
+          {danhSachCho.length > 0 && (
+            <Input
+              placeholder="Tìm theo tên, mã BN, SĐT..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full md:w-80"
+            />
+          )}
+
+          {/* Queue list */}
           <Card>
             <CardContent className="p-0">
               {danhSachCho.length === 0 ? (
-                <div className="p-8 text-center">
-                  <div className="text-6xl mb-4">✅</div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                <div className="py-16 text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-50 flex items-center justify-center">
+                    <Users className="w-8 h-8 text-green-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-1">
                     Không có bệnh nhân đang chờ
                   </h3>
-                  <p className="text-gray-600">
+                  <p className="text-sm text-gray-500">
                     Tất cả bệnh nhân đã được khám hoặc chưa có ai đăng ký
                   </p>
+                </div>
+              ) : filteredDanhSach.length === 0 ? (
+                <div className="py-12 text-center">
+                  <p className="text-sm text-gray-500">Không tìm thấy bệnh nhân phù hợp</p>
                 </div>
               ) : (
                 <>
                   {/* Mobile view */}
-                  <div className="block md:hidden">
-                    {danhSachCho.map((item, index) => (
-                      <div
-                        key={item.id}
-                        className={`p-4 border-b last:border-b-0 ${selectedBenhNhanId === item.benhnhanid ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center font-bold text-red-600">
-                              {index + 1}
-                            </div>
-                            
-                            {/* Mobile Card - Thêm avatar */}
-                            <div 
-                              onClick={() => handleSelectBenhNhan(item.benhnhanid)}
-                              className="flex items-center gap-3 cursor-pointer"
-                            >
-                              {/* Avatar */}
-                              {item.avatar_url ? (
-                                <img 
-                                  src={item.avatar_url} 
-                                  alt={item.BenhNhan?.ten || 'Avatar'}
-                                  className="w-14 h-14 rounded-full object-cover border-2 border-blue-200 shadow-sm flex-shrink-0"
-                                />
-                              ) : (
-                                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-sm flex-shrink-0">
-                                  {(item.BenhNhan.ten || '?').charAt(0).toUpperCase()}
+                  <div className="block md:hidden divide-y">
+                    {filteredDanhSach.map((item, index) => {
+                      const isSelected = selectedBenhNhanId === item.benhnhanid;
+                      return (
+                        <div key={item.id} className={isSelected ? 'bg-blue-50/50' : ''}>
+                          <div className="p-3">
+                            <div className="flex items-center gap-3">
+                              {/* STT + Avatar */}
+                              <div className="relative flex-shrink-0">
+                                <div className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-gray-800 text-white text-[10px] flex items-center justify-center font-medium z-10">
+                                  {index + 1}
                                 </div>
-                              )}
-                              
-                              {/* Thông tin */}
-                              <div className="flex-1 min-w-0">
-                                <h3 className="font-bold text-gray-900 text-lg truncate">
+                                {item.avatar_url ? (
+                                  <img
+                                    src={item.avatar_url}
+                                    alt={item.BenhNhan?.ten || 'Avatar'}
+                                    className="w-11 h-11 rounded-full object-cover border-2 border-white shadow"
+                                  />
+                                ) : (
+                                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold shadow">
+                                    {(item.BenhNhan.ten || '?').charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Info */}
+                              <div
+                                className="flex-1 min-w-0 cursor-pointer"
+                                onClick={() => handleSelectBenhNhan(item.benhnhanid)}
+                              >
+                                <p className="font-semibold text-gray-900 truncate text-sm">
                                   {item.BenhNhan.ten}
-                                </h3>
-                                <p className="text-sm text-gray-500">
-                                  Mã BN: {item.BenhNhan.id}
                                 </p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                  🕐 {formatThoiGian(item.thoigian)}
-                                </p>
+                                <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                                  <span>#{item.BenhNhan.id}</span>
+                                  {item.BenhNhan.dienthoai && (
+                                    <>
+                                      <span>·</span>
+                                      <span>{item.BenhNhan.dienthoai}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Wait badge + actions */}
+                              <div className="flex flex-col items-end gap-1.5">
+                                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${getWaitColor(item.thoigian)}`}>
+                                  <Clock className="w-3 h-3" />
+                                  {calculateWaitTime(item.thoigian)}
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                  {formatThoiGian(item.thoigian)}
+                                </span>
                               </div>
                             </div>
-                          </div>
-                          <Button 
-                            size="sm" 
-                            variant="ghost" 
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => handleRemoveFromQueue(item.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div>
-                            <span className="text-gray-500">Thời gian:</span>
-                            <p className="font-medium">{formatThoiGian(item.thoigian)}</p>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Đã chờ:</span>
-                            <p className="font-medium text-orange-600">
-                              {calculateWaitTime(item.thoigian)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex gap-2">
-                          <Link href={`/ke-don?bn=${item.benhnhanid}`} className="flex-1">
-                            <Button size="sm" className="w-full bg-green-600 hover:bg-green-700">
-                              🩺 Kê đơn
-                            </Button>
-                          </Link>
-                          <Link href={`/ke-don-kinh?bn=${item.benhnhanid}`} className="flex-1">
-                            <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700">
-                              👓 Kính
-                            </Button>
-                          </Link>
-                        </div>
 
-                        {/* Medical History Mobile */}
-                        {selectedBenhNhanId === item.benhnhanid && (
-                          <div className="mt-3 pt-3 border-t">
-                            <h3 className="font-medium text-sm mb-2">📋 Lịch sử khám bệnh</h3>
-                            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                              <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="don-thuoc">Đơn thuốc ({donThuocs.length})</TabsTrigger>
-                                <TabsTrigger value="don-kinh">Đơn kính ({donKinhs.length})</TabsTrigger>
-                              </TabsList>
-                              
-                              <TabsContent value="don-thuoc" className="mt-2">
-                                {filteredDonThuocs.length === 0 ? (
-                                  <p className="text-xs text-gray-500">Chưa có đơn thuốc nào.</p>
-                                ) : (
-                                  <div className="space-y-2">
-                                    {filteredDonThuocs.map((don) => (
-                                      <div key={don.id} className="bg-yellow-50 border rounded p-2">
-                                        <div className="text-xs text-gray-600 mb-1">
-                                          {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
-                                        </div>
-                                        <div className="text-sm font-medium mb-1">{don.chandoan}</div>
-                                        <div className="text-xs text-gray-700 mb-1">
-                                          <strong>Điều trị:</strong> {don.dieuTri}
-                                        </div>
-                                        {don.dienTien !== '-' && (
-                                          <div className="text-xs text-gray-700 mb-1">
-                                            <strong>Diễn tiến:</strong> {don.dienTien}
-                                          </div>
-                                        )}
-                                        <div className="text-sm font-medium text-blue-600">
-                                          {(don.tongtien / 1000).toFixed(0)}k VND
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </TabsContent>
-                              
-                              <TabsContent value="don-kinh" className="mt-2">
-                                {donKinhs.length === 0 ? (
-                                  <p className="text-xs text-gray-500">Chưa có đơn kính nào.</p>
-                                ) : (
-                                  <div className="space-y-2">
-                                    {donKinhs.map((don) => (
-                                      <div key={don.id} className="bg-blue-50 border rounded p-2">
-                                        <div className="text-xs text-gray-600 mb-1">
-                                          {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                                          <div>
-                                            <strong>Mắt phải:</strong><br/>
-                                            S{don.cauphai || 0} C{don.truphai || 0} A{don.trucphai || 0}
-                                          </div>
-                                          <div>
-                                            <strong>Mắt trái:</strong><br/>
-                                            S{don.cautrai || 0} C{don.trutrai || 0} A{don.tructrai || 0}
-                                          </div>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                          <div className="text-sm font-medium text-blue-600">
-                                            {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k VND
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-600">Nợ:</span>
-                                            <span className={`text-xs px-2 py-1 rounded ${
-                                              (don.no || 0) === 0 
-                                                ? 'bg-green-100 text-green-800' 
-                                                : 'bg-red-100 text-red-800'
-                                            }`}>
-                                              {((don.no || 0) / 1000).toFixed(0)}k
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </TabsContent>
-                            </Tabs>
+                            {/* Action buttons */}
+                            <div className="mt-2.5 flex items-center gap-1.5">
+                              <Link href={`/ke-don?bn=${item.benhnhanid}`} className="flex-1">
+                                <Button size="sm" className="w-full h-8 text-xs bg-green-600 hover:bg-green-700">
+                                  <Stethoscope className="w-3.5 h-3.5 mr-1" />
+                                  Kê đơn
+                                </Button>
+                              </Link>
+                              <Link href={`/ke-don-kinh?bn=${item.benhnhanid}`} className="flex-1">
+                                <Button size="sm" className="w-full h-8 text-xs bg-blue-600 hover:bg-blue-700">
+                                  <Glasses className="w-3.5 h-3.5 mr-1" />
+                                  Kính
+                                </Button>
+                              </Link>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                onClick={() => handleRemoveFromQueue(item.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-gray-400 hover:text-blue-600"
+                                onClick={() => handleSelectBenhNhan(item.benhnhanid)}
+                              >
+                                {isSelected ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </Button>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+
+                          {/* History panel */}
+                          {isSelected && renderHistoryPanel(item.BenhNhan)}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Desktop view */}
                   <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-100 border-b">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 border-b">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">STT</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Mã BN</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Họ và tên</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Thời gian đăng ký</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Thời gian chờ</th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold">Thao tác</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">STT</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bệnh nhân</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Liên hệ</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Đăng ký</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời gian chờ</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Thao tác</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {danhSachCho.map((item, index) => (
-                          <React.Fragment key={item.id}>
-                            <tr className={`border-b ${selectedBenhNhanId === item.benhnhanid ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                              <td className="px-4 py-3">
-                                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center font-bold text-red-600">
-                                  {index + 1}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 font-medium font-mono">
-                                {item.BenhNhan.id}
-                              </td>
-                              {/* Avatar + Tên bệnh nhân - DESKTOP */}
-                              <td className="px-4 py-3">
-                                <button
-                                  onClick={() => handleSelectBenhNhan(item.benhnhanid)}
-                                  className="flex items-center gap-3 text-left hover:bg-gray-50 rounded-lg p-1 -m-1 transition-colors w-full"
-                                >
-                                  {/* Avatar */}
-                                  <div className="flex-shrink-0">
-                                    {item.avatar_url ? (
-                                      <img 
-                                        src={item.avatar_url} 
-                                        alt={item.BenhNhan?.ten || 'Avatar'}
-                                        className="w-12 h-12 rounded-full object-cover border-2 border-blue-200 shadow-sm"
-                                      />
+                      <tbody className="divide-y">
+                        {filteredDanhSach.map((item, index) => {
+                          const isSelected = selectedBenhNhanId === item.benhnhanid;
+                          return (
+                            <React.Fragment key={item.id}>
+                              <tr className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-gray-50'}`}>
+                                <td className="px-3 py-2">
+                                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
+                                    {index + 1}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <button
+                                    onClick={() => handleSelectBenhNhan(item.benhnhanid)}
+                                    className="flex items-center gap-2.5 text-left rounded-md p-1 -m-1 transition-colors hover:bg-gray-100 w-full group"
+                                  >
+                                    <div className="flex-shrink-0">
+                                      {item.avatar_url ? (
+                                        <img
+                                          src={item.avatar_url}
+                                          alt={item.BenhNhan?.ten || 'Avatar'}
+                                          className="w-9 h-9 rounded-full object-cover border border-gray-200"
+                                        />
+                                      ) : (
+                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
+                                          {(item.BenhNhan.ten || '?').charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                                        {item.BenhNhan.ten}
+                                      </p>
+                                      <p className="text-xs text-gray-400">#{item.BenhNhan.id}</p>
+                                    </div>
+                                    {isSelected ? (
+                                      <ChevronUp className="w-4 h-4 text-gray-400 ml-auto flex-shrink-0" />
                                     ) : (
-                                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                                        {(item.BenhNhan.ten || '?').charAt(0).toUpperCase()}
-                                      </div>
+                                      <ChevronDown className="w-4 h-4 text-gray-300 ml-auto flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    )}
+                                  </button>
+                                </td>
+                                <td className="px-3 py-2 text-gray-500">
+                                  <div className="flex flex-col gap-0.5">
+                                    {item.BenhNhan.dienthoai && (
+                                      <span className="flex items-center gap-1 text-xs">
+                                        <Phone className="w-3 h-3" />
+                                        {item.BenhNhan.dienthoai}
+                                      </span>
+                                    )}
+                                    {item.BenhNhan.diachi && (
+                                      <span className="flex items-center gap-1 text-xs truncate max-w-[160px]">
+                                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                                        {item.BenhNhan.diachi}
+                                      </span>
                                     )}
                                   </div>
-                                  
-                                  {/* Thông tin */}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-gray-900 truncate">
-                                      {item.BenhNhan.ten}
-                                    </p>
-                                    <p className="text-sm text-gray-500 truncate">
-                                      Mã BN: {item.BenhNhan.id}
-                                    </p>
+                                </td>
+                                <td className="px-3 py-2 text-gray-500 text-xs">
+                                  {formatThoiGian(item.thoigian)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border font-medium ${getWaitColor(item.thoigian)}`}>
+                                    <Clock className="w-3 h-3" />
+                                    {calculateWaitTime(item.thoigian)}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <div className="inline-flex items-center gap-1">
+                                    <Link href={`/ke-don?bn=${item.benhnhanid}`}>
+                                      <Button size="sm" className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700">
+                                        <Stethoscope className="w-3.5 h-3.5 mr-1" />
+                                        Kê đơn
+                                      </Button>
+                                    </Link>
+                                    <Link href={`/ke-don-kinh?bn=${item.benhnhanid}`}>
+                                      <Button size="sm" className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700">
+                                        <Glasses className="w-3.5 h-3.5 mr-1" />
+                                        Kính
+                                      </Button>
+                                    </Link>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 w-7 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                      onClick={() => handleRemoveFromQueue(item.id)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
                                   </div>
-                                </button>
-                              </td>
-                              <td className="px-4 py-3 text-gray-600">
-                                {formatThoiGian(item.thoigian)}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
-                                  {calculateWaitTime(item.thoigian)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <div className="inline-flex items-center gap-2">
-                                  <Link href={`/ke-don?bn=${item.benhnhanid}`}>
-                                    <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                                      🩺 Kê đơn
-                                    </Button>
-                                  </Link>
-                                  <Link href={`/ke-don-kinh?bn=${item.benhnhanid}`}>
-                                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
-                                      👓 Kính
-                                    </Button>
-                                  </Link>
-                                  <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                    onClick={() => handleRemoveFromQueue(item.id)}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                            
-                            {/* Medical History Row - Desktop */}
-                            {selectedBenhNhanId === item.benhnhanid && (
-                              <tr>
-                                <td colSpan={6} className="px-4 py-3 bg-yellow-50">
-                                  <Card className="shadow-sm">
-                                    <CardContent className="p-4">
-                                      <h3 className="font-semibold mb-3">📋 Lịch sử khám bệnh - {item.BenhNhan.ten}</h3>
-                                      <div className="flex gap-4">
-                                        {/* Tabs Navigation - Vertical Layout */}
-                                        <div className="flex flex-col gap-1 min-w-[120px]">
-                                          <button
-                                            onClick={() => setActiveTab('don-thuoc')}
-                                            className={`px-3 py-2 text-xs rounded-md border transition-colors ${
-                                              activeTab === 'don-thuoc'
-                                                ? 'bg-white text-black border-gray-300 shadow-sm'
-                                                : 'bg-yellow-100 text-gray-600 border-yellow-200 hover:bg-yellow-200'
-                                            }`}
-                                          >
-                                            📋 Đơn thuốc ({donThuocs.length})
-                                          </button>
-                                          <button
-                                            onClick={() => setActiveTab('don-kinh')}
-                                            className={`px-3 py-2 text-xs rounded-md border transition-colors ${
-                                              activeTab === 'don-kinh'
-                                                ? 'bg-white text-black border-gray-300 shadow-sm'
-                                                : 'bg-yellow-100 text-gray-600 border-yellow-200 hover:bg-yellow-200'
-                                            }`}
-                                          >
-                                            👓 Đơn kính ({donKinhs.length})
-                                          </button>
-                                        </div>
-                                        
-                                        {/* Content Area */}
-                                        <div className="flex-1">
-                                          {activeTab === 'don-thuoc' ? (
-                                            filteredDonThuocs.length === 0 ? (
-                                              <p className="text-xs text-muted-foreground">Chưa có đơn thuốc nào.</p>
-                                            ) : (
-                                              <table className="min-w-full text-xs">
-                                                <thead>
-                                                  <tr className="border-b">
-                                                    <th className="text-left py-1">Ngày khám</th>
-                                                    <th className="text-left py-1">Chẩn đoán</th>
-                                                    <th className="text-left py-1 max-w-[200px]">Điều trị</th>
-                                                    <th className="text-left py-1 max-w-[200px]">Diễn tiến</th>
-                                                    <th className="text-right py-1">Số tiền</th>
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  {filteredDonThuocs.map((don) => (
-                                                    <tr key={don.id} className="border-b">
-                                                      <td className="py-1">
-                                                        {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
-                                                      </td>
-                                                      <td className="py-1">{don.chandoan}</td>
-                                                      <td className="py-1 truncate max-w-[200px]">{don.dieuTri}</td>
-                                                      <td className="py-1 truncate max-w-[200px]">{don.dienTien}</td>
-                                                      <td className="text-right py-1">
-                                                        {(don.tongtien / 1000).toFixed(0)}k
-                                                      </td>
-                                                    </tr>
-                                                  ))}
-                                                </tbody>
-                                              </table>
-                                            )
-                                          ) : (
-                                            donKinhs.length === 0 ? (
-                                              <p className="text-xs text-muted-foreground">Chưa có đơn kính nào.</p>
-                                            ) : (
-                                              <table className="min-w-full text-xs">
-                                                <thead>
-                                                  <tr className="border-b">
-                                                    <th className="text-left py-1">Ngày khám</th>
-                                                    <th className="text-left py-1">Số kính</th>
-                                                    <th className="text-right py-1">Giá tròng</th>
-                                                    <th className="text-right py-1">Giá gọng</th>
-                                                    <th className="text-right py-1">Tổng tiền</th>
-                                                    <th className="text-right py-1">Nợ</th>
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  {donKinhs.map((don) => (
-                                                    <tr key={don.id} className="border-b">
-                                                      <td className="py-1">
-                                                        {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
-                                                      </td>
-                                                      <td className="py-1 text-xs">
-                                                        MP: {don.sokinh_moi_mp || 'N/A'}, MT: {don.sokinh_moi_mt || 'N/A'}
-                                                      </td>
-                                                      <td className="text-right py-1">
-                                                        {((don.giatrong || 0) / 1000).toFixed(0)}k
-                                                      </td>
-                                                      <td className="text-right py-1">
-                                                        {((don.giagong || 0) / 1000).toFixed(0)}k
-                                                      </td>
-                                                      <td className="text-right py-1">
-                                                        {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k
-                                                      </td>
-                                                      <td className="text-right py-1">
-                                                        <span className={`text-xs px-1 py-0.5 rounded ${
-                                                          (don.no || 0) === 0 
-                                                            ? 'bg-green-100 text-green-800' 
-                                                            : 'bg-red-100 text-red-800'
-                                                        }`}>
-                                                          {((don.no || 0) / 1000).toFixed(0)}k
-                                                        </span>
-                                                      </td>
-                                                    </tr>
-                                                  ))}
-                                                </tbody>
-                                              </table>
-                                            )
-                                          )}
-                                        </div>
-                                      </div>
-                                    </CardContent>
-                                  </Card>
                                 </td>
                               </tr>
-                            )}
-                          </React.Fragment>
-                        ))}
+
+                              {/* Expandable history row */}
+                              {isSelected && (
+                                <tr>
+                                  <td colSpan={6} className="p-0">
+                                    {renderHistoryPanel(item.BenhNhan)}
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -823,22 +718,6 @@ export default function ChoKhamPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Thông tin */}
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-start">
-              <div className="text-blue-600 mr-3 text-xl">ℹ️</div>
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">Hướng dẫn:</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Danh sách tự động cập nhật mỗi 30 giây</li>
-                  <li><strong>Click vào tên bệnh nhân</strong> để xem lịch sử khám bệnh</li>
-                  <li>Nhấn "Kê đơn" để kê đơn thuốc, "Kính" để kê đơn kính</li>
-                  <li>Nhấn <Trash2 className="w-3 h-3 inline text-red-600" /> để xóa khỏi danh sách chờ</li>
-                </ul>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </ProtectedRoute>
