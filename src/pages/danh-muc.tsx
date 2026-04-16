@@ -25,6 +25,7 @@ interface Thuoc {
   tonkho: number;
   soluongmacdinh: number;
   la_thu_thuat: boolean;
+  ngung_kinh_doanh: boolean;
 }
 
 interface DonThuocMau {
@@ -47,6 +48,7 @@ interface HangTrong {
   gia_nhap: number;
   gia_ban: number;
   mo_ta?: string;
+  ngung_kinh_doanh?: boolean;
 }
 
 interface GongKinh {
@@ -117,6 +119,7 @@ function DanhMucPage() {
     tonkho: 0,
     soluongmacdinh: 1,
     la_thu_thuat: false,
+    ngung_kinh_doanh: false,
   });
 
   // States cho đơn mẫu
@@ -135,12 +138,14 @@ function DanhMucPage() {
   const [openHangTrongDialog, setOpenHangTrongDialog] = useState(false);
   const [isEditingHangTrong, setIsEditingHangTrong] = useState(false);
   const [searchHangTrong, setSearchHangTrong] = useState('');
+  const [showInactiveHangTrong, setShowInactiveHangTrong] = useState(false);
   const [hangTrongForm, setHangTrongForm] = useState<HangTrong>({
     id: 0,
     ten_hang: '',
     gia_nhap: 0,
     gia_ban: 0,
     mo_ta: '',
+    ngung_kinh_doanh: false,
   });
 
   // States cho gọng kính
@@ -216,9 +221,10 @@ function DanhMucPage() {
     }
   };
 
-  const fetchHangTrong = async () => {
+  const fetchHangTrong = async (includeInactive?: boolean) => {
     try {
-      const response = await axios.get('/api/hang-trong');
+      const params = (includeInactive ?? showInactiveHangTrong) ? '?show_inactive=1' : '';
+      const response = await axios.get(`/api/hang-trong${params}`);
       setDsHangTrong(response.data || []);
     } catch (error) {
       console.error('Lỗi khi tải hãng tròng:', error);
@@ -292,7 +298,8 @@ function DanhMucPage() {
         gianhap: Number(thuocForm.gianhap) || 0,
         tonkho: Number(thuocForm.tonkho) || 0,
         soluongmacdinh: Number(thuocForm.soluongmacdinh) || 1,
-        la_thu_thuat: Boolean(thuocForm.la_thu_thuat)
+        la_thu_thuat: Boolean(thuocForm.la_thu_thuat),
+        ngung_kinh_doanh: Boolean(thuocForm.ngung_kinh_doanh)
       };
       
       console.log('🚀 Payload gửi đến API:', payload);
@@ -453,6 +460,7 @@ function DanhMucPage() {
       gia_nhap: 0,
       gia_ban: 0,
       mo_ta: '',
+      ngung_kinh_doanh: false,
     });
   };
 
@@ -747,6 +755,7 @@ function DanhMucPage() {
                   tonkho: 0,
                   soluongmacdinh: 1,
                   la_thu_thuat: false,
+                  ngung_kinh_doanh: false,
                 });
                 setOpenThuoc(true);
               }}
@@ -774,12 +783,13 @@ function DanhMucPage() {
                     <th className="px-2 py-1">Giá bán</th>
                     <th className="px-2 py-1">Tồn</th>
                     <th className="px-2 py-1">Thủ thuật</th>
+                    <th className="px-2 py-1">Trạng thái</th>
                     <th className="px-2 py-1 text-center">Hành động</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((t) => (
-                    <tr key={t.id} className="border-b hover:bg-gray-50">
+                    <tr key={t.id} className={`border-b hover:bg-gray-50 ${t.ngung_kinh_doanh ? 'opacity-50 bg-gray-50' : ''}`}>
                       <td className="px-2 py-1 font-mono">{t.mathuoc}</td>
                       <td className="px-2 py-1">{t.tenthuoc}</td>
                       <td className="px-2 py-1">{t.hoatchat}</td>
@@ -787,6 +797,11 @@ function DanhMucPage() {
                       <td className="px-2 py-1">{t.giaban.toLocaleString()}</td>
                       <td className="px-2 py-1">{t.tonkho}</td>
                       <td className="px-2 py-1">{t.la_thu_thuat ? 'Có' : 'Không'}</td>
+                      <td className="px-2 py-1">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${t.ngung_kinh_doanh ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                          {t.ngung_kinh_doanh ? 'Ngừng KD' : 'Đang KD'}
+                        </span>
+                      </td>
                       <td className="px-2 py-1 text-center">
                         <div className="flex items-center justify-center space-x-1 whitespace-nowrap">
                           <Button size="sm" variant="outline" onClick={() => handleEditThuoc(t)}>
@@ -1045,6 +1060,17 @@ function DanhMucPage() {
       hang.ten_hang.toLowerCase().includes(searchHangTrong.toLowerCase())
     );
 
+    const toggleNgungKD = async (hang: HangTrong) => {
+      const newVal = !hang.ngung_kinh_doanh;
+      try {
+        await axios.put('/api/hang-trong', { ...hang, ngung_kinh_doanh: newVal });
+        toast.success(newVal ? `Đã ngừng kinh doanh "${hang.ten_hang}"` : `Đã mở lại "${hang.ten_hang}"`);
+        fetchHangTrong();
+      } catch {
+        toast.error('Lỗi cập nhật trạng thái');
+      }
+    };
+
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
@@ -1055,12 +1081,26 @@ function DanhMucPage() {
           </Button>
         </div>
         
-        <Input
-          placeholder="Tìm kiếm hãng tròng..."
-          value={searchHangTrong}
-          onChange={(e) => setSearchHangTrong(e.target.value)}
-          className="w-full md:w-1/2"
-        />
+        <div className="flex flex-wrap gap-3 items-center">
+          <Input
+            placeholder="Tìm kiếm hãng tròng..."
+            value={searchHangTrong}
+            onChange={(e) => setSearchHangTrong(e.target.value)}
+            className="w-full md:w-1/2"
+          />
+          <button
+            onClick={() => {
+              const next = !showInactiveHangTrong;
+              setShowInactiveHangTrong(next);
+              fetchHangTrong(next);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 whitespace-nowrap border ${
+              showInactiveHangTrong ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            {showInactiveHangTrong ? 'Đang xem ngừng KD' : 'Xem ngừng KD'}
+          </button>
+        </div>
 
         <Card>
           <CardContent className="p-0 overflow-x-auto">
@@ -1071,16 +1111,31 @@ function DanhMucPage() {
                   <th className="px-4 py-2 text-left">Giá nhập</th>
                   <th className="px-4 py-2 text-left">Giá bán</th>
                   <th className="px-4 py-2 text-left">Mô tả</th>
+                  <th className="px-4 py-2 text-center">Trạng thái</th>
                   <th className="px-4 py-2 text-center">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((hang) => (
-                  <tr key={hang.id} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium">{hang.ten_hang}</td>
+                  <tr key={hang.id} className={`border-b hover:bg-gray-50 ${hang.ngung_kinh_doanh ? 'opacity-50 bg-gray-50' : ''}`}>
+                    <td className="px-4 py-2 font-medium">
+                      {hang.ten_hang}
+                      {hang.ngung_kinh_doanh && <span className="ml-1.5 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Ngừng KD</span>}
+                    </td>
                     <td className="px-4 py-2">{hang.gia_nhap.toLocaleString()}đ</td>
                     <td className="px-4 py-2 font-medium">{hang.gia_ban.toLocaleString()}đ</td>
                     <td className="px-4 py-2">{hang.mo_ta || '-'}</td>
+                    <td className="px-4 py-2 text-center">
+                      <button
+                        onClick={() => toggleNgungKD(hang)}
+                        className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition ${
+                          hang.ngung_kinh_doanh ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        }`}
+                        title={hang.ngung_kinh_doanh ? 'Bấm để mở lại kinh doanh' : 'Bấm để ngừng kinh doanh'}
+                      >
+                        {hang.ngung_kinh_doanh ? 'Ngừng KD' : 'Đang KD'}
+                      </button>
+                    </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center space-x-2">
                         <Button
@@ -1520,13 +1575,26 @@ function DanhMucPage() {
                 value={thuocForm.soluongmacdinh}
                 onChange={(e) => setThuocForm({ ...thuocForm, soluongmacdinh: +e.target.value })}
               />
-              <Label>Là thủ thuật</Label>
-              <input
-                type="checkbox"
-                checked={thuocForm.la_thu_thuat}
-                onChange={(e) => setThuocForm({ ...thuocForm, la_thu_thuat: e.target.checked })}
-                className="w-4 h-4 border-gray-300 rounded focus:ring-blue-500"
-              />
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={thuocForm.la_thu_thuat}
+                    onChange={(e) => setThuocForm({ ...thuocForm, la_thu_thuat: e.target.checked })}
+                    className="w-4 h-4 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm">Là thủ thuật</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={thuocForm.ngung_kinh_doanh}
+                    onChange={(e) => setThuocForm({ ...thuocForm, ngung_kinh_doanh: e.target.checked })}
+                    className="w-4 h-4 border-gray-300 rounded focus:ring-red-500 accent-red-600"
+                  />
+                  <span className="text-sm text-red-600">Ngừng kinh doanh</span>
+                </label>
+              </div>
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setOpenThuoc(false)}>
@@ -1581,6 +1649,17 @@ function DanhMucPage() {
                   rows={3}
                 />
               </div>
+              {isEditingHangTrong && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hangTrongForm.ngung_kinh_doanh || false}
+                    onChange={(e) => setHangTrongForm({ ...hangTrongForm, ngung_kinh_doanh: e.target.checked })}
+                    className="w-4 h-4 border-gray-300 rounded focus:ring-red-500 accent-red-600"
+                  />
+                  <span className="text-sm text-red-600">Ngừng kinh doanh (toàn bộ dòng tròng này)</span>
+                </label>
+              )}
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setOpenHangTrongDialog(false)}>

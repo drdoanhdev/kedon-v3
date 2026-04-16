@@ -328,6 +328,31 @@ export default function LichHen() {
     qua_han: data.filter(h => h.trang_thai === 'qua_han').length,
   }), [data]);
 
+  // Batch mark all overdue as qua_han + notify
+  const batchMarkOverdue = useCallback(async () => {
+    const overdueItems = data.filter(h => h.trang_thai === 'cho' && h.ngay_hen < getToday());
+    if (overdueItems.length === 0) { toast('Không có lịch hẹn quá hạn nào cần xử lý'); return; }
+    if (!await confirm(`Đánh dấu ${overdueItems.length} lịch hẹn là quá hạn?`)) return;
+    try {
+      await Promise.all(overdueItems.map(h => axios.put('/api/hen-kham-lai', { id: h.id, trang_thai: 'qua_han' })));
+      toast.success(`Đã đánh dấu ${overdueItems.length} lịch hẹn quá hạn`);
+      fetchData();
+    } catch { toast.error('Lỗi khi cập nhật'); }
+  }, [data, confirm, fetchData]);
+
+  // Batch reschedule all overdue
+  const batchRescheduleOverdue = useCallback(async (days: number) => {
+    const overdueItems = data.filter(h => h.trang_thai === 'qua_han' || (h.trang_thai === 'cho' && h.ngay_hen < getToday()));
+    if (overdueItems.length === 0) { toast('Không có lịch hẹn quá hạn nào'); return; }
+    if (!await confirm(`Dời ${overdueItems.length} lịch hẹn quá hạn thêm ${days} ngày?`)) return;
+    const newDate = addDaysFromToday(days);
+    try {
+      await Promise.all(overdueItems.map(h => axios.put('/api/hen-kham-lai', { id: h.id, ngay_hen: newDate, trang_thai: 'cho' })));
+      toast.success(`Đã dời ${overdueItems.length} lịch hẹn → ${formatNgay(newDate)}`);
+      fetchData();
+    } catch { toast.error('Lỗi khi dời lịch'); }
+  }, [data, confirm, fetchData]);
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
@@ -355,13 +380,13 @@ export default function LichHen() {
         </div>
 
         <div className="max-w-6xl mx-auto p-4 space-y-4">
-          {/* Stats */}
+          {/* Stats - clickable for quick filter */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-blue-600">{stats.total}</div><div className="text-xs text-gray-500">Tổng</div></CardContent></Card>
-            <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{stats.cho}</div><div className="text-xs text-gray-500">Đang chờ</div></CardContent></Card>
-            <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{stats.da_den}</div><div className="text-xs text-gray-500">Đã đến</div></CardContent></Card>
-            <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-red-600">{stats.huy}</div><div className="text-xs text-gray-500">Đã hủy</div></CardContent></Card>
-            <Card><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-gray-600">{stats.qua_han}</div><div className="text-xs text-gray-500">Quá hạn</div></CardContent></Card>
+            <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'tat_ca' ? 'ring-2 ring-blue-400' : ''}`} onClick={() => setFilterTrangThai('tat_ca')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-blue-600">{stats.total}</div><div className="text-xs text-gray-500">Tổng</div></CardContent></Card>
+            <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'cho' ? 'ring-2 ring-yellow-400' : ''}`} onClick={() => setFilterTrangThai('cho')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{stats.cho}</div><div className="text-xs text-gray-500">Đang chờ</div></CardContent></Card>
+            <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'da_den' ? 'ring-2 ring-green-400' : ''}`} onClick={() => setFilterTrangThai('da_den')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{stats.da_den}</div><div className="text-xs text-gray-500">Đã đến</div></CardContent></Card>
+            <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'huy' ? 'ring-2 ring-red-400' : ''}`} onClick={() => setFilterTrangThai('huy')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-red-600">{stats.huy}</div><div className="text-xs text-gray-500">Đã hủy</div></CardContent></Card>
+            <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'qua_han' ? 'ring-2 ring-gray-400' : ''}`} onClick={() => setFilterTrangThai('qua_han')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-gray-600">{stats.qua_han}</div><div className="text-xs text-gray-500">Quá hạn</div></CardContent></Card>
           </div>
 
           {/* Filters */}
@@ -401,6 +426,20 @@ export default function LichHen() {
                 </select>
                 <Input className="w-60" placeholder="Tìm tên, SĐT..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
+
+              {/* Batch actions for overdue */}
+              {stats.qua_han > 0 && (
+                <div className="flex items-center gap-2 flex-wrap bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <span className="text-sm text-red-700 font-medium">{stats.qua_han} lịch hẹn quá hạn</span>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-xs text-gray-500">Dời tất cả:</span>
+                  {[7, 14, 30].map(d => (
+                    <button key={d} onClick={() => batchRescheduleOverdue(d)} className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100 border border-purple-200 font-medium transition-colors">
+                      +{d < 30 ? `${d} ngày` : '1 tháng'}
+                    </button>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

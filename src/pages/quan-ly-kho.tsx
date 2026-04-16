@@ -331,14 +331,96 @@ export default function QuanLyKho() {
   };
 
   const downloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+
+    // ---- Sheet 1: Dữ liệu mẫu ----
     const templateData = [
-      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 10, 'Tồn cần có': 10 },
-      { 'Hãng tròng': 'Hoya', 'SPH': -2.50, 'CYL': -0.75, 'ADD': 1.50, 'Mắt': 'L', 'Tồn đầu kỳ': 5, 'Tồn cần có': 10 },
-      { 'Hãng tròng': 'Essilor', 'SPH': 'Plano', 'CYL': 'Plano', 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 20, 'Tồn cần có': 20 },
+      // Cận đơn thuần (chỉ SPH, CYL = 0)
+      { 'Hãng tròng': 'Essilor', 'SPH': -0.50, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 10, 'Tồn cần có': 10, 'Ghi chú': 'Cận nhẹ -0.50' },
+      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 10, 'Tồn cần có': 10, 'Ghi chú': 'Cận -1.00' },
+      { 'Hãng tròng': 'Essilor', 'SPH': -2.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 8, 'Tồn cần có': 10, 'Ghi chú': 'Cận -2.00' },
+      { 'Hãng tròng': 'Essilor', 'SPH': -3.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 5, 'Tồn cần có': 10, 'Ghi chú': 'Cận -3.00' },
+      // Viễn (SPH dương)
+      { 'Hãng tròng': 'Essilor', 'SPH': 1.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 5, 'Tồn cần có': 5, 'Ghi chú': 'Viễn +1.00' },
+      { 'Hãng tròng': 'Essilor', 'SPH': 2.00, 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 5, 'Tồn cần có': 5, 'Ghi chú': 'Viễn +2.00' },
+      // Cận + Loạn (SPH âm + CYL âm)
+      { 'Hãng tròng': 'Hoya', 'SPH': -1.50, 'CYL': -0.50, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 5, 'Tồn cần có': 5, 'Ghi chú': 'Cận kèm loạn nhẹ' },
+      { 'Hãng tròng': 'Hoya', 'SPH': -2.50, 'CYL': -0.75, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 5, 'Tồn cần có': 5, 'Ghi chú': 'Cận kèm loạn' },
+      { 'Hãng tròng': 'Hoya', 'SPH': -3.00, 'CYL': -1.25, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 3, 'Tồn cần có': 5, 'Ghi chú': 'Cận kèm loạn nặng' },
+      // Không độ (Plano)
+      { 'Hãng tròng': 'Essilor', 'SPH': 'Plano', 'CYL': 0, 'ADD': '', 'Mắt': '', 'Tồn đầu kỳ': 20, 'Tồn cần có': 20, 'Ghi chú': 'Không độ (0.00), ghi Plano hoặc 0' },
+      // Đa tròng (có ADD, phải chỉ rõ Mắt L hoặc R)
+      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': -0.50, 'ADD': 1.50, 'Mắt': 'L', 'Tồn đầu kỳ': 3, 'Tồn cần có': 5, 'Ghi chú': 'Đa tròng mắt trái - ADD 1.50' },
+      { 'Hãng tròng': 'Essilor', 'SPH': -1.00, 'CYL': -0.50, 'ADD': 1.50, 'Mắt': 'R', 'Tồn đầu kỳ': 3, 'Tồn cần có': 5, 'Ghi chú': 'Đa tròng mắt phải - ADD 1.50' },
+      { 'Hãng tròng': 'Hoya', 'SPH': -2.00, 'CYL': -0.75, 'ADD': 2.00, 'Mắt': 'L', 'Tồn đầu kỳ': 2, 'Tồn cần có': 3, 'Ghi chú': 'Đa tròng mắt trái - ADD 2.00' },
+      { 'Hãng tròng': 'Hoya', 'SPH': -2.00, 'CYL': -0.75, 'ADD': 2.00, 'Mắt': 'R', 'Tồn đầu kỳ': 2, 'Tồn cần có': 3, 'Ghi chú': 'Đa tròng mắt phải - ADD 2.00' },
+      { 'Hãng tròng': 'Essilor', 'SPH': 0.50, 'CYL': 0, 'ADD': 1.00, 'Mắt': 'L', 'Tồn đầu kỳ': 4, 'Tồn cần có': 5, 'Ghi chú': 'Đa tròng viễn nhẹ + ADD thấp' },
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
-    const wb = XLSX.utils.book_new();
+    // Auto-width columns
+    const colWidths = [
+      { wch: 14 }, // Hãng tròng
+      { wch: 8 },  // SPH
+      { wch: 8 },  // CYL
+      { wch: 8 },  // ADD
+      { wch: 6 },  // Mắt
+      { wch: 12 }, // Tồn đầu kỳ
+      { wch: 12 }, // Tồn cần có
+      { wch: 35 }, // Ghi chú
+    ];
+    ws['!cols'] = colWidths;
     XLSX.utils.book_append_sheet(wb, ws, 'Kho tròng');
+
+    // ---- Sheet 2: Hướng dẫn ----
+    const guideData = [
+      ['HƯỚNG DẪN NHẬP DỮ LIỆU KHO TRÒNG'],
+      [''],
+      ['Cột', 'Bắt buộc', 'Mô tả', 'Ví dụ'],
+      ['Hãng tròng', 'Có', 'Tên hãng tròng (phải trùng với danh mục đã tạo trong phần mềm)', 'Essilor, Hoya, Chemi...'],
+      ['SPH', 'Có', 'Công suất cầu. Cận: số âm (-). Viễn: số dương (+). Không độ: ghi 0 hoặc Plano', '-1.00, -2.50, +1.00, Plano'],
+      ['CYL', 'Không', 'Công suất trụ (loạn). Để trống hoặc 0 nếu không có loạn', '-0.50, -1.25, 0'],
+      ['ADD', 'Không', 'Chỉ dùng cho tròng đa tròng (progressive). Để trống nếu tròng đơn tròng', '1.00, 1.50, 2.00'],
+      ['Mắt', 'Không', 'Chỉ cần khi tròng đa tròng: L = mắt trái, R = mắt phải. Tròng đơn tròng để trống', 'L, R, (để trống)'],
+      ['Tồn đầu kỳ', 'Không', 'Số lượng tồn kho ban đầu. Mặc định 0 nếu để trống', '5, 10, 20'],
+      ['Tồn cần có', 'Không', 'Mức tồn kho mục tiêu. Dùng để cảnh báo sắp hết. Mặc định 10', '5, 10, 20'],
+      ['Ghi chú', '', 'Cột tham khảo, hệ thống sẽ BỎ QUA cột này khi nhập', ''],
+      [''],
+      ['CÁC TRƯỜNG HỢP PHỔ BIẾN:'],
+      [''],
+      ['1. TRÒNG CẬN (chỉ cận, không loạn)', '', '', ''],
+      ['   SPH = số âm, CYL = 0, ADD = trống, Mắt = trống', '', '', ''],
+      ['   Ví dụ: SPH = -1.00, CYL = 0 → tròng cận 1 độ', '', '', ''],
+      [''],
+      ['2. TRÒNG CẬN + LOẠN', '', '', ''],
+      ['   SPH = số âm, CYL = số âm, ADD = trống, Mắt = trống', '', '', ''],
+      ['   Ví dụ: SPH = -2.50, CYL = -0.75 → cận 2.50 loạn 0.75', '', '', ''],
+      [''],
+      ['3. TRÒNG VIỄN', '', '', ''],
+      ['   SPH = số dương, CYL = 0, ADD = trống, Mắt = trống', '', '', ''],
+      ['   Ví dụ: SPH = +1.00, CYL = 0 → viễn 1 độ', '', '', ''],
+      [''],
+      ['4. TRÒNG KHÔNG ĐỘ', '', '', ''],
+      ['   SPH = 0 hoặc Plano, CYL = 0, ADD = trống, Mắt = trống', '', '', ''],
+      ['   Dùng cho kính bảo vệ, kính thời trang không có độ', '', '', ''],
+      [''],
+      ['5. TRÒNG ĐA TRÒNG (Progressive)', '', '', ''],
+      ['   SPH = số, CYL = số, ADD = số dương (1.00-3.00), Mắt = L hoặc R', '', '', ''],
+      ['   ⚠ QUAN TRỌNG: Tròng đa tròng PHẢI chỉ rõ Mắt (L/R) vì mỗi mắt khác nhau', '', '', ''],
+      ['   ⚠ Phải nhập 2 dòng riêng cho mắt trái (L) và mắt phải (R)', '', '', ''],
+      ['   Ví dụ: SPH=-1.00 CYL=-0.50 ADD=1.50 Mắt=L → đa tròng mắt trái', '', '', ''],
+      [''],
+      ['LƯU Ý CHUNG:'],
+      ['   • Hãng tròng phải trùng với tên đã tạo trong Danh mục > Hãng tròng', '', '', ''],
+      ['   • Mỗi dòng là 1 loại tròng riêng biệt', '', '', ''],
+      ['   • Nếu trùng (cùng hãng, SPH, CYL, ADD, Mắt) sẽ bị bỏ qua', '', '', ''],
+      ['   • Cột "Ghi chú" chỉ để tham khảo, hệ thống không đọc cột này', '', '', ''],
+    ];
+    const wsGuide = XLSX.utils.aoa_to_sheet(guideData);
+    wsGuide['!cols'] = [{ wch: 55 }, { wch: 12 }, { wch: 60 }, { wch: 30 }];
+    // Merge title row
+    wsGuide['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+    XLSX.utils.book_append_sheet(wb, wsGuide, 'Hướng dẫn');
+
     XLSX.writeFile(wb, 'mau_nhap_kho_trong.xlsx');
   };
 

@@ -418,7 +418,7 @@ function PlatformChat({ userId }: { userId?: string }) {
       {/* Info banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700 mb-3 flex-shrink-0">
         <Headset className="w-4 h-4 inline mr-1.5" />
-        Nhắn tin trực tiếp với đội ngũ hỗ trợ nền tảng OcularCare
+        Nhắn tin trực tiếp với đội ngũ hỗ trợ nền tảng OptiGo
       </div>
 
       {/* Messages area */}

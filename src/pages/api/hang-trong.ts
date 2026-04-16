@@ -12,13 +12,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     if (req.method === 'GET') {
-      const { data, error } = await supabase
+      const showInactive = req.query.show_inactive === '1';
+      let query = supabase
         .from('HangTrong')
         .select('*')
         .eq('tenant_id', tenantId)
         .eq('trang_thai', true)
         .order('ten_hang');
+      
+      if (!showInactive) {
+        query = query.or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
+      }
 
+      const { data, error } = await query;
       if (error) throw error;
       return res.status(200).json(data);
     }
@@ -45,16 +51,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PUT') {
-      const { id, ten_hang, gia_nhap, gia_ban, mo_ta } = req.body;
+      const { id, ten_hang, gia_nhap, gia_ban, mo_ta, ngung_kinh_doanh } = req.body;
       
+      const updateData: any = {
+        ten_hang,
+        gia_nhap: parseInt(gia_nhap) || 0,
+        gia_ban: parseInt(gia_ban) || 0,
+        mo_ta
+      };
+      if (ngung_kinh_doanh !== undefined) {
+        updateData.ngung_kinh_doanh = Boolean(ngung_kinh_doanh);
+      }
+
       const { data, error } = await supabase
         .from('HangTrong')
-        .update({
-          ten_hang,
-          gia_nhap: parseInt(gia_nhap) || 0,
-          gia_ban: parseInt(gia_ban) || 0,
-          mo_ta
-        })
+        .update(updateData)
         .eq('id', id)
         .eq('tenant_id', tenantId)
         .select();
