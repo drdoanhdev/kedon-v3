@@ -827,6 +827,8 @@ export default function KeDon() {
                   value={chandoan}
                   onChange={(e) => handleChandoanChange(e.target.value)}
                   onFocus={(e) => { e.target.select(); chandoanSuggestions.length > 0 && setShowChandoanSuggestions(true); }}
+                  onBlur={() => { setTimeout(() => setShowChandoanSuggestions(false), 150); }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setShowChandoanSuggestions(false); } }}
                   className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
                 />
                 {showChandoanSuggestions && chandoanSuggestions.length > 0 && (
@@ -1015,7 +1017,8 @@ export default function KeDon() {
                                   setDsChon((prev) => {
                                     const updated = [...prev];
                                     const buf = updated[idx].soluongInput;
-                                    const parsed = buf !== undefined && buf !== '' ? parseInt(buf, 10) : NaN;
+                                    if (buf === undefined) return updated;
+                                    const parsed = buf !== '' ? parseInt(buf, 10) : NaN;
                                     if (Number.isNaN(parsed) || parsed < 1) {
                                       updated[idx].soluong = 1;
                                     } else {
@@ -1517,8 +1520,11 @@ export default function KeDon() {
               value={chandoan}
               onChange={(e) => handleChandoanChange(e.target.value)}
               onFocus={(e) => { e.target.select(); chandoanSuggestions.length > 0 && setShowChandoanSuggestions(true); }}
+              onBlur={() => { setTimeout(() => setShowChandoanSuggestions(false), 150); }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !showChandoanSuggestions) {
+                if (e.key === 'Escape') {
+                  setShowChandoanSuggestions(false);
+                } else if (e.key === 'Enter' && !showChandoanSuggestions) {
                   e.preventDefault();
                   searchDesktopRef.current?.focus();
                 } else if (e.key === 'ArrowDown' && showChandoanSuggestions) {
@@ -1733,7 +1739,8 @@ export default function KeDon() {
                           setDsChon((prev) => {
                             const updated = [...prev];
                             const buf = updated[idx].soluongInput;
-                            const parsed = buf !== undefined && buf !== '' ? parseInt(buf, 10) : NaN;
+                            if (buf === undefined) return updated;
+                            const parsed = buf !== '' ? parseInt(buf, 10) : NaN;
                             if (Number.isNaN(parsed) || parsed < 1) {
                               updated[idx].soluong = 1;
                             } else {
