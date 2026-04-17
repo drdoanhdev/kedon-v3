@@ -648,7 +648,7 @@ function DanhMucPage() {
         await axios.put('/api/nhom-gia-gong', nhomGiaForm);
         toast.success('Đã cập nhật nhóm giá');
       } else {
-        const { id, so_luong_ton, gia_nhap_trung_binh, ...payload } = nhomGiaForm;
+        const { id, so_luong_ton, ...payload } = nhomGiaForm;
         await axios.post('/api/nhom-gia-gong', payload);
         toast.success('Đã thêm nhóm giá');
       }
@@ -1409,10 +1409,10 @@ function DanhMucPage() {
               <thead className="bg-gray-100 border-b">
                 <tr>
                   <th className="px-4 py-2 text-left">Tên nhóm</th>
-                  <th className="px-4 py-2 text-right">Giá bán từ</th>
-                  <th className="px-4 py-2 text-right">Giá bán đến</th>
-                  <th className="px-4 py-2 text-right">Giá mặc định</th>
-                  <th className="px-4 py-2 text-right hidden sm:table-cell">Giá nhập TB</th>
+                  <th className="px-4 py-2 text-right">Giá nhập</th>
+                  <th className="px-4 py-2 text-right">Giá bán MĐ</th>
+                  <th className="px-4 py-2 text-right hidden sm:table-cell">Giá bán (từ-đến)</th>
+                  <th className="px-4 py-2 text-center">Lãi/cái</th>
                   <th className="px-4 py-2 text-center">Tồn kho</th>
                   <th className="px-4 py-2 text-center">Thao tác</th>
                 </tr>
@@ -1421,16 +1421,20 @@ function DanhMucPage() {
                 {filtered.length === 0 && (
                   <tr><td colSpan={7} className="text-center py-8 text-gray-400">Chưa có nhóm giá nào. Nhấn "Thêm nhóm giá" để tạo.</td></tr>
                 )}
-                {filtered.map((nhom) => (
+                {filtered.map((nhom) => {
+                  const lai = (nhom.gia_ban_mac_dinh || 0) - (nhom.gia_nhap_trung_binh || 0);
+                  return (
                   <tr key={nhom.id} className={`border-b hover:bg-gray-50 ${nhom.trang_thai === 'inactive' ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-2">
                       <div className="font-medium">{nhom.ten_nhom}</div>
                       {nhom.mo_ta && <div className="text-xs text-gray-400">{nhom.mo_ta}</div>}
                     </td>
-                    <td className="px-4 py-2 text-right">{(nhom.gia_ban_tu || 0).toLocaleString()}đ</td>
-                    <td className="px-4 py-2 text-right">{(nhom.gia_ban_den || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-right">{(nhom.gia_nhap_trung_binh || 0).toLocaleString()}đ</td>
                     <td className="px-4 py-2 text-right font-medium">{(nhom.gia_ban_mac_dinh || 0).toLocaleString()}đ</td>
-                    <td className="px-4 py-2 text-right text-gray-500 hidden sm:table-cell">{(nhom.gia_nhap_trung_binh || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-right text-gray-500 hidden sm:table-cell">{(nhom.gia_ban_tu || 0).toLocaleString()} - {(nhom.gia_ban_den || 0).toLocaleString()}đ</td>
+                    <td className={`px-4 py-2 text-center font-medium ${lai > 0 ? 'text-green-600' : lai < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                      {lai > 0 ? '+' : ''}{lai.toLocaleString()}đ
+                    </td>
                     <td className="px-4 py-2 text-center font-bold">{nhom.so_luong_ton || 0}</td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center space-x-2">
@@ -1443,7 +1447,8 @@ function DanhMucPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </CardContent>
@@ -2031,13 +2036,35 @@ function DanhMucPage() {
                   placeholder="VD: Gọng 200k-500k"
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Giá nhập (VND) *</Label>
+                  <Input
+                    type="number"
+                    value={nhomGiaForm.gia_nhap_trung_binh}
+                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_nhap_trung_binh: +e.target.value })}
+                    placeholder="Giá vốn nhập gọng"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-0.5">Sẽ tự cập nhật khi nhập kho (bình quân gia quyền)</p>
+                </div>
+                <div>
+                  <Label>Giá bán mặc định (VND) *</Label>
+                  <Input
+                    type="number"
+                    value={nhomGiaForm.gia_ban_mac_dinh}
+                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_mac_dinh: +e.target.value })}
+                    placeholder="Giá bán khi kê đơn"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Giá bán từ (VND)</Label>
                   <Input
                     type="number"
                     value={nhomGiaForm.gia_ban_tu}
                     onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_tu: +e.target.value })}
+                    placeholder="Tham khảo"
                   />
                 </div>
                 <div>
@@ -2046,14 +2073,7 @@ function DanhMucPage() {
                     type="number"
                     value={nhomGiaForm.gia_ban_den}
                     onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_den: +e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label>Giá mặc định (VND)</Label>
-                  <Input
-                    type="number"
-                    value={nhomGiaForm.gia_ban_mac_dinh}
-                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_mac_dinh: +e.target.value })}
+                    placeholder="Tham khảo"
                   />
                 </div>
               </div>

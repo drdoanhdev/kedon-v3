@@ -50,7 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // PUT: Cập nhật nhóm giá
     if (req.method === 'PUT') {
-      const { id, ten_nhom, gia_ban_tu, gia_ban_den, gia_ban_mac_dinh, mo_ta, trang_thai } = req.body;
+      const { id, ten_nhom, gia_ban_tu, gia_ban_den, gia_ban_mac_dinh, gia_nhap_trung_binh, mo_ta, trang_thai } = req.body;
 
       if (!id) return res.status(400).json({ error: 'Thiếu id' });
 
@@ -59,6 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (gia_ban_tu !== undefined) updateData.gia_ban_tu = parseInt(gia_ban_tu) || 0;
       if (gia_ban_den !== undefined) updateData.gia_ban_den = parseInt(gia_ban_den) || 0;
       if (gia_ban_mac_dinh !== undefined) updateData.gia_ban_mac_dinh = parseInt(gia_ban_mac_dinh) || 0;
+      if (gia_nhap_trung_binh !== undefined) updateData.gia_nhap_trung_binh = parseInt(gia_nhap_trung_binh) || 0;
       if (mo_ta !== undefined) updateData.mo_ta = mo_ta || null;
       if (trang_thai !== undefined) updateData.trang_thai = trang_thai;
 

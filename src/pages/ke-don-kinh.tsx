@@ -1496,7 +1496,7 @@ export default function KeDonKinh() {
                         >
                           <option value="">-- Chọn nhóm giá --</option>
                           {nhomGiaGongs.filter(n => (n as any).trang_thai !== 'inactive').map(n => (
-                            <option key={n.id} value={n.id}>{n.ten_nhom} ({n.gia_ban_mac_dinh.toLocaleString()}đ, tồn: {n.so_luong_ton})</option>
+                            <option key={n.id} value={n.id}>{n.ten_nhom} (nhập: {n.gia_nhap_trung_binh.toLocaleString()}đ, bán: {n.gia_ban_mac_dinh.toLocaleString()}đ, tồn: {n.so_luong_ton})</option>
                           ))}
                         </select>
                       )}
@@ -1598,7 +1598,7 @@ export default function KeDonKinh() {
                             >
                               <option value="">-- Chọn nhóm giá --</option>
                               {nhomGiaGongs.filter(n => (n as any).trang_thai !== 'inactive').map(n => (
-                                <option key={n.id} value={n.id}>{n.ten_nhom} ({n.gia_ban_mac_dinh.toLocaleString()}đ, tồn: {n.so_luong_ton})</option>
+                              <option key={n.id} value={n.id}>{n.ten_nhom} (nhập: {n.gia_nhap_trung_binh.toLocaleString()}đ, bán: {n.gia_ban_mac_dinh.toLocaleString()}đ, tồn: {n.so_luong_ton})</option>
                               ))}
                             </select>
                           )}
