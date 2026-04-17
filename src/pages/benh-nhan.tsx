@@ -31,6 +31,8 @@ interface BenhNhan {
   dienthoai: string;
   diachi: string;
   tuoi?: number;
+  created_at?: string;
+  ngay_kham_gan_nhat?: string;
 }
 
 interface DonThuoc {
@@ -125,7 +127,7 @@ export default function BenhNhanPage() {
     }
   }, []);
   // Sorting state - hỗ trợ multi-level sorting
-  type SortField = 'ten' | 'namsinh' | 'tuoi' | 'dienthoai' | 'diachi';
+  type SortField = 'ten' | 'namsinh' | 'tuoi' | 'dienthoai' | 'diachi' | 'created_at' | 'ngay_kham_gan_nhat';
   const [sortConfig, setSortConfig] = useState<Array<{ field: SortField; direction: 'asc' | 'desc' }>>([]);
   
   // States cho tính năng gộp bệnh nhân
@@ -542,6 +544,9 @@ export default function BenhNhanPage() {
         } else if (field === 'tuoi') {
           av = av ?? 0;
           bv = bv ?? 0;
+        } else if (field === 'created_at' || field === 'ngay_kham_gan_nhat') {
+          av = av ? new Date(av).getTime() : 0;
+          bv = bv ? new Date(bv).getTime() : 0;
         } else {
           av = (av ?? '').toString().toLowerCase();
           bv = (bv ?? '').toString().toLowerCase();
@@ -769,7 +774,9 @@ export default function BenhNhanPage() {
                       <div>Sinh: {typeof bn.namsinh === 'number' ? bn.namsinh : bn.namsinh}</div>
                       <div>Tuổi: {bn.tuoi ?? "N/A"}</div>
                       <div>SĐT: {bn.dienthoai || "Chưa có"}</div>
+                      <div>Ngày lập: {bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN') : ''}</div>
                       <div className="col-span-2">Địa chỉ: {bn.diachi}</div>
+                      <div className="col-span-2">Khám gần nhất: {bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN') : 'Chưa khám'}</div>
                     </div>
 
                     <div className="flex gap-2">
@@ -1034,7 +1041,9 @@ export default function BenhNhanPage() {
                       namsinh: 'Năm sinh',
                       tuoi: 'Tuổi',
                       dienthoai: 'SĐT',
-                      diachi: 'Địa chỉ'
+                      diachi: 'Địa chỉ',
+                      created_at: 'Ngày lập',
+                      ngay_kham_gan_nhat: 'Khám gần nhất'
                     };
                     return `${i + 1}. ${fieldNames[s.field]} ${s.direction === 'asc' ? '↑' : '↓'}`;
                   }).join(' → ')}
@@ -1085,6 +1094,20 @@ export default function BenhNhanPage() {
                       >
                         <div className="flex items-center gap-1">Địa Chỉ {renderSortIndicator('diachi')}</div>
                       </th>
+                      <th
+                        className="px-2 py-1 cursor-pointer select-none"
+                        onClick={(e) => handleSort('created_at', e.shiftKey)}
+                        title="Click: Sắp xếp | Shift+Click: Thêm sắp xếp phụ"
+                      >
+                        <div className="flex items-center gap-1">Ngày Lập {renderSortIndicator('created_at')}</div>
+                      </th>
+                      <th
+                        className="px-2 py-1 cursor-pointer select-none"
+                        onClick={(e) => handleSort('ngay_kham_gan_nhat', e.shiftKey)}
+                        title="Click: Sắp xếp | Shift+Click: Thêm sắp xếp phụ"
+                      >
+                        <div className="flex items-center gap-1">Khám Gần Nhất {renderSortIndicator('ngay_kham_gan_nhat')}</div>
+                      </th>
                       <th className="px-2 py-1 text-center w-[290px]">Hành Động</th>
                     </tr>
                   </thead>
@@ -1108,6 +1131,8 @@ export default function BenhNhanPage() {
                           <td className="px-2 py-1">{bn.tuoi ?? ""}</td>
                           <td className="px-2 py-1">{bn.dienthoai}</td>
                           <td className="px-2 py-1">{bn.diachi}</td>
+                          <td className="px-2 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN') : ''}</td>
+                          <td className="px-2 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN') : ''}</td>
                           <td className="px-2 py-1 text-center">
                             <div className="inline-flex items-center gap-1 flex-wrap justify-center max-w-[280px]">
                               <Button size="sm" variant="outline" onClick={() => handleEdit(bn)} className="h-7 px-2">
@@ -1161,7 +1186,7 @@ export default function BenhNhanPage() {
                         </tr>
                         {selectedBenhNhanId === bn.id && (
                           <tr>
-                            <td colSpan={8} className="px-2 py-1">
+                            <td colSpan={10} className="px-2 py-1">
                               <Card className="shadow-sm bg-gray-50 border-gray-200">
                                 <CardContent className="p-3">
                                   {/* Tab buttons */}
@@ -1323,7 +1348,7 @@ export default function BenhNhanPage() {
                     })}
                     {paginated.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="text-center py-2 text-muted-foreground">
+                        <td colSpan={10} className="text-center py-2 text-muted-foreground">
                           Không tìm thấy bệnh nhân.
                         </td>
                       </tr>

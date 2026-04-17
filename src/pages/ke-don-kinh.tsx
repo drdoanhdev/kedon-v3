@@ -103,7 +103,7 @@ interface DonKinh {
 
 interface HistoryProps { items: DonKinh[]; onSelect: (don: DonKinh) => void; highlightId?: number | null; }
 const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
-  <div className="h-full flex flex-col bg-[#f5f6f8]">
+  <div className="max-h-100 lg:max-h-none lg:h-full flex flex-col bg-[#f5f6f8] rounded-xl lg:rounded-none border lg:border-0 border-gray-200">
     <h2 className="font-bold text-gray-900 text-sm tracking-tight px-3 pt-3 pb-2 flex-shrink-0">Lịch sử đơn kính {items.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold ml-1">{items.length}</span>}</h2>
     {items.length === 0 ? (
       <p className="text-xs text-gray-500 px-3">Chưa có đơn kính nào</p>

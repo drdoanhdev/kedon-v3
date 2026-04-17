@@ -10,6 +10,8 @@ interface BenhNhan {
   dienthoai: string;
   diachi: string;
   tuoi?: number; // chỉ trả về khi xem danh sách
+  created_at?: string; // ngày lập hồ sơ
+  ngay_kham_gan_nhat?: string; // ngày khám gần nhất
 }
 
 // Định nghĩa interface cho lỗi Supabase
@@ -66,7 +68,7 @@ export default async function handler(
         // Fetch patient list with pagination and search
         let query = supabase
           .from("BenhNhan")
-          .select("id, ten, namsinh, dienthoai, diachi", { count: "exact" })
+          .select("id, ten, namsinh, dienthoai, diachi, created_at", { count: "exact" })
           .eq("tenant_id", tenantId)
           .order("id", { ascending: false });
 
@@ -87,10 +89,45 @@ export default async function handler(
           return res.status(400).json({ message: "Error fetching patient list", error: error.message });
         }
 
-        // Thêm trường tuổi khi trả về danh sách
+        // Lấy ngày khám gần nhất cho tất cả bệnh nhân trong trang
+        const patientIds = (data ?? []).map(bn => bn.id);
+        let ngayKhamMap: Record<number, string | null> = {};
+        
+        if (patientIds.length > 0) {
+          // Lấy ngày khám gần nhất từ DonThuoc
+          const { data: donThuocDates } = await supabase
+            .from("DonThuoc")
+            .select("benhnhanid, ngay_kham")
+            .in("benhnhanid", patientIds)
+            .eq("tenant_id", tenantId)
+            .order("ngay_kham", { ascending: false });
+
+          // Lấy ngày khám gần nhất từ DonKinh
+          const { data: donKinhDates } = await supabase
+            .from("DonKinh")
+            .select("benhnhanid, ngaykham")
+            .in("benhnhanid", patientIds)
+            .eq("tenant_id", tenantId)
+            .order("ngaykham", { ascending: false });
+
+          // Tính ngày khám gần nhất cho mỗi bệnh nhân
+          for (const pid of patientIds) {
+            const thuocDate = donThuocDates?.find(d => d.benhnhanid === pid)?.ngay_kham;
+            const kinhDate = donKinhDates?.find(d => d.benhnhanid === pid)?.ngaykham;
+            
+            if (thuocDate && kinhDate) {
+              ngayKhamMap[pid] = thuocDate > kinhDate ? thuocDate : kinhDate;
+            } else {
+              ngayKhamMap[pid] = thuocDate || kinhDate || null;
+            }
+          }
+        }
+
+        // Thêm trường tuổi và ngày khám gần nhất khi trả về danh sách
         const dataWithAge = (data ?? []).map((bn) => ({
           ...bn,
           tuoi: calcAge(bn.namsinh),
+          ngay_kham_gan_nhat: ngayKhamMap[bn.id] || null,
         }));
 
         return res.status(200).json({ data: dataWithAge, total: count ?? 0 });
