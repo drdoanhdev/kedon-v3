@@ -45,6 +45,16 @@ interface GongKinh {
   gia_ban: number;
 }
 
+interface NhomGiaGong {
+  id: number;
+  ten_nhom: string;
+  gia_ban_tu: number;
+  gia_ban_den: number;
+  gia_ban_mac_dinh: number;
+  gia_nhap_trung_binh: number;
+  so_luong_ton: number;
+}
+
 interface MauThiLuc {
   id: number;
   gia_tri: string;
@@ -68,6 +78,7 @@ interface DonKinh {
   gianhap_trong?: number; // NEW: lens cost
   gianhap_gong?: number;  // NEW: frame cost
   ten_gong?: string; // Tên gọng đã chọn
+  nhom_gia_gong_id?: number | null; // Nhóm giá gọng (nếu bán theo nhóm)
   ghichu?: string;
   thiluc_khongkinh_mp?: string;
   thiluc_kinhcu_mp?: string;
@@ -360,6 +371,8 @@ export default function KeDonKinh() {
   // Category data states
   const [hangTrongs, setHangTrongs] = useState<HangTrong[]>([]);
   const [gongKinhs, setGongKinhs] = useState<GongKinh[]>([]);
+  const [nhomGiaGongs, setNhomGiaGongs] = useState<NhomGiaGong[]>([]);
+  const [frameMode, setFrameMode] = useState<'gong_cu_the' | 'nhom_gia'>('gong_cu_the');
   const [mauThiLucs, setMauThiLucs] = useState<MauThiLuc[]>([]);
   const [mauSoKinhs, setMauSoKinhs] = useState<MauSoKinh[]>([]);
   
@@ -495,6 +508,12 @@ export default function KeDonKinh() {
           headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
         });
         setGongKinhs(gongKinhRes.data || []);
+
+        // Fetch nhóm giá gọng
+        const nhomGiaRes = await axios.get(`/api/nhom-gia-gong?_t=${timestamp}&_r=${random}`, {
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+        });
+        setNhomGiaGongs((nhomGiaRes.data || []).filter((n: NhomGiaGong) => n.so_luong_ton !== undefined));
 
         // Fetch vision samples
         const thilucRes = await axios.get(`/api/mau-kinh?type=thiluc&_t=${timestamp}&_r=${random}`, {
@@ -722,6 +741,26 @@ export default function KeDonKinh() {
     }
   };
 
+  // Xử lý chọn nhóm giá gọng
+  const handleNhomGiaChange = (nhomId: string) => {
+    const id = parseInt(nhomId);
+    const nhom = nhomGiaGongs.find(n => n.id === id);
+    if (nhom) {
+      setForm({
+        ...form,
+        nhom_gia_gong_id: nhom.id,
+        ten_gong: `[Nhóm] ${nhom.ten_nhom}`,
+        giagong: nhom.gia_ban_mac_dinh,
+        gianhap_gong: nhom.gia_nhap_trung_binh,
+        ax_mt: nhom.gia_nhap_trung_binh,
+      });
+      setFrameStock(nhom.so_luong_ton);
+    } else {
+      setForm({ ...form, nhom_gia_gong_id: null, ten_gong: '', giagong: 0, gianhap_gong: 0, ax_mt: 0 });
+      setFrameStock(null);
+    }
+  };
+
   // Cập nhật lịch sử cục bộ
   const addHistory = (don: DonKinh) => {
     setDonKinhs(prev => {
@@ -779,16 +818,19 @@ export default function KeDonKinh() {
     const payload: DonKinh = {
       ...form,
       benhnhanid: parseInt(benhnhanid),
-      ngaykham: form.ngaykham, // Sử dụng ngaykham cho database
+      ngaykham: form.ngaykham,
   ax_mp: typeof form.ax_mp === 'number' ? form.ax_mp : form.gianhap_trong || 0,
   ax_mt: typeof form.ax_mt === 'number' ? form.ax_mt : form.gianhap_gong || 0,
       giatrong: typeof form.giatrong === 'number' ? form.giatrong : 0,
       giagong: typeof form.giagong === 'number' ? form.giagong : 0,
       gianhap_trong: typeof form.gianhap_trong === 'number' ? form.gianhap_trong : (typeof form.ax_mp === 'number' ? form.ax_mp : 0),
       gianhap_gong: typeof form.gianhap_gong === 'number' ? form.gianhap_gong : (typeof form.ax_mt === 'number' ? form.ax_mt : 0),
-      no: ghiNo, // Thêm trường no
+      no: ghiNo,
       sotien_da_thanh_toan: ghiNo ? sotienDaThanhToan : tongTien,
       lai: lai || 0,
+      // Nhóm giá: khi chọn nhóm giá, gửi nhom_gia_gong_id, bỏ ten_gong text match
+      nhom_gia_gong_id: frameMode === 'nhom_gia' ? (form.nhom_gia_gong_id || null) : null,
+      ten_gong: frameMode === 'nhom_gia' ? '' : (form.ten_gong || ''),
     };
 
     try {
@@ -1416,17 +1458,48 @@ export default function KeDonKinh() {
                   <h3 className="font-bold text-gray-900 text-sm tracking-tight mb-2">Sản phẩm</h3>
                   <div className="space-y-2 sm:space-y-3">
                     {/* Mobile: inline label + input */}
+                    {nhomGiaGongs.length > 0 && (
+                      <div className="flex gap-1 sm:hidden">
+                        <button
+                          type="button"
+                          className={`text-[10px] px-2 py-1 rounded-full ${frameMode === 'gong_cu_the' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                          onClick={() => { setFrameMode('gong_cu_the'); setForm({ ...form, nhom_gia_gong_id: null }); }}
+                        >Gọng cụ thể</button>
+                        <button
+                          type="button"
+                          className={`text-[10px] px-2 py-1 rounded-full ${frameMode === 'nhom_gia' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                          onClick={() => { setFrameMode('nhom_gia'); setForm({ ...form, ten_gong: '' }); }}
+                        >Nhóm giá</button>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 sm:hidden">
-                      <label className="text-[11px] font-medium text-gray-600 uppercase shrink-0 w-14">Gọng</label>
-                      <input
-                        list="gongkinh-list"
-                        value={form.ten_gong || ''}
-                        onChange={(e) => handleFrameChange(e.target.value)}
-                        className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Chọn loại gọng"
-                        data-nav="presc"
-                        data-order="11"
-                      />
+                      <label className="text-[11px] font-medium text-gray-600 uppercase shrink-0 w-14">
+                        {frameMode === 'nhom_gia' ? 'Nhóm' : 'Gọng'}
+                      </label>
+                      {frameMode === 'gong_cu_the' ? (
+                        <input
+                          list="gongkinh-list"
+                          value={form.ten_gong || ''}
+                          onChange={(e) => handleFrameChange(e.target.value)}
+                          className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Chọn loại gọng"
+                          data-nav="presc"
+                          data-order="11"
+                        />
+                      ) : (
+                        <select
+                          className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={form.nhom_gia_gong_id || ''}
+                          onChange={(e) => handleNhomGiaChange(e.target.value)}
+                          data-nav="presc"
+                          data-order="11"
+                        >
+                          <option value="">-- Chọn nhóm giá --</option>
+                          {nhomGiaGongs.filter(n => (n as any).trang_thai !== 'inactive').map(n => (
+                            <option key={n.id} value={n.id}>{n.ten_nhom} ({n.gia_ban_mac_dinh.toLocaleString()}đ, tồn: {n.so_luong_ton})</option>
+                          ))}
+                        </select>
+                      )}
                       {frameStock !== null && (
                         <span className={`text-[10px] px-1 py-0.5 rounded whitespace-nowrap shrink-0 ${
                           frameStock <= 0 ? 'bg-red-100 text-red-700' : frameStock <= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
@@ -1491,15 +1564,44 @@ export default function KeDonKinh() {
                     <div className="hidden sm:flex flex-col sm:flex-row sm:items-center gap-2">
                       <label className="w-full sm:w-28 text-xs font-medium text-gray-700 uppercase whitespace-nowrap flex-shrink-0">Chọn gọng</label>
                         <div className="flex-1 flex items-center gap-2">
-                          <input
-                            list="gongkinh-list"
-                            value={form.ten_gong || ''}
-                            onChange={(e) => handleFrameChange(e.target.value)}
-                            className="h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
-                            placeholder="Chọn loại gọng"
-                            data-nav="presc"
-                            data-order="11"
-                          />
+                          {nhomGiaGongs.length > 0 && (
+                            <div className="flex gap-1 shrink-0">
+                              <button
+                                type="button"
+                                className={`text-[10px] px-2 py-1 rounded-full ${frameMode === 'gong_cu_the' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                                onClick={() => { setFrameMode('gong_cu_the'); setForm({ ...form, nhom_gia_gong_id: null }); }}
+                              >Cụ thể</button>
+                              <button
+                                type="button"
+                                className={`text-[10px] px-2 py-1 rounded-full ${frameMode === 'nhom_gia' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                                onClick={() => { setFrameMode('nhom_gia'); setForm({ ...form, ten_gong: '' }); }}
+                              >Nhóm giá</button>
+                            </div>
+                          )}
+                          {frameMode === 'gong_cu_the' ? (
+                            <input
+                              list="gongkinh-list"
+                              value={form.ten_gong || ''}
+                              onChange={(e) => handleFrameChange(e.target.value)}
+                              className="h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                              placeholder="Chọn loại gọng"
+                              data-nav="presc"
+                              data-order="11"
+                            />
+                          ) : (
+                            <select
+                              className="h-9 bg-white border border-gray-300 rounded-lg px-3 text-sm font-medium flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                              value={form.nhom_gia_gong_id || ''}
+                              onChange={(e) => handleNhomGiaChange(e.target.value)}
+                              data-nav="presc"
+                              data-order="11"
+                            >
+                              <option value="">-- Chọn nhóm giá --</option>
+                              {nhomGiaGongs.filter(n => (n as any).trang_thai !== 'inactive').map(n => (
+                                <option key={n.id} value={n.id}>{n.ten_nhom} ({n.gia_ban_mac_dinh.toLocaleString()}đ, tồn: {n.so_luong_ton})</option>
+                              ))}
+                            </select>
+                          )}
                           {frameStock !== null && (
                             <span className={`text-xs px-1.5 py-0.5 rounded whitespace-nowrap ${
                               frameStock <= 0 ? 'bg-red-100 text-red-700' : frameStock <= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'

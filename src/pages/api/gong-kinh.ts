@@ -12,19 +12,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     if (req.method === 'GET') {
-      const { data, error } = await supabase
+      const { show_inactive } = req.query;
+      let query = supabase
         .from('GongKinh')
-        .select('*')
+        .select('*, NhaCungCap:nha_cung_cap_id(id, ten)')
         .eq('tenant_id', tenantId)
-        .eq('trang_thai', true)
         .order('ten_gong');
 
+      if (!show_inactive) {
+        query = query.eq('trang_thai', true);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return res.status(200).json(data);
     }
 
     if (req.method === 'POST') {
-      const { ten_gong, chat_lieu, gia_nhap, gia_ban, mo_ta } = req.body;
+      const { ten_gong, chat_lieu, gia_nhap, gia_ban, mo_ta, ma_gong, mau_sac, kich_co, nha_cung_cap_id, ton_kho, muc_ton_can_co } = req.body;
       
       const { data, error } = await supabase
         .from('GongKinh')
@@ -34,16 +39,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           gia_nhap: parseInt(gia_nhap) || 0,
           gia_ban: parseInt(gia_ban) || 0,
           mo_ta: mo_ta || '',
+          ma_gong: ma_gong || null,
+          mau_sac: mau_sac || null,
+          kich_co: kich_co || null,
+          nha_cung_cap_id: nha_cung_cap_id ? parseInt(nha_cung_cap_id) : null,
+          ton_kho: parseInt(ton_kho) || 0,
+          muc_ton_can_co: parseInt(muc_ton_can_co) || 2,
           tenant_id: tenantId
         })
-        .select();
+        .select('*, NhaCungCap:nha_cung_cap_id(id, ten)');
 
       if (error) throw error;
       return res.status(200).json(data[0]);
     }
 
     if (req.method === 'PUT') {
-      const { id, ten_gong, chat_lieu, gia_nhap, gia_ban, mo_ta } = req.body;
+      const { id, ten_gong, chat_lieu, gia_nhap, gia_ban, mo_ta, ma_gong, mau_sac, kich_co, nha_cung_cap_id, muc_ton_can_co } = req.body;
       
       const { data, error } = await supabase
         .from('GongKinh')
@@ -52,11 +63,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           chat_lieu: chat_lieu || '',
           gia_nhap: parseInt(gia_nhap) || 0,
           gia_ban: parseInt(gia_ban) || 0,
-          mo_ta: mo_ta || ''
+          mo_ta: mo_ta || '',
+          ma_gong: ma_gong || null,
+          mau_sac: mau_sac || null,
+          kich_co: kich_co || null,
+          nha_cung_cap_id: nha_cung_cap_id ? parseInt(nha_cung_cap_id) : null,
+          muc_ton_can_co: parseInt(muc_ton_can_co) || 2,
         })
         .eq('id', id)
         .eq('tenant_id', tenantId)
-        .select();
+        .select('*, NhaCungCap:nha_cung_cap_id(id, ten)');
 
       if (error) throw error;
       return res.status(200).json(data[0]);

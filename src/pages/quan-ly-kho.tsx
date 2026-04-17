@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Plus, AlertTriangle, Package, Eye, Frame, ArrowDownToLine, ArrowUpFromLine, Ban, Truck, RefreshCw, Pencil, Upload, Download, ClipboardCopy } from 'lucide-react';
+import { Plus, AlertTriangle, Package, Eye, Frame, ArrowDownToLine, ArrowUpFromLine, Ban, Truck, RefreshCw, Pencil, Upload, Download, ClipboardCopy, Search, Tags } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
@@ -78,7 +78,7 @@ interface AlertSummary {
 // ============================================
 export default function QuanLyKho() {
   const { confirm } = useConfirm();
-  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'import'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'frame_stock' | 'import'>('overview');
 
   // Data states
   const [alertData, setAlertData] = useState<AlertSummary | null>(null);
@@ -120,6 +120,71 @@ export default function QuanLyKho() {
   const [copyTextContent, setCopyTextContent] = useState('');
   const [copyTextTitle, setCopyTextTitle] = useState('');
 
+  // Frame (gọng) stock states
+  interface GongKinhStock {
+    id: number;
+    ten_gong: string;
+    ma_gong: string | null;
+    mau_sac: string | null;
+    kich_co: string | null;
+    chat_lieu: string | null;
+    gia_nhap: number;
+    gia_ban: number;
+    ton_kho: number;
+    muc_ton_can_co: number;
+    trang_thai: boolean;
+    NhaCungCap?: { id: number; ten: string } | null;
+  }
+  const [frameStocks, setFrameStocks] = useState<GongKinhStock[]>([]);
+  const [frameSearch, setFrameSearch] = useState('');
+  const [frameSortBy, setFrameSortBy] = useState<'ten_gong' | 'gia_ban' | 'gia_nhap' | 'ton_kho'>('ten_gong');
+  const [frameSortDir, setFrameSortDir] = useState<'asc' | 'desc'>('asc');
+  const [framePriceRange, setFramePriceRange] = useState<'all' | 'under200' | '200to500' | '500to1000' | 'over1000'>('all');
+  const [showFrameImport, setShowFrameImport] = useState(false);
+  const [selectedFrame, setSelectedFrame] = useState<GongKinhStock | null>(null);
+  const [frameImportForm, setFrameImportForm] = useState({ so_luong: '', don_gia: '', ghi_chu: '' });
+
+  // Nhóm giá gọng kính
+  interface NhomGiaGongStock {
+    id: number;
+    ten_nhom: string;
+    gia_ban_tu: number;
+    gia_ban_den: number;
+    gia_ban_mac_dinh: number;
+    gia_nhap_trung_binh: number;
+    so_luong_ton: number;
+  }
+  const [nhomGiaGongs, setNhomGiaGongs] = useState<NhomGiaGongStock[]>([]);
+
+  // Import receipt (phiếu nhập tổng hợp) states
+  interface ImportReceipt {
+    id: number;
+    ma_phieu: string | null;
+    nha_cung_cap_id: number | null;
+    tong_tien: number;
+    ghi_chu: string | null;
+    ngay_nhap: string;
+    NhaCungCap?: { id: number; ten: string } | null;
+    import_receipt_detail: {
+      id: number;
+      loai_hang: string;
+      so_luong: number;
+      don_gia: number;
+      thanh_tien: number;
+      Thuoc?: { id: number; ten: string } | null;
+      LensStock?: { id: number; sph: number; cyl: number; add_power: number | null; HangTrong: { ten_hang: string } } | null;
+      GongKinh?: { id: number; ten_gong: string; ma_gong: string | null } | null;
+      MedicalSupply?: { id: number; ten_vat_tu: string } | null;
+    }[];
+  }
+  const [receipts, setReceipts] = useState<ImportReceipt[]>([]);
+  const [showCreateReceipt, setShowCreateReceipt] = useState(false);
+  const [receiptForm, setReceiptForm] = useState({ ma_phieu: '', nha_cung_cap_id: '', ghi_chu: '' });
+  const [receiptDetails, setReceiptDetails] = useState<{ loai_hang: string; item_id: string; item_label: string; so_luong: string; don_gia: string }[]>([]);
+  const [expandedReceipt, setExpandedReceipt] = useState<number | null>(null);
+  const [nhaCungCaps, setNhaCungCaps] = useState<{ id: number; ten: string }[]>([]);
+  const [catalogItems, setCatalogItems] = useState<{ thuoc: any[]; trong_kinh: any[]; gong_kinh: any[]; vat_tu: any[] }>({ thuoc: [], trong_kinh: [], gong_kinh: [], vat_tu: [] });
+
   // ============================================
   // FETCH DATA
   // ============================================
@@ -155,8 +220,52 @@ export default function QuanLyKho() {
     } catch {}
   }, []);
 
+  const fetchFrameStocks = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/gong-kinh?show_inactive=1');
+      setFrameStocks(data || []);
+    } catch {}
+  }, []);
+
+  const fetchNhomGiaGongs = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/nhom-gia-gong');
+      setNhomGiaGongs(data || []);
+    } catch {}
+  }, []);
+
+  const fetchReceipts = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/inventory/import-receipt');
+      setReceipts(data || []);
+    } catch {}
+  }, []);
+
+  const fetchNhaCungCaps = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/nha-cung-cap');
+      setNhaCungCaps(data?.data || data || []);
+    } catch {}
+  }, []);
+
+  const fetchCatalogItems = useCallback(async () => {
+    try {
+      const [thuocRes, lensRes, gongRes] = await Promise.all([
+        axios.get('/api/thuoc').catch(() => ({ data: [] })),
+        axios.get('/api/inventory/lens-stock').catch(() => ({ data: [] })),
+        axios.get('/api/gong-kinh').catch(() => ({ data: [] })),
+      ]);
+      setCatalogItems({
+        thuoc: thuocRes.data?.data || thuocRes.data || [],
+        trong_kinh: lensRes.data || [],
+        gong_kinh: gongRes.data || [],
+        vat_tu: [],
+      });
+    } catch {}
+  }, []);
+
   useEffect(() => {
-    Promise.all([fetchAlerts(), fetchLensStocks(), fetchLensOrders(), fetchHangTrongs()])
+    Promise.all([fetchAlerts(), fetchLensStocks(), fetchLensOrders(), fetchHangTrongs(), fetchFrameStocks(), fetchNhomGiaGongs(), fetchReceipts(), fetchNhaCungCaps()])
       .finally(() => setLoading(false));
   }, []);
 
@@ -260,6 +369,107 @@ export default function QuanLyKho() {
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Lỗi xóa');
     }
+  };
+
+  // ============================================
+  // FRAME (GỌNG) ACTIONS
+  // ============================================
+  const handleFrameImport = async () => {
+    if (!selectedFrame) return;
+    try {
+      await axios.post('/api/inventory/frame-import', {
+        gong_kinh_id: selectedFrame.id,
+        so_luong: parseInt(frameImportForm.so_luong),
+        don_gia: parseInt(frameImportForm.don_gia) || 0,
+        ghi_chu: frameImportForm.ghi_chu || null,
+      });
+      toast.success(`Đã nhập ${frameImportForm.so_luong} gọng`);
+      setShowFrameImport(false);
+      setFrameImportForm({ so_luong: '', don_gia: '', ghi_chu: '' });
+      setSelectedFrame(null);
+      fetchFrameStocks();
+      fetchAlerts();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Lỗi nhập kho gọng');
+    }
+  };
+
+  // ============================================
+  // IMPORT RECEIPT (PHIẾU NHẬP TỔNG HỢP)
+  // ============================================
+  const handleAddReceiptLine = () => {
+    setReceiptDetails([...receiptDetails, { loai_hang: 'gong_kinh', item_id: '', item_label: '', so_luong: '1', don_gia: '0' }]);
+  };
+
+  const handleRemoveReceiptLine = (index: number) => {
+    setReceiptDetails(receiptDetails.filter((_, i) => i !== index));
+  };
+
+  const handleSubmitReceipt = async () => {
+    if (receiptDetails.length === 0) {
+      toast.error('Cần ít nhất 1 dòng chi tiết');
+      return;
+    }
+    const invalidLine = receiptDetails.find(d => !d.item_id || !d.so_luong || parseInt(d.so_luong) <= 0);
+    if (invalidLine) {
+      toast.error('Vui lòng chọn hàng và nhập số lượng > 0 cho tất cả dòng');
+      return;
+    }
+    try {
+      await axios.post('/api/inventory/import-receipt', {
+        ma_phieu: receiptForm.ma_phieu || null,
+        nha_cung_cap_id: receiptForm.nha_cung_cap_id || null,
+        ghi_chu: receiptForm.ghi_chu || null,
+        chi_tiet: receiptDetails.map(d => ({
+          loai_hang: d.loai_hang,
+          item_id: d.item_id,
+          so_luong: parseInt(d.so_luong),
+          don_gia: parseInt(d.don_gia) || 0,
+        })),
+      });
+      toast.success('Đã tạo phiếu nhập kho');
+      setShowCreateReceipt(false);
+      setReceiptForm({ ma_phieu: '', nha_cung_cap_id: '', ghi_chu: '' });
+      setReceiptDetails([]);
+      fetchReceipts();
+      fetchLensStocks();
+      fetchFrameStocks();
+      fetchAlerts();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Lỗi tạo phiếu nhập');
+    }
+  };
+
+  const getItemLabel = (loai_hang: string, item_id: string): string => {
+    const id = parseInt(item_id);
+    if (loai_hang === 'thuoc') {
+      const t = catalogItems.thuoc.find((x: any) => x.id === id);
+      return t ? t.ten : '';
+    }
+    if (loai_hang === 'trong_kinh') {
+      const l = catalogItems.trong_kinh.find((x: any) => x.id === id);
+      return l ? `${l.HangTrong?.ten_hang || '?'} (${l.sph}/${l.cyl})` : '';
+    }
+    if (loai_hang === 'gong_kinh') {
+      const g = catalogItems.gong_kinh.find((x: any) => x.id === id);
+      return g ? g.ten_gong : '';
+    }
+    return '';
+  };
+
+  const getReceiptDetailLabel = (d: ImportReceipt['import_receipt_detail'][0]) => {
+    if (d.Thuoc) return `Thuốc: ${d.Thuoc.ten}`;
+    if (d.LensStock) return `Tròng: ${d.LensStock.HangTrong?.ten_hang || '?'} (${d.LensStock.sph}/${d.LensStock.cyl})`;
+    if (d.GongKinh) return `Gọng: ${d.GongKinh.ten_gong}${d.GongKinh.ma_gong ? ` (${d.GongKinh.ma_gong})` : ''}`;
+    if (d.MedicalSupply) return `Vật tư: ${d.MedicalSupply.ten_vat_tu}`;
+    return '?';
+  };
+
+  const loaiHangLabel: Record<string, string> = {
+    thuoc: 'Thuốc',
+    trong_kinh: 'Tròng kính',
+    gong_kinh: 'Gọng kính',
+    vat_tu: 'Vật tư',
   };
 
   // ============================================
@@ -576,11 +786,13 @@ export default function QuanLyKho() {
           </div>
 
           {/* Tabs */}
-          <div className="grid grid-cols-3 sm:flex gap-1 mb-4 sm:mb-6 bg-white rounded-lg p-1 shadow-sm border">
+          <div className="grid grid-cols-5 sm:flex gap-1 mb-4 sm:mb-6 bg-white rounded-lg p-1 shadow-sm border">
             {[
               { key: 'overview', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
               { key: 'lens_stock', label: 'Kho tròng kính', mobileLabel: 'Kho tròng', icon: <Eye className="w-4 h-4" /> },
+              { key: 'frame_stock', label: 'Kho gọng kính', mobileLabel: 'Kho gọng', icon: <Frame className="w-4 h-4" /> },
               { key: 'lens_order', label: 'Tròng cần đặt', mobileLabel: 'Cần đặt', icon: <Truck className="w-4 h-4" /> },
+              { key: 'import', label: 'Phiếu nhập kho', mobileLabel: 'Phiếu nhập', icon: <Upload className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -855,6 +1067,179 @@ export default function QuanLyKho() {
                 </div>
               )}
 
+              {/* ======================== TAB: KHO GỌNG KÍNH ======================== */}
+              {activeTab === 'frame_stock' && (
+                <div className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-lg">
+                        <div className="flex items-center gap-2">
+                          <Frame className="w-5 h-5" />
+                          Kho gọng kính ({frameStocks.filter(f => f.trang_thai).length})
+                        </div>
+                        <div className="flex flex-wrap gap-2 ml-auto w-full sm:w-auto">
+                          <div className="relative flex-1 sm:flex-none">
+                            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
+                            <Input
+                              placeholder="Tìm gọng..."
+                              value={frameSearch}
+                              onChange={e => setFrameSearch(e.target.value)}
+                              className="pl-8 h-9 text-sm w-full sm:w-48"
+                            />
+                          </div>
+                          <select className="border rounded-md px-2 py-1.5 text-xs h-9" value={framePriceRange}
+                            onChange={e => setFramePriceRange(e.target.value as any)}>
+                            <option value="all">Tất cả giá</option>
+                            <option value="under200">Dưới 200k</option>
+                            <option value="200to500">200k - 500k</option>
+                            <option value="500to1000">500k - 1tr</option>
+                            <option value="over1000">Trên 1tr</option>
+                          </select>
+                          <select className="border rounded-md px-2 py-1.5 text-xs h-9" value={`${frameSortBy}_${frameSortDir}`}
+                            onChange={e => {
+                              const [field, dir] = e.target.value.split('_') as [typeof frameSortBy, 'asc' | 'desc'];
+                              setFrameSortBy(field);
+                              setFrameSortDir(dir);
+                            }}>
+                            <option value="ten_gong_asc">Tên A→Z</option>
+                            <option value="ten_gong_desc">Tên Z→A</option>
+                            <option value="gia_ban_asc">Giá bán tăng</option>
+                            <option value="gia_ban_desc">Giá bán giảm</option>
+                            <option value="gia_nhap_asc">Giá nhập tăng</option>
+                            <option value="gia_nhap_desc">Giá nhập giảm</option>
+                            <option value="ton_kho_asc">Tồn kho tăng</option>
+                            <option value="ton_kho_desc">Tồn kho giảm</option>
+                          </select>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-gray-50 text-left text-gray-500">
+                              <th className="p-2 sm:p-3 font-medium">Tên gọng</th>
+                              <th className="p-2 sm:p-3 font-medium hidden sm:table-cell">Mã</th>
+                              <th className="p-2 sm:p-3 font-medium hidden md:table-cell">Màu / Kích cỡ</th>
+                              <th className="p-2 sm:p-3 font-medium text-right">Giá nhập</th>
+                              <th className="p-2 sm:p-3 font-medium text-right">Giá bán</th>
+                              <th className="p-2 sm:p-3 font-medium text-center">Tồn kho</th>
+                              <th className="p-2 sm:p-3 font-medium text-center">Trạng thái</th>
+                              <th className="p-2 sm:p-3 font-medium text-center">Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {frameStocks
+                              .filter(f => {
+                                if (!f.trang_thai) return false;
+                                // Price range filter (giá bán, đơn vị VND)
+                                const gia = f.gia_ban || 0;
+                                if (framePriceRange === 'under200' && gia >= 200000) return false;
+                                if (framePriceRange === '200to500' && (gia < 200000 || gia > 500000)) return false;
+                                if (framePriceRange === '500to1000' && (gia < 500000 || gia > 1000000)) return false;
+                                if (framePriceRange === 'over1000' && gia <= 1000000) return false;
+                                // Text search
+                                if (!frameSearch) return true;
+                                const s = frameSearch.toLowerCase();
+                                return (f.ten_gong?.toLowerCase().includes(s)) ||
+                                       (f.ma_gong?.toLowerCase().includes(s)) ||
+                                       (f.mau_sac?.toLowerCase().includes(s)) ||
+                                       (f.NhaCungCap?.ten?.toLowerCase().includes(s));
+                              })
+                              .sort((a, b) => {
+                                let cmp = 0;
+                                if (frameSortBy === 'ten_gong') cmp = (a.ten_gong || '').localeCompare(b.ten_gong || '', 'vi');
+                                else if (frameSortBy === 'gia_ban') cmp = (a.gia_ban || 0) - (b.gia_ban || 0);
+                                else if (frameSortBy === 'gia_nhap') cmp = (a.gia_nhap || 0) - (b.gia_nhap || 0);
+                                else if (frameSortBy === 'ton_kho') cmp = (a.ton_kho ?? 0) - (b.ton_kho ?? 0);
+                                return frameSortDir === 'desc' ? -cmp : cmp;
+                              })
+                              .map(frame => {
+                                const tonKho = frame.ton_kho ?? 0;
+                                const mucMin = frame.muc_ton_can_co ?? 2;
+                                const trangThai = tonKho <= 0 ? 'HET' : tonKho <= mucMin ? 'SAP_HET' : 'DU';
+                                return (
+                                  <tr key={frame.id} className="border-b hover:bg-gray-50">
+                                    <td className="p-2 sm:p-3">
+                                      <div className="font-medium">{frame.ten_gong}</div>
+                                      {frame.chat_lieu && <div className="text-xs text-gray-400">{frame.chat_lieu}</div>}
+                                      {frame.NhaCungCap && <div className="text-xs text-gray-400 sm:hidden">NCC: {frame.NhaCungCap.ten}</div>}
+                                    </td>
+                                    <td className="p-2 sm:p-3 font-mono text-xs text-gray-500 hidden sm:table-cell">{frame.ma_gong || '-'}</td>
+                                    <td className="p-2 sm:p-3 text-xs text-gray-500 hidden md:table-cell">
+                                      {[frame.mau_sac, frame.kich_co].filter(Boolean).join(' / ') || '-'}
+                                    </td>
+                                    <td className="p-2 sm:p-3 text-right text-xs">{(frame.gia_nhap || 0).toLocaleString('vi-VN')}</td>
+                                    <td className="p-2 sm:p-3 text-right text-xs font-medium">{(frame.gia_ban || 0).toLocaleString('vi-VN')}</td>
+                                    <td className="p-2 sm:p-3 text-center font-bold">{tonKho}</td>
+                                    <td className="p-2 sm:p-3 text-center">
+                                      <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full ${
+                                        trangThai === 'HET' ? 'bg-red-100 text-red-700' :
+                                        trangThai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-green-100 text-green-700'
+                                      }`}>
+                                        {trangThai === 'HET' ? 'Hết' : trangThai === 'SAP_HET' ? 'Sắp hết' : 'Đủ'}
+                                      </span>
+                                    </td>
+                                    <td className="p-1.5 sm:p-3 text-center">
+                                      <button
+                                        onClick={() => { setSelectedFrame(frame); setShowFrameImport(true); }}
+                                        className="p-1 sm:p-1.5 rounded-lg hover:bg-green-100 text-green-600" title="Nhập kho"
+                                      >
+                                        <ArrowDownToLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Nhóm giá gọng tồn kho */}
+                  {nhomGiaGongs.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Tags className="w-5 h-5" />
+                          Tồn kho theo nhóm giá ({nhomGiaGongs.length})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead className="bg-gray-100 border-b">
+                              <tr>
+                                <th className="px-4 py-2 text-left">Nhóm giá</th>
+                                <th className="px-4 py-2 text-right">Giá bán (từ-đến)</th>
+                                <th className="px-4 py-2 text-right">Giá mặc định</th>
+                                <th className="px-4 py-2 text-right">Giá nhập TB</th>
+                                <th className="px-4 py-2 text-center">Tồn kho</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {nhomGiaGongs.map(nhom => (
+                                <tr key={nhom.id} className="border-b hover:bg-gray-50">
+                                  <td className="px-4 py-2 font-medium">{nhom.ten_nhom}</td>
+                                  <td className="px-4 py-2 text-right text-gray-600">{nhom.gia_ban_tu.toLocaleString()}đ - {nhom.gia_ban_den.toLocaleString()}đ</td>
+                                  <td className="px-4 py-2 text-right">{nhom.gia_ban_mac_dinh.toLocaleString()}đ</td>
+                                  <td className="px-4 py-2 text-right text-gray-500">{nhom.gia_nhap_trung_binh.toLocaleString()}đ</td>
+                                  <td className={`px-4 py-2 text-center font-bold ${nhom.so_luong_ton <= 0 ? 'text-red-600' : nhom.so_luong_ton <= 5 ? 'text-yellow-600' : 'text-green-600'}`}>
+                                    {nhom.so_luong_ton}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+
               {/* ======================== TAB: TRÒNG CẦN ĐẶT ======================== */}
               {activeTab === 'lens_order' && (
                 <Card>
@@ -937,6 +1322,85 @@ export default function QuanLyKho() {
                 </Card>
               )}
             </>
+          )}
+
+          {/* ======================== TAB: PHIẾU NHẬP KHO ======================== */}
+          {activeTab === 'import' && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-lg">
+                    <div className="flex items-center gap-2">
+                      <Upload className="w-5 h-5" />
+                      Phiếu nhập kho ({receipts.length})
+                    </div>
+                    <Button size="sm" onClick={() => { fetchCatalogItems(); setShowCreateReceipt(true); }} className="ml-auto">
+                      <Plus className="w-4 h-4 mr-1" /> Tạo phiếu nhập
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {receipts.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">Chưa có phiếu nhập nào</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {receipts.map(r => (
+                        <div key={r.id} className="border rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => setExpandedReceipt(expandedReceipt === r.id ? null : r.id)}
+                            className="w-full p-3 sm:p-4 flex items-center justify-between hover:bg-gray-50 text-left"
+                          >
+                            <div>
+                              <div className="font-medium text-sm sm:text-base">
+                                {r.ma_phieu || `PN-${r.id}`}
+                                {r.NhaCungCap && <span className="text-gray-500 ml-2 text-xs">NCC: {r.NhaCungCap.ten}</span>}
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {new Date(r.ngay_nhap).toLocaleDateString('vi-VN')} · {r.import_receipt_detail?.length || 0} dòng · {(r.tong_tien || 0).toLocaleString('vi-VN')}đ
+                              </div>
+                              {r.ghi_chu && <div className="text-xs text-gray-400 mt-0.5">{r.ghi_chu}</div>}
+                            </div>
+                            <span className="text-gray-400 text-lg">{expandedReceipt === r.id ? '▲' : '▼'}</span>
+                          </button>
+                          {expandedReceipt === r.id && r.import_receipt_detail && (
+                            <div className="border-t bg-gray-50 p-3">
+                              <table className="w-full text-xs sm:text-sm">
+                                <thead>
+                                  <tr className="text-gray-500">
+                                    <th className="text-left pb-1">Hàng hóa</th>
+                                    <th className="text-center pb-1">SL</th>
+                                    <th className="text-right pb-1 hidden sm:table-cell">Đơn giá</th>
+                                    <th className="text-right pb-1">Thành tiền</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.import_receipt_detail.map(d => (
+                                    <tr key={d.id} className="border-t border-gray-200">
+                                      <td className="py-1.5">
+                                        <span className={`text-[10px] px-1 py-0.5 rounded mr-1 ${
+                                          d.loai_hang === 'thuoc' ? 'bg-purple-100 text-purple-700' :
+                                          d.loai_hang === 'trong_kinh' ? 'bg-blue-100 text-blue-700' :
+                                          d.loai_hang === 'gong_kinh' ? 'bg-orange-100 text-orange-700' :
+                                          'bg-gray-100 text-gray-700'
+                                        }`}>{loaiHangLabel[d.loai_hang]}</span>
+                                        {getReceiptDetailLabel(d)}
+                                      </td>
+                                      <td className="text-center py-1.5">{d.so_luong}</td>
+                                      <td className="text-right py-1.5 hidden sm:table-cell">{(d.don_gia || 0).toLocaleString('vi-VN')}</td>
+                                      <td className="text-right py-1.5 font-medium">{(d.thanh_tien || 0).toLocaleString('vi-VN')}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {/* ======================== DIALOG: THÊM ĐỘ MỚI ======================== */}
@@ -1234,6 +1698,162 @@ export default function QuanLyKho() {
                 <Button onClick={handleImportExcel} disabled={importRows.length === 0 || importing}>
                   {importing ? 'Đang nhập...' : `Nhập ${importRows.length} dòng`}
                 </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* ======================== DIALOG: NHẬP KHO GỌNG ======================== */}
+          <Dialog open={showFrameImport} onOpenChange={(open) => { setShowFrameImport(open); if (!open) setSelectedFrame(null); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nhập kho gọng kính</DialogTitle>
+              </DialogHeader>
+              {selectedFrame && (
+                <div className="space-y-4">
+                  <div className="bg-blue-50 rounded-lg p-3 text-sm">
+                    <p className="font-medium">{selectedFrame.ten_gong}</p>
+                    {selectedFrame.ma_gong && <p className="text-blue-600 text-xs">Mã: {selectedFrame.ma_gong}</p>}
+                    <p className="text-gray-500">Tồn hiện tại: <span className="font-bold">{selectedFrame.ton_kho ?? 0}</span></p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Số lượng nhập *</Label>
+                      <Input type="number" min="1" value={frameImportForm.so_luong}
+                        onChange={e => setFrameImportForm({ ...frameImportForm, so_luong: e.target.value })} placeholder="1" />
+                    </div>
+                    <div>
+                      <Label>Đơn giá (VND)</Label>
+                      <Input type="number" value={frameImportForm.don_gia}
+                        onChange={e => setFrameImportForm({ ...frameImportForm, don_gia: e.target.value })} placeholder="0" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Ghi chú</Label>
+                    <Input value={frameImportForm.ghi_chu}
+                      onChange={e => setFrameImportForm({ ...frameImportForm, ghi_chu: e.target.value })} placeholder="Nhập từ NCC..." />
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowFrameImport(false)}>Hủy</Button>
+                <Button onClick={handleFrameImport} disabled={!frameImportForm.so_luong}>Nhập kho</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* ======================== DIALOG: TẠO PHIẾU NHẬP ======================== */}
+          <Dialog open={showCreateReceipt} onOpenChange={(open) => { setShowCreateReceipt(open); if (!open) { setReceiptDetails([]); setReceiptForm({ ma_phieu: '', nha_cung_cap_id: '', ghi_chu: '' }); } }}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Tạo phiếu nhập kho tổng hợp</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label>Mã phiếu</Label>
+                    <Input value={receiptForm.ma_phieu} onChange={e => setReceiptForm({ ...receiptForm, ma_phieu: e.target.value })}
+                      placeholder={`PN-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`} />
+                  </div>
+                  <div>
+                    <Label>Nhà cung cấp</Label>
+                    <select className="w-full border rounded-md px-3 py-2 text-sm" value={receiptForm.nha_cung_cap_id}
+                      onChange={e => setReceiptForm({ ...receiptForm, nha_cung_cap_id: e.target.value })}>
+                      <option value="">-- Chọn NCC --</option>
+                      {nhaCungCaps.map(n => <option key={n.id} value={n.id}>{n.ten}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Ghi chú</Label>
+                    <Input value={receiptForm.ghi_chu} onChange={e => setReceiptForm({ ...receiptForm, ghi_chu: e.target.value })}
+                      placeholder="Ghi chú..." />
+                  </div>
+                </div>
+
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label className="text-sm font-medium">Chi tiết hàng nhập</Label>
+                    <Button size="sm" variant="outline" onClick={handleAddReceiptLine}>
+                      <Plus className="w-3 h-3 mr-1" /> Thêm dòng
+                    </Button>
+                  </div>
+
+                  {receiptDetails.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-4">Nhấn "Thêm dòng" để bắt đầu</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {receiptDetails.map((line, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-end bg-gray-50 rounded-lg p-2">
+                          <div className="col-span-3 sm:col-span-2">
+                            <label className="text-[10px] text-gray-500">Loại</label>
+                            <select className="w-full border rounded px-2 py-1.5 text-xs"
+                              value={line.loai_hang}
+                              onChange={e => {
+                                const updated = [...receiptDetails];
+                                updated[idx] = { ...updated[idx], loai_hang: e.target.value, item_id: '', item_label: '' };
+                                setReceiptDetails(updated);
+                              }}>
+                              <option value="gong_kinh">Gọng</option>
+                              <option value="trong_kinh">Tròng</option>
+                              <option value="thuoc">Thuốc</option>
+                            </select>
+                          </div>
+                          <div className="col-span-5 sm:col-span-4">
+                            <label className="text-[10px] text-gray-500">Hàng hóa</label>
+                            <select className="w-full border rounded px-2 py-1.5 text-xs"
+                              value={line.item_id}
+                              onChange={e => {
+                                const updated = [...receiptDetails];
+                                updated[idx] = { ...updated[idx], item_id: e.target.value, item_label: getItemLabel(line.loai_hang, e.target.value) };
+                                setReceiptDetails(updated);
+                              }}>
+                              <option value="">-- Chọn --</option>
+                              {line.loai_hang === 'gong_kinh' && catalogItems.gong_kinh.map((g: any) => (
+                                <option key={g.id} value={g.id}>{g.ten_gong}{g.ma_gong ? ` (${g.ma_gong})` : ''}</option>
+                              ))}
+                              {line.loai_hang === 'trong_kinh' && catalogItems.trong_kinh.map((l: any) => (
+                                <option key={l.id} value={l.id}>{l.HangTrong?.ten_hang || '?'} ({l.sph}/{l.cyl}){l.add_power ? ` ADD${l.add_power}` : ''}</option>
+                              ))}
+                              {line.loai_hang === 'thuoc' && catalogItems.thuoc.map((t: any) => (
+                                <option key={t.id} value={t.id}>{t.ten}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-span-2 sm:col-span-2">
+                            <label className="text-[10px] text-gray-500">SL</label>
+                            <Input type="number" min="1" className="text-xs h-8"
+                              value={line.so_luong}
+                              onChange={e => {
+                                const updated = [...receiptDetails];
+                                updated[idx] = { ...updated[idx], so_luong: e.target.value };
+                                setReceiptDetails(updated);
+                              }} />
+                          </div>
+                          <div className="col-span-3 sm:col-span-3 hidden sm:block">
+                            <label className="text-[10px] text-gray-500">Đơn giá</label>
+                            <Input type="number" className="text-xs h-8"
+                              value={line.don_gia}
+                              onChange={e => {
+                                const updated = [...receiptDetails];
+                                updated[idx] = { ...updated[idx], don_gia: e.target.value };
+                                setReceiptDetails(updated);
+                              }} />
+                          </div>
+                          <div className="col-span-2 sm:col-span-1 flex justify-end">
+                            <button onClick={() => handleRemoveReceiptLine(idx)}
+                              className="p-1.5 rounded hover:bg-red-100 text-red-500" title="Xóa dòng">
+                              <Ban className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="text-right text-sm font-medium pt-2 border-t">
+                        Tổng: {receiptDetails.reduce((s, d) => s + (parseInt(d.so_luong) || 0) * (parseInt(d.don_gia) || 0), 0).toLocaleString('vi-VN')}đ
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowCreateReceipt(false)}>Hủy</Button>
+                <Button onClick={handleSubmitReceipt} disabled={receiptDetails.length === 0}>Tạo phiếu</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

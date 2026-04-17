@@ -165,6 +165,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const lensCost = (req.body as any).gianhap_trong ?? 0;
   const frameCost = (req.body as any).gianhap_gong ?? 0;
 
+      // Nhóm giá gọng: khi bán theo nhóm giá thay vì gọng cụ thể
+      const nhom_gia_gong_id = (req.body as any).nhom_gia_gong_id ? parseInt((req.body as any).nhom_gia_gong_id) : null;
+
       // === Resolve FK IDs from text names ===
       const useFk = await checkFkColumns();
       const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, {
@@ -209,6 +212,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         insertPayload.gong_kinh_id = fkIds.gong_kinh_id;
       }
 
+      // Nhóm giá gọng: bán theo nhóm giá
+      if (nhom_gia_gong_id) {
+        insertPayload.nhom_gia_gong_id = nhom_gia_gong_id;
+        // Snapshot giá vốn gọng từ gia_nhap_trung_binh của nhóm
+        const { data: nhomGia } = await supabase
+          .from('nhom_gia_gong')
+          .select('gia_nhap_trung_binh')
+          .eq('id', nhom_gia_gong_id)
+          .eq('tenant_id', tenantId)
+          .single();
+        insertPayload.gia_von_gong = nhomGia?.gia_nhap_trung_binh ?? frameCost;
+      } else {
+        insertPayload.gia_von_gong = frameCost;
+      }
+
       const { data, error } = await supabase
         .from('DonKinh')
         .insert([insertPayload])
@@ -227,6 +245,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             sokinh_moi_mt: sokinh_moi_mt as string,
             hangtrong_mt: hangtrong_mt as string,
             ten_gong: ten_gong as string,
+            gong_kinh_id: fkIds.gong_kinh_id ?? undefined,
+            nhom_gia_gong_id: nhom_gia_gong_id ?? undefined,
           });
           inventoryWarnings.push(...invResult.warnings);
         } catch (invErr) {
@@ -279,6 +299,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const lensCost = (req.body as any).gianhap_trong ?? 0;
   const frameCost = (req.body as any).gianhap_gong ?? 0;
 
+      const nhom_gia_gong_id_put = (req.body as any).nhom_gia_gong_id ? parseInt((req.body as any).nhom_gia_gong_id) : null;
+
       // === Fetch old DonKinh to compare & reverse inventory ===
       const { data: oldDon } = await supabase
         .from('DonKinh')
@@ -329,6 +351,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         updatePayload.gong_kinh_id = fkIds.gong_kinh_id;
       }
 
+      // Nhóm giá gọng cho PUT
+      if (nhom_gia_gong_id_put) {
+        updatePayload.nhom_gia_gong_id = nhom_gia_gong_id_put;
+        const { data: nhomGia } = await supabase
+          .from('nhom_gia_gong')
+          .select('gia_nhap_trung_binh')
+          .eq('id', nhom_gia_gong_id_put)
+          .eq('tenant_id', tenantId)
+          .single();
+        updatePayload.gia_von_gong = nhomGia?.gia_nhap_trung_binh ?? frameCost;
+      } else {
+        updatePayload.nhom_gia_gong_id = null;
+        updatePayload.gia_von_gong = frameCost;
+      }
+
       const { data, error } = await supabase
         .from('DonKinh')
         .update(updatePayload)
@@ -359,6 +396,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               sokinh_moi_mt: sokinh_moi_mt as string,
               hangtrong_mt: hangtrong_mt as string,
               ten_gong: ten_gong as string,
+              gong_kinh_id: fkIds.gong_kinh_id ?? undefined,
+              nhom_gia_gong_id: nhom_gia_gong_id_put ?? undefined,
             });
             inventoryWarnings.push(...invResult.warnings);
           } catch (invErr) {
@@ -540,17 +579,8 @@ async function reverseInventory(
 
   if (lensExports && lensExports.length > 0) {
     for (const exp of lensExports) {
-      // Read current stock then add back
-      const { data: stock } = await db.from('lens_stock')
-        .select('ton_hien_tai')
-        .eq('id', exp.lens_stock_id)
-        .single();
-      if (stock) {
-        await db.from('lens_stock').update({
-          ton_hien_tai: stock.ton_hien_tai + exp.so_luong,
-          updated_at: new Date().toISOString(),
-        }).eq('id', exp.lens_stock_id);
-      }
+      // Atomic: cộng lại tồn kho tròng
+      await db.rpc('adjust_lens_stock', { p_lens_stock_id: exp.lens_stock_id, p_delta: exp.so_luong });
     }
     // Delete old lens exports for this donkinh
     await db.from('lens_export_sale').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
@@ -566,12 +596,8 @@ async function reverseInventory(
 
   if (frameExports && frameExports.length > 0) {
     for (const exp of frameExports) {
-      const { data: gong } = await db.from('GongKinh').select('ton_kho').eq('id', exp.gong_kinh_id).single();
-      if (gong) {
-        await db.from('GongKinh').update({
-          ton_kho: (gong.ton_kho || 0) + exp.so_luong,
-        }).eq('id', exp.gong_kinh_id);
-      }
+      // Atomic: cộng lại tồn kho gọng
+      await db.rpc('adjust_frame_stock', { p_gong_kinh_id: exp.gong_kinh_id, p_delta: exp.so_luong });
     }
     await db.from('frame_export').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
     console.log(`🔄 Hoàn kho ${frameExports.length} gọng cho đơn #${donKinhId}`);
@@ -592,6 +618,8 @@ async function processLensInventory(
     sokinh_moi_mt: string;
     hangtrong_mt: string;
     ten_gong: string;
+    gong_kinh_id?: number; // FK ID resolved trước, ưu tiên dùng thay vì tìm bằng tên
+    nhom_gia_gong_id?: number; // Nếu bán theo nhóm giá, trừ tồn nhóm thay vì gọng cụ thể
   }
 ): Promise<{ warnings: string[] }> {
   const warnings: string[] = [];
@@ -695,30 +723,13 @@ async function processLensInventory(
         });
 
         if (expErr) {
-          // Export table insert failed — update stock directly as fallback
-          console.log(`📦 [Inventory] ${eye.label}: lens_export_sale INSERT lỗi (${expErr.message}), trừ kho trực tiếp`);
+          // Export table insert failed — trừ kho atomic qua RPC
+          console.log(`📦 [Inventory] ${eye.label}: lens_export_sale INSERT lỗi (${expErr.message}), trừ kho qua RPC`);
           warnings.push(`⚠️ ${eye.label}: Không ghi được phiếu xuất (${expErr.message}), đã trừ kho trực tiếp.`);
-          await db.from('lens_stock').update({
-            ton_hien_tai: tonTruoc - 1,
-            updated_at: new Date().toISOString(),
-          }).eq('id', stock.id);
+          await db.rpc('adjust_lens_stock', { p_lens_stock_id: stock.id, p_delta: -1 });
         } else {
-          // Export inserted OK — verify trigger actually deducted stock
-          const { data: afterStock } = await db.from('lens_stock')
-            .select('ton_hien_tai')
-            .eq('id', stock.id)
-            .single();
-
-          if (afterStock && afterStock.ton_hien_tai >= tonTruoc) {
-            // Trigger didn't fire — update stock manually
-            console.log(`📦 [Inventory] ${eye.label}: Trigger chưa trừ kho (trước=${tonTruoc}, sau=${afterStock.ton_hien_tai}). Trừ trực tiếp.`);
-            await db.from('lens_stock').update({
-              ton_hien_tai: tonTruoc - 1,
-              updated_at: new Date().toISOString(),
-            }).eq('id', stock.id);
-          } else {
-            console.log(`📦 [Inventory] ${eye.label}: ✅ Đã trừ kho tròng stock#${stock.id} (${tonTruoc} → ${afterStock?.ton_hien_tai})`);
-          }
+          // Export inserted OK → trigger đã trừ kho
+          console.log(`📦 [Inventory] ${eye.label}: ✅ Đã xuất kho tròng stock#${stock.id} (tồn trước: ${tonTruoc})`);
         }
       } else {
         // Không có tồn kho cho độ này → tạo đơn đặt tròng (lens_order) để hiện trong tab "Tròng cần đặt"
@@ -767,14 +778,53 @@ async function processLensInventory(
   }
 
   // === Frame export ===
-  if (fields.ten_gong) {
-    const { data: gong, error: gongErr } = await db
-      .from('GongKinh')
-      .select('id, ton_kho')
+  if (fields.nhom_gia_gong_id) {
+    // Bán theo nhóm giá → trừ tồn nhóm, không cần gọng cụ thể
+    const { data: nhomGia } = await db
+      .from('nhom_gia_gong')
+      .select('id, ten_nhom, so_luong_ton')
+      .eq('id', fields.nhom_gia_gong_id)
       .eq('tenant_id', tenantId)
-      .eq('ten_gong', fields.ten_gong)
-      .limit(1)
-      .maybeSingle();
+      .single();
+
+    if (nhomGia) {
+      const tonTruoc = nhomGia.so_luong_ton || 0;
+      if (tonTruoc <= 0) {
+        warnings.push(`⚠️ Nhóm giá "${nhomGia.ten_nhom}" đã HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất, tồn sẽ âm.`);
+      } else if (tonTruoc <= 2) {
+        warnings.push(`⚠️ Nhóm giá "${nhomGia.ten_nhom}" SẮP HẾT (tồn: ${tonTruoc})`);
+      }
+      await db.rpc('adjust_nhom_gia_stock', { p_nhom_id: nhomGia.id, p_delta: -1 });
+      console.log(`📦 [Inventory] Nhóm giá: ✅ Đã trừ kho "${nhomGia.ten_nhom}" (tồn trước: ${tonTruoc})`);
+    } else {
+      warnings.push(`⚠️ Không tìm thấy nhóm giá gọng id=${fields.nhom_gia_gong_id}`);
+    }
+  } else if (fields.ten_gong || fields.gong_kinh_id) {
+    // Ưu tiên dùng gong_kinh_id (FK) thay vì tìm bằng tên để tránh trùng/sai
+    let gong: { id: number; ton_kho: number } | null = null;
+    let gongErr: any = null;
+
+    if (fields.gong_kinh_id) {
+      const result = await db
+        .from('GongKinh')
+        .select('id, ton_kho')
+        .eq('id', fields.gong_kinh_id)
+        .eq('tenant_id', tenantId)
+        .single();
+      gong = result.data;
+      gongErr = result.error;
+    } else {
+      // Fallback: tìm bằng tên (backward compat khi chưa có FK)
+      const result = await db
+        .from('GongKinh')
+        .select('id, ton_kho')
+        .eq('tenant_id', tenantId)
+        .eq('ten_gong', fields.ten_gong)
+        .limit(1)
+        .maybeSingle();
+      gong = result.data;
+      gongErr = result.error;
+    }
 
     if (gongErr) {
       warnings.push(`⚠️ Lỗi tìm gọng "${fields.ten_gong}": ${gongErr.message}`);
@@ -787,7 +837,7 @@ async function processLensInventory(
         warnings.push(`⚠️ Gọng "${fields.ten_gong}" SẮP HẾT (tồn: ${tonTruoc})`);
       }
 
-      // Insert frame export record (for audit trail + trigger may fire)
+      // Insert frame export record (trigger sẽ trừ kho tự động)
       const { error: fExpErr } = await db.from('frame_export').insert({
         tenant_id: tenantId,
         gong_kinh_id: gong.id,
@@ -796,31 +846,15 @@ async function processLensInventory(
       });
 
       if (fExpErr) {
-        // Export table failed — update GongKinh directly
-        console.log(`📦 [Inventory] Gọng: frame_export INSERT lỗi (${fExpErr.message}), trừ kho trực tiếp`);
+        // Export table failed → trừ kho atomic qua RPC
+        console.log(`📦 [Inventory] Gọng: frame_export INSERT lỗi (${fExpErr.message}), trừ kho qua RPC`);
         warnings.push(`⚠️ Gọng: Không ghi được phiếu xuất (${fExpErr.message}), đã trừ kho trực tiếp.`);
-        await db.from('GongKinh').update({
-          ton_kho: tonTruoc - 1,
-        }).eq('id', gong.id);
+        await db.rpc('adjust_frame_stock', { p_gong_kinh_id: gong.id, p_delta: -1 });
       } else {
-        // Verify trigger deducted stock
-        const { data: afterGong } = await db.from('GongKinh')
-          .select('ton_kho')
-          .eq('id', gong.id)
-          .single();
-
-        if (afterGong && (afterGong.ton_kho || 0) >= tonTruoc) {
-          // Trigger didn't fire — update manually
-          console.log(`📦 [Inventory] Gọng: Trigger chưa trừ kho (trước=${tonTruoc}, sau=${afterGong.ton_kho}). Trừ trực tiếp.`);
-          await db.from('GongKinh').update({
-            ton_kho: tonTruoc - 1,
-          }).eq('id', gong.id);
-        } else {
-          console.log(`📦 [Inventory] Gọng: ✅ Đã trừ kho "${fields.ten_gong}" (${tonTruoc} → ${afterGong?.ton_kho})`);
-        }
+        console.log(`📦 [Inventory] Gọng: ✅ Đã xuất kho "${fields.ten_gong}" (tồn trước: ${tonTruoc})`);
       }
     } else {
-      console.log(`📦 [Inventory] Gọng "${fields.ten_gong}" NOT FOUND trong GongKinh`);
+      console.log(`📦 [Inventory] Gọng "${fields.ten_gong}" (id=${fields.gong_kinh_id}) NOT FOUND trong GongKinh`);
     }
   }
 

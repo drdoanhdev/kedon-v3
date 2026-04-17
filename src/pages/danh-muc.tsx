@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2 } from 'lucide-react';
+import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2, Tags } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
@@ -58,6 +58,13 @@ interface GongKinh {
   gia_nhap: number;
   gia_ban: number;
   mo_ta?: string;
+  ma_gong?: string;
+  mau_sac?: string;
+  kich_co?: string;
+  nha_cung_cap_id?: number | null;
+  ton_kho?: number;
+  muc_ton_can_co?: number;
+  NhaCungCap?: { id: number; ten: string } | null;
 }
 
 interface MauThiLuc {
@@ -81,6 +88,18 @@ interface NhaCungCap {
   facebook?: string;
 }
 
+interface NhomGiaGong {
+  id: number;
+  ten_nhom: string;
+  gia_ban_tu: number;
+  gia_ban_den: number;
+  gia_ban_mac_dinh: number;
+  gia_nhap_trung_binh: number;
+  so_luong_ton: number;
+  mo_ta?: string;
+  trang_thai: string;
+}
+
 function DanhMucPage() {
   const { confirm } = useConfirm();
   // Define tab options
@@ -89,6 +108,7 @@ function DanhMucPage() {
     { value: 'don-mau', label: 'Đơn mẫu', icon: Package },
     { value: 'hang-trong', label: 'Tròng', icon: Glasses },
     { value: 'gong-kinh', label: 'Gọng', icon: Frame },
+    { value: 'nhom-gia-gong', label: 'Nhóm giá gọng', icon: Tags },
   { value: 'nha-cung-cap', label: 'Nhà cung cấp', icon: Building2 },
     { value: 'so-kinh', label: 'Số kính', icon: Target },
     { value: 'thi-luc', label: 'Thị lực', icon: Eye },
@@ -179,6 +199,19 @@ function DanhMucPage() {
   const [isEditingNCC, setIsEditingNCC] = useState(false);
   const [nccForm, setNccForm] = useState<NhaCungCap>({ id: 0, ten: '', dia_chi: '', dien_thoai: '', ghi_chu: '', facebook: '' });
 
+  // States cho Nhóm giá gọng
+  const [dsNhomGiaGong, setDsNhomGiaGong] = useState<NhomGiaGong[]>([]);
+  const [searchNhomGia, setSearchNhomGia] = useState('');
+  const [openNhomGiaDialog, setOpenNhomGiaDialog] = useState(false);
+  const [isEditingNhomGia, setIsEditingNhomGia] = useState(false);
+  const [nhomGiaForm, setNhomGiaForm] = useState<NhomGiaGong>({
+    id: 0, ten_nhom: '', gia_ban_tu: 0, gia_ban_den: 0, gia_ban_mac_dinh: 0,
+    gia_nhap_trung_binh: 0, so_luong_ton: 0, mo_ta: '', trang_thai: 'active',
+  });
+  // Nhập kho nhóm giá
+  const [openNhomGiaNhapDialog, setOpenNhomGiaNhapDialog] = useState(false);
+  const [nhapNhomGiaForm, setNhapNhomGiaForm] = useState({ nhom_gia_gong_id: 0, so_luong: 1, don_gia: 0, ghi_chu: '' });
+
   // Xác thực lại bằng mật khẩu tài khoản Supabase
   const { user, signIn } = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -242,6 +275,15 @@ function DanhMucPage() {
     }
   };
 
+  const fetchNhomGiaGong = async () => {
+    try {
+      const response = await axios.get('/api/nhom-gia-gong');
+      setDsNhomGiaGong(response.data || []);
+    } catch (error) {
+      console.error('Lỗi khi tải nhóm giá gọng:', error);
+    }
+  };
+
   const fetchMauDuLieu = async () => {
     try {
       const [resThiLuc, resSoKinh] = await Promise.all([
@@ -261,6 +303,7 @@ function DanhMucPage() {
     fetchDonMau();
     fetchHangTrong();
     fetchGongKinh();
+    fetchNhomGiaGong();
     fetchMauDuLieu();
   fetchNhaCungCap();
   }, []);
@@ -525,6 +568,12 @@ function DanhMucPage() {
       gia_nhap: 0,
       gia_ban: 0,
       mo_ta: '',
+      ma_gong: '',
+      mau_sac: '',
+      kich_co: '',
+      nha_cung_cap_id: null,
+      ton_kho: 0,
+      muc_ton_can_co: 2,
     });
   };
 
@@ -573,6 +622,74 @@ function DanhMucPage() {
     }
   };
   // === END: Logic cho Gọng Kính ===
+
+  // === START: Logic cho Nhóm Giá Gọng ===
+  const resetNhomGiaForm = () => {
+    setIsEditingNhomGia(false);
+    setNhomGiaForm({
+      id: 0, ten_nhom: '', gia_ban_tu: 0, gia_ban_den: 0, gia_ban_mac_dinh: 0,
+      gia_nhap_trung_binh: 0, so_luong_ton: 0, mo_ta: '', trang_thai: 'active',
+    });
+  };
+
+  const handleEditNhomGia = (nhom: NhomGiaGong) => {
+    setIsEditingNhomGia(true);
+    setNhomGiaForm(nhom);
+    setOpenNhomGiaDialog(true);
+  };
+
+  const handleSubmitNhomGia = async () => {
+    if (!nhomGiaForm.ten_nhom) {
+      toast.error('Vui lòng nhập tên nhóm giá.');
+      return;
+    }
+    try {
+      if (isEditingNhomGia) {
+        await axios.put('/api/nhom-gia-gong', nhomGiaForm);
+        toast.success('Đã cập nhật nhóm giá');
+      } else {
+        const { id, so_luong_ton, gia_nhap_trung_binh, ...payload } = nhomGiaForm;
+        await axios.post('/api/nhom-gia-gong', payload);
+        toast.success('Đã thêm nhóm giá');
+      }
+      setOpenNhomGiaDialog(false);
+      resetNhomGiaForm();
+      fetchNhomGiaGong();
+    } catch (error) {
+      const message = axios.isAxiosError(error) ? error.response?.data?.error || error.message : 'Lỗi không xác định';
+      toast.error(`Lỗi: ${message}`);
+    }
+  };
+
+  const handleDeleteNhomGia = async (id: number) => {
+    if (!await confirm('Bạn có chắc chắn muốn xóa nhóm giá này?')) return;
+    try {
+      await axios.delete(`/api/nhom-gia-gong?id=${id}`);
+      toast.success('Xóa nhóm giá thành công');
+      fetchNhomGiaGong();
+    } catch (error) {
+      const message = axios.isAxiosError(error) ? error.response?.data?.error || error.message : 'Lỗi không xác định';
+      toast.error(`Lỗi: ${message}`);
+    }
+  };
+
+  const handleNhapKhoNhomGia = async () => {
+    if (!nhapNhomGiaForm.nhom_gia_gong_id || nhapNhomGiaForm.so_luong <= 0) {
+      toast.error('Chọn nhóm giá và nhập số lượng > 0');
+      return;
+    }
+    try {
+      await axios.post('/api/inventory/nhom-gia-gong-nhap', nhapNhomGiaForm);
+      toast.success('Nhập kho thành công');
+      setOpenNhomGiaNhapDialog(false);
+      setNhapNhomGiaForm({ nhom_gia_gong_id: 0, so_luong: 1, don_gia: 0, ghi_chu: '' });
+      fetchNhomGiaGong();
+    } catch (error) {
+      const message = axios.isAxiosError(error) ? error.response?.data?.error || error.message : 'Lỗi không xác định';
+      toast.error(`Lỗi: ${message}`);
+    }
+  };
+  // === END: Logic cho Nhóm Giá Gọng ===
 
   // === START: Logic cho Mẫu Dữ Liệu (Số Kính, Thị Lực) ===
   const resetSoKinhForm = () => {
@@ -1165,10 +1282,14 @@ function DanhMucPage() {
   };
 
   const renderGongKinhTab = () => {
-    const filtered = dsGongKinh.filter((gong) =>
-      gong.ten_gong.toLowerCase().includes(searchGongKinh.toLowerCase()) ||
-      (gong.chat_lieu && gong.chat_lieu.toLowerCase().includes(searchGongKinh.toLowerCase()))
-    );
+    const filtered = dsGongKinh.filter((gong) => {
+      const s = searchGongKinh.toLowerCase();
+      return gong.ten_gong.toLowerCase().includes(s) ||
+        (gong.chat_lieu && gong.chat_lieu.toLowerCase().includes(s)) ||
+        (gong.ma_gong && gong.ma_gong.toLowerCase().includes(s)) ||
+        (gong.mau_sac && gong.mau_sac.toLowerCase().includes(s)) ||
+        (gong.NhaCungCap?.ten && gong.NhaCungCap.ten.toLowerCase().includes(s));
+    });
 
     return (
       <div className="space-y-4">
@@ -1193,21 +1314,30 @@ function DanhMucPage() {
               <thead className="bg-gray-100 border-b">
                 <tr>
                   <th className="px-4 py-2 text-left">Tên gọng</th>
+                  <th className="px-4 py-2 text-left hidden sm:table-cell">Mã</th>
+                  <th className="px-4 py-2 text-left hidden md:table-cell">Màu / Kích cỡ</th>
                   <th className="px-4 py-2 text-left">Chất liệu</th>
-                  <th className="px-4 py-2 text-left">Giá nhập</th>
-                  <th className="px-4 py-2 text-left">Giá bán</th>
-                  <th className="px-4 py-2 text-left">Mô tả</th>
+                  <th className="px-4 py-2 text-right">Giá nhập</th>
+                  <th className="px-4 py-2 text-right">Giá bán</th>
+                  <th className="px-4 py-2 text-center">Tồn kho</th>
                   <th className="px-4 py-2 text-center">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((gong) => (
                   <tr key={gong.id} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium">{gong.ten_gong}</td>
+                    <td className="px-4 py-2">
+                      <div className="font-medium">{gong.ten_gong}</div>
+                      {gong.NhaCungCap && <div className="text-xs text-gray-400">NCC: {gong.NhaCungCap.ten}</div>}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs text-gray-500 hidden sm:table-cell">{gong.ma_gong || '-'}</td>
+                    <td className="px-4 py-2 text-xs text-gray-500 hidden md:table-cell">
+                      {[gong.mau_sac, gong.kich_co].filter(Boolean).join(' / ') || '-'}
+                    </td>
                     <td className="px-4 py-2">{gong.chat_lieu || '-'}</td>
-                    <td className="px-4 py-2">{gong.gia_nhap.toLocaleString()}đ</td>
-                    <td className="px-4 py-2 font-medium">{gong.gia_ban.toLocaleString()}đ</td>
-                    <td className="px-4 py-2">{gong.mo_ta || '-'}</td>
+                    <td className="px-4 py-2 text-right">{(gong.gia_nhap || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-right font-medium">{(gong.gia_ban || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-center font-bold">{gong.ton_kho ?? 0}</td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center space-x-2">
                         <Button
@@ -1222,6 +1352,92 @@ function DanhMucPage() {
                           variant="destructive"
                           onClick={() => handleDeleteGongKinh(gong.id)}
                         >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
+  const renderNhomGiaGongTab = () => {
+    const filtered = dsNhomGiaGong.filter((nhom) => {
+      const s = searchNhomGia.toLowerCase();
+      return nhom.ten_nhom.toLowerCase().includes(s) ||
+        (nhom.mo_ta && nhom.mo_ta.toLowerCase().includes(s));
+    });
+
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-between items-center flex-wrap gap-2">
+          <h2 className="text-xl md:text-2xl font-bold">Nhóm giá gọng kính</h2>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => {
+              setNhapNhomGiaForm({ nhom_gia_gong_id: 0, so_luong: 1, don_gia: 0, ghi_chu: '' });
+              setOpenNhomGiaNhapDialog(true);
+            }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nhập kho
+            </Button>
+            <Button onClick={() => { resetNhomGiaForm(); setOpenNhomGiaDialog(true); }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Thêm nhóm giá
+            </Button>
+          </div>
+        </div>
+
+        <p className="text-sm text-gray-500">
+          Phân loại gọng theo nhóm giá bán (VD: Gọng 200k-500k). Khi kê đơn kính có thể chọn theo nhóm giá thay vì chọn gọng cụ thể.
+        </p>
+
+        <Input
+          placeholder="Tìm kiếm nhóm giá..."
+          value={searchNhomGia}
+          onChange={(e) => setSearchNhomGia(e.target.value)}
+          className="w-full md:w-1/2"
+        />
+
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-100 border-b">
+                <tr>
+                  <th className="px-4 py-2 text-left">Tên nhóm</th>
+                  <th className="px-4 py-2 text-right">Giá bán từ</th>
+                  <th className="px-4 py-2 text-right">Giá bán đến</th>
+                  <th className="px-4 py-2 text-right">Giá mặc định</th>
+                  <th className="px-4 py-2 text-right hidden sm:table-cell">Giá nhập TB</th>
+                  <th className="px-4 py-2 text-center">Tồn kho</th>
+                  <th className="px-4 py-2 text-center">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={7} className="text-center py-8 text-gray-400">Chưa có nhóm giá nào. Nhấn "Thêm nhóm giá" để tạo.</td></tr>
+                )}
+                {filtered.map((nhom) => (
+                  <tr key={nhom.id} className={`border-b hover:bg-gray-50 ${nhom.trang_thai === 'inactive' ? 'opacity-50' : ''}`}>
+                    <td className="px-4 py-2">
+                      <div className="font-medium">{nhom.ten_nhom}</div>
+                      {nhom.mo_ta && <div className="text-xs text-gray-400">{nhom.mo_ta}</div>}
+                    </td>
+                    <td className="px-4 py-2 text-right">{(nhom.gia_ban_tu || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-right">{(nhom.gia_ban_den || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-right font-medium">{(nhom.gia_ban_mac_dinh || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-right text-gray-500 hidden sm:table-cell">{(nhom.gia_nhap_trung_binh || 0).toLocaleString()}đ</td>
+                    <td className="px-4 py-2 text-center font-bold">{nhom.so_luong_ton || 0}</td>
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex items-center justify-center space-x-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEditNhomGia(nhom)}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleDeleteNhomGia(nhom.id)}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
@@ -1374,6 +1590,8 @@ function DanhMucPage() {
         return renderHangTrongTab();
       case 'gong-kinh':
         return renderGongKinhTab();
+      case 'nhom-gia-gong':
+        return renderNhomGiaGongTab();
       case 'so-kinh':
         return renderSoKinhTab();
       case 'thi-luc':
@@ -1674,30 +1892,71 @@ function DanhMucPage() {
 
         {/* Dialog thêm/sửa gọng kính */}
         <Dialog open={openGongKinhDialog} onOpenChange={setOpenGongKinhDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{isEditingGongKinh ? 'Sửa gọng kính' : 'Thêm gọng kính'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <Label>Tên gọng *</Label>
-                <Input
-                  value={gongKinhForm.ten_gong}
-                  onChange={(e) => setGongKinhForm({ ...gongKinhForm, ten_gong: e.target.value })}
-                  placeholder="Nhập tên gọng kính"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Tên gọng *</Label>
+                  <Input
+                    value={gongKinhForm.ten_gong}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, ten_gong: e.target.value })}
+                    placeholder="Nhập tên gọng kính"
+                  />
+                </div>
+                <div>
+                  <Label>Mã gọng</Label>
+                  <Input
+                    value={gongKinhForm.ma_gong || ''}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, ma_gong: e.target.value })}
+                    placeholder="VD: GK001"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Chất liệu</Label>
+                  <Input
+                    value={gongKinhForm.chat_lieu || ''}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, chat_lieu: e.target.value })}
+                    placeholder="Nhựa, Titan..."
+                  />
+                </div>
+                <div>
+                  <Label>Màu sắc</Label>
+                  <Input
+                    value={gongKinhForm.mau_sac || ''}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, mau_sac: e.target.value })}
+                    placeholder="Đen, Vàng..."
+                  />
+                </div>
+                <div>
+                  <Label>Kích cỡ</Label>
+                  <Input
+                    value={gongKinhForm.kich_co || ''}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, kich_co: e.target.value })}
+                    placeholder="52-18-140"
+                  />
+                </div>
               </div>
               <div>
-                <Label>Chất liệu</Label>
-                <Input
-                  value={gongKinhForm.chat_lieu}
-                  onChange={(e) => setGongKinhForm({ ...gongKinhForm, chat_lieu: e.target.value })}
-                  placeholder="Nhập chất liệu (VD: Nhựa, Kim loại, Titan...)"
-                />
+                <Label>Nhà cung cấp</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={gongKinhForm.nha_cung_cap_id ?? ''}
+                  onChange={(e) => setGongKinhForm({ ...gongKinhForm, nha_cung_cap_id: e.target.value ? Number(e.target.value) : null })}
+                >
+                  <option value="">-- Chọn NCC --</option>
+                  {dsNhaCungCap.map(ncc => (
+                    <option key={ncc.id} value={ncc.id}>{ncc.ten}</option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label>Giá nhập</Label>
+                  <Label>Giá nhập (VND)</Label>
                   <Input
                     type="number"
                     value={gongKinhForm.gia_nhap}
@@ -1706,7 +1965,7 @@ function DanhMucPage() {
                   />
                 </div>
                 <div>
-                  <Label>Giá bán</Label>
+                  <Label>Giá bán (VND)</Label>
                   <Input
                     type="number"
                     value={gongKinhForm.gia_ban}
@@ -1715,13 +1974,34 @@ function DanhMucPage() {
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Tồn kho ban đầu</Label>
+                  <Input
+                    type="number"
+                    value={gongKinhForm.ton_kho ?? 0}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, ton_kho: +e.target.value })}
+                    placeholder="0"
+                    disabled={isEditingGongKinh}
+                  />
+                </div>
+                <div>
+                  <Label>Mức tồn cần có</Label>
+                  <Input
+                    type="number"
+                    value={gongKinhForm.muc_ton_can_co ?? 2}
+                    onChange={(e) => setGongKinhForm({ ...gongKinhForm, muc_ton_can_co: +e.target.value })}
+                    placeholder="2"
+                  />
+                </div>
+              </div>
               <div>
                 <Label>Mô tả</Label>
                 <Textarea
-                  value={gongKinhForm.mo_ta}
+                  value={gongKinhForm.mo_ta || ''}
                   onChange={(e) => setGongKinhForm({ ...gongKinhForm, mo_ta: e.target.value })}
                   placeholder="Mô tả gọng kính (tùy chọn)"
-                  rows={3}
+                  rows={2}
                 />
               </div>
             </div>
@@ -1732,6 +2012,132 @@ function DanhMucPage() {
               <Button onClick={handleSubmitGongKinh}>
                 {isEditingGongKinh ? 'Cập nhật' : 'Thêm'}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog thêm/sửa nhóm giá gọng */}
+        <Dialog open={openNhomGiaDialog} onOpenChange={setOpenNhomGiaDialog}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{isEditingNhomGia ? 'Sửa nhóm giá' : 'Thêm nhóm giá gọng'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Tên nhóm *</Label>
+                <Input
+                  value={nhomGiaForm.ten_nhom}
+                  onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, ten_nhom: e.target.value })}
+                  placeholder="VD: Gọng 200k-500k"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Giá bán từ (VND)</Label>
+                  <Input
+                    type="number"
+                    value={nhomGiaForm.gia_ban_tu}
+                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_tu: +e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Giá bán đến (VND)</Label>
+                  <Input
+                    type="number"
+                    value={nhomGiaForm.gia_ban_den}
+                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_den: +e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Giá mặc định (VND)</Label>
+                  <Input
+                    type="number"
+                    value={nhomGiaForm.gia_ban_mac_dinh}
+                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, gia_ban_mac_dinh: +e.target.value })}
+                  />
+                </div>
+              </div>
+              {isEditingNhomGia && (
+                <div>
+                  <Label>Trạng thái</Label>
+                  <select
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    value={nhomGiaForm.trang_thai}
+                    onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, trang_thai: e.target.value })}
+                  >
+                    <option value="active">Đang kinh doanh</option>
+                    <option value="inactive">Ngừng kinh doanh</option>
+                  </select>
+                </div>
+              )}
+              <div>
+                <Label>Mô tả</Label>
+                <Textarea
+                  value={nhomGiaForm.mo_ta || ''}
+                  onChange={(e) => setNhomGiaForm({ ...nhomGiaForm, mo_ta: e.target.value })}
+                  placeholder="Mô tả nhóm giá (tùy chọn)"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" onClick={() => setOpenNhomGiaDialog(false)}>Hủy</Button>
+              <Button onClick={handleSubmitNhomGia}>{isEditingNhomGia ? 'Cập nhật' : 'Thêm'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog nhập kho nhóm giá */}
+        <Dialog open={openNhomGiaNhapDialog} onOpenChange={setOpenNhomGiaNhapDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Nhập kho theo nhóm giá</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Chọn nhóm giá *</Label>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={nhapNhomGiaForm.nhom_gia_gong_id}
+                  onChange={(e) => setNhapNhomGiaForm({ ...nhapNhomGiaForm, nhom_gia_gong_id: +e.target.value })}
+                >
+                  <option value={0}>-- Chọn nhóm giá --</option>
+                  {dsNhomGiaGong.filter(n => n.trang_thai === 'active').map(nhom => (
+                    <option key={nhom.id} value={nhom.id}>{nhom.ten_nhom} (tồn: {nhom.so_luong_ton})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Số lượng *</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={nhapNhomGiaForm.so_luong}
+                    onChange={(e) => setNhapNhomGiaForm({ ...nhapNhomGiaForm, so_luong: +e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Đơn giá nhập (VND)</Label>
+                  <Input
+                    type="number"
+                    value={nhapNhomGiaForm.don_gia}
+                    onChange={(e) => setNhapNhomGiaForm({ ...nhapNhomGiaForm, don_gia: +e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Ghi chú</Label>
+                <Input
+                  value={nhapNhomGiaForm.ghi_chu}
+                  onChange={(e) => setNhapNhomGiaForm({ ...nhapNhomGiaForm, ghi_chu: e.target.value })}
+                  placeholder="VD: Nhập 10 gọng nhựa tầm trung"
+                />
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" onClick={() => setOpenNhomGiaNhapDialog(false)}>Hủy</Button>
+              <Button onClick={handleNhapKhoNhomGia}>Nhập kho</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

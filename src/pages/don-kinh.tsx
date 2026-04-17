@@ -355,7 +355,9 @@ export default function DonKinhPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-base font-semibold">{formatMoney(dk.giatrong + dk.giagong)}k</p>
-
+                        {showProfit && (
+                          <p className="text-xs text-emerald-600">Lãi: {formatMoney(dk.lai)}k</p>
+                        )}
                         {dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan > 0 && (
                           <p className="text-sm text-red-600">
                             Nợ: {formatMoney(dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan)}k
