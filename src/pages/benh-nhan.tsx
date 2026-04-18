@@ -750,7 +750,6 @@ export default function BenhNhanPage() {
                             {bn.ten}
                           </div>
                         </div>
-                        <div className={`text-sm ${isSelected ? 'text-gray-900 font-semibold' : 'text-gray-700'} transition-colors`}>Mã: {bn.id}</div>
                       </div>
                       <div className="flex gap-1">
                         <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => handleEdit(bn)}>
@@ -774,9 +773,9 @@ export default function BenhNhanPage() {
                       <div>Sinh: {typeof bn.namsinh === 'number' ? bn.namsinh : bn.namsinh}</div>
                       <div>Tuổi: {bn.tuoi ?? "N/A"}</div>
                       <div>SĐT: {bn.dienthoai || "Chưa có"}</div>
-                      <div>Ngày lập: {bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN') : ''}</div>
+                      <div>Ngày lập: {bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</div>
                       <div className="col-span-2">Địa chỉ: {bn.diachi}</div>
-                      <div className="col-span-2">Khám gần nhất: {bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN') : 'Chưa khám'}</div>
+                      <div className="col-span-2">Khám gần nhất: {bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa khám'}</div>
                     </div>
 
                     <div className="flex gap-2">
@@ -1057,8 +1056,20 @@ export default function BenhNhanPage() {
                 <table className="min-w-full text-sm text-left">
                   <thead className="bg-gray-100 border-b">
                     <tr>
+                      <th className="px-1 py-1 w-8 text-center">
+                        <button
+                          onClick={toggleSelectAllCurrentPage}
+                          title={allSelectedCurrentPage ? 'Bỏ chọn tất cả' : 'Chọn tất cả trang này'}
+                          className={`h-5 w-5 border-2 rounded flex items-center justify-center transition-colors mx-auto ${
+                            allSelectedCurrentPage
+                              ? 'bg-green-700 border-green-700 text-white'
+                              : 'border-gray-400 hover:border-blue-500'
+                          }`}
+                        >
+                          {allSelectedCurrentPage && <Check className="w-3 h-3" />}
+                        </button>
+                      </th>
                       <th className="px-2 py-1 w-12">STT</th>
-                      <th className="px-2 py-1">Mã BN</th>
                       <th
                         className="px-2 py-1 cursor-pointer select-none"
                         onClick={(e) => handleSort('ten', e.shiftKey)}
@@ -1095,20 +1106,20 @@ export default function BenhNhanPage() {
                         <div className="flex items-center gap-1">Địa Chỉ {renderSortIndicator('diachi')}</div>
                       </th>
                       <th
-                        className="px-2 py-1 cursor-pointer select-none"
+                        className="px-1 py-1 cursor-pointer select-none whitespace-nowrap"
                         onClick={(e) => handleSort('created_at', e.shiftKey)}
                         title="Click: Sắp xếp | Shift+Click: Thêm sắp xếp phụ"
                       >
-                        <div className="flex items-center gap-1">Ngày Lập {renderSortIndicator('created_at')}</div>
+                        <div className="flex items-center gap-1">Ngày lập {renderSortIndicator('created_at')}</div>
                       </th>
                       <th
-                        className="px-2 py-1 cursor-pointer select-none"
+                        className="px-1 py-1 cursor-pointer select-none whitespace-nowrap"
                         onClick={(e) => handleSort('ngay_kham_gan_nhat', e.shiftKey)}
                         title="Click: Sắp xếp | Shift+Click: Thêm sắp xếp phụ"
                       >
-                        <div className="flex items-center gap-1">Khám Gần Nhất {renderSortIndicator('ngay_kham_gan_nhat')}</div>
+                        <div className="flex items-center gap-1">Khám GN {renderSortIndicator('ngay_kham_gan_nhat')}</div>
                       </th>
-                      <th className="px-2 py-1 text-center w-[290px]">Hành Động</th>
+                      <th className="px-2 py-1 text-center">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1119,8 +1130,21 @@ export default function BenhNhanPage() {
                       return (
                       <React.Fragment key={bn.id}>
                         <tr className={`border-b transition-colors ${isSelected ? 'bg-green-200 font-semibold border-green-500' : 'hover:bg-blue-100'}`}>
+                          <td className="px-1 py-1 text-center">
+                            <button
+                              onClick={() => toggleSelectForMerge(bn.id!)}
+                              title={isSelected ? 'Bỏ chọn gộp' : 'Chọn để gộp'}
+                              className={`h-5 w-5 border-2 rounded flex items-center justify-center transition-colors mx-auto ${
+                                isSelected
+                                  ? 'bg-green-700 border-green-700 text-white shadow'
+                                  : 'border-gray-300 hover:border-blue-500 hover:bg-blue-100'
+                              }`}
+                              aria-pressed={isSelected}
+                            >
+                              {isSelected && <Check className="w-3 h-3" />}
+                            </button>
+                          </td>
                           <td className="px-2 py-1 font-mono text-center">{stt}</td>
-                          <td className="px-2 py-1 font-mono">{bn.id}</td>
                           <td
                             className={`px-2 py-1 cursor-pointer ${isSelected ? 'text-green-800 font-bold' : 'text-black font-bold hover:text-blue-700'}`}
                             onClick={() => handleSelectBenhNhan(bn.id!)}
@@ -1131,56 +1155,44 @@ export default function BenhNhanPage() {
                           <td className="px-2 py-1">{bn.tuoi ?? ""}</td>
                           <td className="px-2 py-1">{bn.dienthoai}</td>
                           <td className="px-2 py-1">{bn.diachi}</td>
-                          <td className="px-2 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN') : ''}</td>
-                          <td className="px-2 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN') : ''}</td>
+                          <td className="px-1 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</td>
+                          <td className="px-1 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</td>
                           <td className="px-2 py-1 text-center">
-                            <div className="inline-flex items-center gap-1 flex-wrap justify-center max-w-[280px]">
-                              <Button size="sm" variant="outline" onClick={() => handleEdit(bn)} className="h-7 px-2">
+                            <div className="inline-flex items-center gap-0.5">
+                              <Button size="sm" variant="outline" onClick={() => handleEdit(bn)} className="h-7 w-7 p-0" title="Sửa">
                                 <Pencil className="w-3 h-3" />
                               </Button>
                               <Button
                                 size="sm"
-                                className="h-7 px-2 bg-yellow-500 hover:bg-yellow-600 text-white text-xs"
+                                className="h-7 w-7 p-0 bg-yellow-500 hover:bg-yellow-600 text-white"
                                 onClick={() => choKhamPanelRef.current?.addPatient(bn.id!)}
-                                title="Thêm vào danh sách chờ khám"
+                                title="Thêm vào chờ khám"
                               >
-                                + Chờ
+                                <Plus className="w-3 h-3" />
                               </Button>
-                              <Button
-                                size="sm"
-                                className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                                onClick={async () => {
-                                  await choKhamPanelRef.current?.addPatient(bn.id!);
-                                  window.open(`/ke-don?bn=${bn.id}`, '_blank');
-                                }}
-                                title="Thêm vào chờ khám & mở kê đơn thuốc"
-                              >
-                                  Kê Đơn
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                                onClick={async () => {
-                                  await choKhamPanelRef.current?.addPatient(bn.id!);
-                                  window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
-                                }}
-                                title="Thêm vào chờ khám & mở kê đơn kính"
-                              >
+                              <div className="flex items-center rounded-md overflow-hidden border border-blue-600 ml-0.5">
+                                <button
+                                  className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+                                  onClick={async () => {
+                                    await choKhamPanelRef.current?.addPatient(bn.id!);
+                                    window.open(`/ke-don?bn=${bn.id}`, '_blank');
+                                  }}
+                                  title="Kê đơn thuốc"
+                                >
+                                  Thuốc
+                                </button>
+                                <div className="w-px h-5 bg-blue-400" />
+                                <button
+                                  className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+                                  onClick={async () => {
+                                    await choKhamPanelRef.current?.addPatient(bn.id!);
+                                    window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
+                                  }}
+                                  title="Kê đơn kính"
+                                >
                                   Kính
-                              </Button>
-                              {/* Delete moved into edit dialog */}
-                              <button
-                                onClick={() => toggleSelectForMerge(bn.id!)}
-                                title={isSelected ? 'Bỏ chọn gộp' : 'Chọn để gộp'}
-                                className={`h-7 w-7 border-2 rounded flex items-center justify-center transition-colors ${
-                                  isSelected
-                                    ? 'bg-green-700 border-green-700 text-white shadow'
-                                    : 'border-gray-300 hover:border-blue-500 hover:bg-blue-100'
-                                }`}
-                                aria-pressed={isSelected}
-                              >
-                                {isSelected && <Check className="w-3 h-3" />}
-                              </button>
+                                </button>
+                              </div>
                             </div>
                           </td>
                         </tr>
