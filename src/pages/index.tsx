@@ -147,6 +147,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [updatingCareId, setUpdatingCareId] = useState<number | null>(null);
   const [crmFilterMode, setCrmFilterMode] = useState<'all' | 'telesale'>('all');
+  const [crmPriorityFilter, setCrmPriorityFilter] = useState<'all' | 'A' | 'B' | 'C'>('all');
   const { currentTenantId, currentRole } = useAuth();
 
   const fetchDashboard = async () => {
@@ -207,9 +208,19 @@ export default function HomePage() {
   };
   const totalVCL = vcl.henQuaHan.length + vcl.donKinhNo.length;
   const isTeamLead = currentRole === 'owner' || currentRole === 'admin';
-  const crmFiltered = crmFilterMode === 'telesale'
+  const crmByStatus = crmFilterMode === 'telesale'
     ? crm.filter((c) => c.care_status === 'chua_lien_he' || c.care_status === 'hen_goi_lai')
     : crm;
+  const crmFiltered = crmPriorityFilter === 'all'
+    ? crmByStatus
+    : crmByStatus.filter((c) => c.muc_uu_tien === crmPriorityFilter);
+  const crmPrioritySummaryByFilter = crmByStatus.reduce((acc, c) => {
+    const tier = c.muc_uu_tien || 'C';
+    if (tier === 'A') acc.A += 1;
+    else if (tier === 'B') acc.B += 1;
+    else acc.C += 1;
+    return acc;
+  }, { A: 0, B: 0, C: 0 });
 
   const careStatusBadge = (status?: string) => {
     switch (status) {
@@ -225,9 +236,9 @@ export default function HomePage() {
   };
 
   const priorityBadge = (tier?: string) => {
-    if (tier === 'A') return { text: 'Ưu tiên A', cls: 'bg-red-100 text-red-700' };
-    if (tier === 'B') return { text: 'Ưu tiên B', cls: 'bg-orange-100 text-orange-700' };
-    return { text: 'Ưu tiên C', cls: 'bg-teal-100 text-teal-700' };
+    if (tier === 'A') return { text: 'Rất khẩn', cls: 'bg-red-100 text-red-700' };
+    if (tier === 'B') return { text: 'Khẩn', cls: 'bg-orange-100 text-orange-700' };
+    return { text: 'Theo dõi', cls: 'bg-teal-100 text-teal-700' };
   };
 
   return (
@@ -519,23 +530,44 @@ export default function HomePage() {
                   {crmMeta.onlyHasPhone ? ' • Chỉ có SĐT' : ''}
                   {crmMeta.prioritizeHighValue ? ' • Ưu tiên đơn giá trị cao' : ''}
                 </p>
-                {isTeamLead && (
-                  <div className="px-1 pb-2 flex items-center gap-1.5">
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-700">A {crmMeta.prioritySummary?.A || 0}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-orange-100 text-orange-700">B {crmMeta.prioritySummary?.B || 0}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-teal-100 text-teal-700">C {crmMeta.prioritySummary?.C || 0}</span>
-                  </div>
-                )}
+                <div className="px-1 pb-2 flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setCrmPriorityFilter('all')}
+                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >Tất cả {crmByStatus.length}</button>
+                  <button
+                    type="button"
+                    onClick={() => setCrmPriorityFilter('A')}
+                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'A' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                  >Rất khẩn {crmPrioritySummaryByFilter.A}</button>
+                  <button
+                    type="button"
+                    onClick={() => setCrmPriorityFilter('B')}
+                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'B' ? 'bg-orange-600 text-white' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}
+                  >Khẩn {crmPrioritySummaryByFilter.B}</button>
+                  <button
+                    type="button"
+                    onClick={() => setCrmPriorityFilter('C')}
+                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'C' ? 'bg-teal-600 text-white' : 'bg-teal-100 text-teal-700 hover:bg-teal-200'}`}
+                  >Theo dõi {crmPrioritySummaryByFilter.C}</button>
+                </div>
                 {isTeamLead && (
                   <div className="px-1 pb-2 flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setCrmFilterMode('all')}
+                      onClick={() => {
+                        setCrmFilterMode('all');
+                        setCrmPriorityFilter('all');
+                      }}
                       className={`text-[10px] px-2 py-1 rounded ${crmFilterMode === 'all' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                     >Tất cả</button>
                     <button
                       type="button"
-                      onClick={() => setCrmFilterMode('telesale')}
+                      onClick={() => {
+                        setCrmFilterMode('telesale');
+                        setCrmPriorityFilter('all');
+                      }}
                       className={`text-[10px] px-2 py-1 rounded ${crmFilterMode === 'telesale' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                     >Telesale: Chưa liên hệ + Hẹn gọi lại</button>
                   </div>
