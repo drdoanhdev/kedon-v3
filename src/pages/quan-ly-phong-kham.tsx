@@ -49,6 +49,7 @@ interface TenantInfo {
   code: string | null;
   phone: string | null;
   address: string | null;
+  settings?: any;
 }
 
 export default function QuanLyPhongKham() {
@@ -65,6 +66,8 @@ export default function QuanLyPhongKham() {
   const [tenantCode, setTenantCode] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
+  const [crmDaysThreshold, setCrmDaysThreshold] = useState('90');
+  const [crmLimit, setCrmLimit] = useState('20');
   
   // Add member 
   const [showAddMember, setShowAddMember] = useState(false);
@@ -125,15 +128,63 @@ export default function QuanLyPhongKham() {
         code: currentTenant.code || null,
         phone: null,
         address: null,
+        settings: {},
       });
       setTenantName(currentTenant.name || '');
       setTenantCode(currentTenant.code || '');
     }
-  }, [fetchMembers, currentTenant]);
+  }, [fetchMembers, currentTenant, currentTenantId]);
+
+  useEffect(() => {
+    if (!currentTenantId) return;
+    (async () => {
+      try {
+        const res = await fetchWithAuth('/api/tenants');
+        const data = await res.json();
+        const rows = data?.data || [];
+        const t = rows.find((x: any) => x.id === currentTenantId);
+        if (!t) return;
+
+        const settings = t.settings || {};
+        const cfg = settings?.dashboard?.crm || {};
+        const days = Number(cfg.daysThreshold);
+        const limit = Number(cfg.limit);
+
+        setTenantInfo({
+          id: t.id,
+          name: t.name || '',
+          code: t.code || null,
+          phone: t.phone || null,
+          address: t.address || null,
+          settings,
+        });
+        setTenantName(t.name || '');
+        setTenantCode(t.code || '');
+        setTenantPhone(t.phone || '');
+        setTenantAddress(t.address || '');
+        setCrmDaysThreshold(String(Number.isFinite(days) ? days : 90));
+        setCrmLimit(String(Number.isFinite(limit) ? limit : 20));
+      } catch {}
+    })();
+  }, [currentTenantId]);
 
   const handleUpdateTenant = async () => {
     if (!tenantInfo) return;
     try {
+      const nextDays = Math.min(Math.max(parseInt(crmDaysThreshold || '90', 10) || 90, 30), 365);
+      const nextLimit = Math.min(Math.max(parseInt(crmLimit || '20', 10) || 20, 5), 100);
+      const nextSettings = {
+        ...(tenantInfo.settings || {}),
+        dashboard: {
+          ...((tenantInfo.settings || {}).dashboard || {}),
+          crm: {
+            ...((tenantInfo.settings || {}).dashboard?.crm || {}),
+            daysThreshold: nextDays,
+            limit: nextLimit,
+          },
+        },
+      };
+
       const res = await fetchWithAuth('/api/tenants', {
         method: 'PUT',
         body: JSON.stringify({
@@ -142,11 +193,15 @@ export default function QuanLyPhongKham() {
           code: tenantCode,
           phone: tenantPhone,
           address: tenantAddress,
+          settings: nextSettings,
         }),
       });
       const data = await res.json();
       if (res.ok) {
         toast.success('Đã cập nhật thông tin phòng khám');
+        setTenantInfo((prev) => prev ? { ...prev, settings: nextSettings } : prev);
+        setCrmDaysThreshold(String(nextDays));
+        setCrmLimit(String(nextLimit));
         setEditTenant(false);
       } else {
         toast.error(data.message || 'Lỗi cập nhật');
@@ -261,6 +316,33 @@ export default function QuanLyPhongKham() {
                   <Label>Địa chỉ</Label>
                   <Input value={tenantAddress} onChange={e => setTenantAddress(e.target.value)} />
                 </div>
+                <div className="pt-2 border-t">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Cấu hình Khách cần chăm sóc (Dashboard)</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>Ngưỡng ngày chưa quay lại</Label>
+                      <Input
+                        type="number"
+                        min={30}
+                        max={365}
+                        value={crmDaysThreshold}
+                        onChange={e => setCrmDaysThreshold(e.target.value)}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Từ 30 đến 365 ngày</p>
+                    </div>
+                    <div>
+                      <Label>Số khách hiển thị tối đa</Label>
+                      <Input
+                        type="number"
+                        min={5}
+                        max={100}
+                        value={crmLimit}
+                        onChange={e => setCrmLimit(e.target.value)}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Từ 5 đến 100 khách</p>
+                    </div>
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <Button onClick={handleUpdateTenant}>Lưu</Button>
                   <Button variant="outline" onClick={() => setEditTenant(false)}>Hủy</Button>
@@ -270,6 +352,7 @@ export default function QuanLyPhongKham() {
               <div className="space-y-2">
                 <p><span className="font-medium">Tên:</span> {currentTenant?.name || '—'}</p>
                 <p><span className="font-medium">Mã:</span> {currentTenant?.code || '—'}</p>
+                <p><span className="font-medium">CRM chăm sóc:</span> {crmDaysThreshold}+ ngày, tối đa {crmLimit} khách</p>
                 <p><span className="font-medium">Trạng thái:</span>{' '}
                   <Badge variant="outline" className="text-green-700">Hoạt động</Badge>
                 </p>

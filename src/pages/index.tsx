@@ -40,6 +40,7 @@ interface DashboardData {
   lichHomNay: any[];
   choKhamList: any[];
   crm: { id: number; ten: string; dienthoai: string; ngay_kham_cuoi: string; so_ngay: number }[];
+  crmMeta?: { daysThreshold: number; limit: number };
 }
 
 /* ───────── Helpers ───────── */
@@ -157,6 +158,7 @@ export default function HomePage() {
   const lich = data?.lichHomNay || [];
   const ckList = data?.choKhamList || [];
   const crm = data?.crm || [];
+  const crmMeta = data?.crmMeta || { daysThreshold: 90, limit: 20 };
   const totalVCL = vcl.henQuaHan.length + vcl.donKinhNo.length;
 
   return (
@@ -443,6 +445,7 @@ export default function HomePage() {
                 {crm.length > 0 && <span className="ml-auto text-xs bg-teal-600 text-white px-2 py-0.5 rounded-full">{crm.length}</span>}
               </div>
               <div className="p-3 space-y-1 max-h-64 overflow-y-auto">
+                <p className="text-[11px] text-gray-500 px-1 pb-1">Hiển thị tối đa {crmMeta.limit} khách, ngưỡng {crmMeta.daysThreshold}+ ngày chưa quay lại</p>
                 {crm.length === 0 ? (
                   <div className="text-center py-6 text-gray-400">
                     <HeartHandshake className="w-8 h-8 mx-auto mb-2 text-teal-300" />

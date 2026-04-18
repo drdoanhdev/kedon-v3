@@ -18,6 +18,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const todayStart = new Date(now.getTime() + 7 * 60 * 60 * 1000); // UTC+7
     const todayStr = todayStart.toISOString().split('T')[0];
 
+    // Tenant-level dashboard CRM settings
+    const { data: tenantRow } = await supabase
+      .from('tenants')
+      .select('settings')
+      .eq('id', tenantId)
+      .maybeSingle();
+
+    const tenantSettings = (tenantRow as any)?.settings || {};
+    const crmCfg = tenantSettings?.dashboard?.crm || {};
+    const daysThresholdRaw = Number(crmCfg.daysThreshold);
+    const crmLimitRaw = Number(crmCfg.limit);
+    const crmDaysThreshold = Number.isFinite(daysThresholdRaw) ? Math.min(Math.max(daysThresholdRaw, 30), 365) : 90;
+    const crmLimit = Number.isFinite(crmLimitRaw) ? Math.min(Math.max(crmLimitRaw, 5), 100) : 20;
+
     // Run all queries in parallel
     const [
       choKhamRes,
@@ -161,11 +175,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         latestByPatient.set(bnId, dk);
       }
     });
-    const threeMonthsAgo = new Date(now.getTime() + 7 * 60 * 60 * 1000);
-    threeMonthsAgo.setDate(threeMonthsAgo.getDate() - 90);
-    const threeMonthsStr = threeMonthsAgo.toISOString().split('T')[0];
+    const thresholdDate = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    thresholdDate.setDate(thresholdDate.getDate() - crmDaysThreshold);
+    const thresholdDateStr = thresholdDate.toISOString().split('T')[0];
     const crmKhachCanChamSoc = Array.from(latestByPatient.values())
-      .filter((dk: any) => dk.ngaykham && dk.ngaykham < threeMonthsStr && dk.benhnhan)
+      .filter((dk: any) => dk.ngaykham && dk.ngaykham < thresholdDateStr && dk.benhnhan)
       .map((dk: any) => {
         const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(dk.ngaykham).getTime()) / (1000 * 60 * 60 * 24));
         return {
@@ -177,7 +191,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         };
       })
       .sort((a: any, b: any) => b.so_ngay - a.so_ngay)
-      .slice(0, 10);
+      .slice(0, crmLimit);
 
     res.status(200).json({
       today: todayStr,
@@ -204,6 +218,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lichHomNay: henHomNay.slice(0, 10),
       choKhamList: choKhamCho.slice(0, 10),
       crm: crmKhachCanChamSoc,
+      crmMeta: {
+        daysThreshold: crmDaysThreshold,
+        limit: crmLimit,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
