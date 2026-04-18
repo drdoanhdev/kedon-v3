@@ -29,6 +29,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const crmCfg = tenantSettings?.dashboard?.crm || {};
     const daysThresholdRaw = Number(crmCfg.daysThreshold);
     const crmLimitRaw = Number(crmCfg.limit);
+    const crmOnlyHasPhone = crmCfg.onlyHasPhone === true;
+    const crmPrioritizeHighValue = crmCfg.prioritizeHighValue !== false;
     const crmDaysThreshold = Number.isFinite(daysThresholdRaw) ? Math.min(Math.max(daysThresholdRaw, 30), 365) : 90;
     const crmLimit = Number.isFinite(crmLimitRaw) ? Math.min(Math.max(crmLimitRaw, 5), 100) : 20;
 
@@ -109,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 9. CRM: Bệnh nhân lâu chưa quay lại (>3 tháng)
       supabase
         .from('DonKinh')
-        .select('benhnhanid, ngaykham, benhnhan:BenhNhan(id, ten, dienthoai)')
+        .select('benhnhanid, ngaykham, giatrong, giagong, benhnhan:BenhNhan(id, ten, dienthoai)')
         .eq('tenant_id', tenantId)
         .order('ngaykham', { ascending: false }),
     ]);
@@ -178,20 +180,65 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const thresholdDate = new Date(now.getTime() + 7 * 60 * 60 * 1000);
     thresholdDate.setDate(thresholdDate.getDate() - crmDaysThreshold);
     const thresholdDateStr = thresholdDate.toISOString().split('T')[0];
+    const tierRank: Record<string, number> = { A: 1, B: 2, C: 3 };
+
     const crmKhachCanChamSoc = Array.from(latestByPatient.values())
       .filter((dk: any) => dk.ngaykham && dk.ngaykham < thresholdDateStr && dk.benhnhan)
+      .filter((dk: any) => !crmOnlyHasPhone || !!dk.benhnhan?.dienthoai)
       .map((dk: any) => {
         const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(dk.ngaykham).getTime()) / (1000 * 60 * 60 * 24));
+        const latestOrderValue = (dk.giatrong || 0) + (dk.giagong || 0);
+        const priorityScore = daysSince + (crmPrioritizeHighValue ? Math.min(latestOrderValue / 200000, 50) : 0);
+        const priorityTier = priorityScore >= 140 ? 'A' : priorityScore >= 105 ? 'B' : 'C';
         return {
           id: dk.benhnhan.id,
           ten: dk.benhnhan.ten,
           dienthoai: dk.benhnhan.dienthoai,
           ngay_kham_cuoi: dk.ngaykham,
           so_ngay: daysSince,
+          gia_tri_don_gan_nhat: latestOrderValue,
+          uu_tien: Math.round(priorityScore),
+          muc_uu_tien: priorityTier,
         };
       })
-      .sort((a: any, b: any) => b.so_ngay - a.so_ngay)
+      .sort((a: any, b: any) => {
+        const rankA = tierRank[a.muc_uu_tien] || 99;
+        const rankB = tierRank[b.muc_uu_tien] || 99;
+        if (rankA !== rankB) return rankA - rankB;
+        if ((b.so_ngay || 0) !== (a.so_ngay || 0)) return (b.so_ngay || 0) - (a.so_ngay || 0);
+        return (b.gia_tri_don_gan_nhat || 0) - (a.gia_tri_don_gan_nhat || 0);
+      })
       .slice(0, crmLimit);
+
+    // Map trạng thái chăm sóc theo bệnh nhân cho card CRM
+    const crmPatientIds = crmKhachCanChamSoc.map((c: any) => c.id).filter(Boolean);
+    let careStatusMap = new Map<number, any>();
+    if (crmPatientIds.length > 0) {
+      const { data: careRows, error: careErr } = await supabase
+        .from('crm_care_status')
+        .select('benhnhan_id, status, note, next_call_at, updated_at')
+        .eq('tenant_id', tenantId)
+        .in('benhnhan_id', crmPatientIds as number[]);
+      if (!careErr && careRows) {
+        careStatusMap = new Map<number, any>((careRows as any[]).map((r: any) => [r.benhnhan_id, r]));
+      }
+    }
+
+    const crmWithStatus = crmKhachCanChamSoc.map((c: any) => ({
+      ...c,
+      care_status: careStatusMap.get(c.id)?.status || 'chua_lien_he',
+      care_note: careStatusMap.get(c.id)?.note || '',
+      next_call_at: careStatusMap.get(c.id)?.next_call_at || null,
+      care_updated_at: careStatusMap.get(c.id)?.updated_at || null,
+    }));
+
+    const crmPrioritySummary = crmWithStatus.reduce((acc: any, c: any) => {
+      const tier = c.muc_uu_tien || 'C';
+      if (tier === 'A') acc.A += 1;
+      else if (tier === 'B') acc.B += 1;
+      else acc.C += 1;
+      return acc;
+    }, { A: 0, B: 0, C: 0 });
 
     res.status(200).json({
       today: todayStr,
@@ -217,10 +264,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       lichHomNay: henHomNay.slice(0, 10),
       choKhamList: choKhamCho.slice(0, 10),
-      crm: crmKhachCanChamSoc,
+      crm: crmWithStatus,
       crmMeta: {
         daysThreshold: crmDaysThreshold,
         limit: crmLimit,
+        onlyHasPhone: crmOnlyHasPhone,
+        prioritizeHighValue: crmPrioritizeHighValue,
+        prioritySummary: crmPrioritySummary,
       },
     });
   } catch (error: unknown) {

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
   Users, Clock, CalendarDays, Bell, AlertTriangle, Glasses,
   Pill, BarChart3, ChevronRight, Phone, RefreshCw, CheckCircle2,
@@ -39,8 +40,25 @@ interface DashboardData {
   };
   lichHomNay: any[];
   choKhamList: any[];
-  crm: { id: number; ten: string; dienthoai: string; ngay_kham_cuoi: string; so_ngay: number }[];
-  crmMeta?: { daysThreshold: number; limit: number };
+  crm: {
+    id: number;
+    ten: string;
+    dienthoai: string;
+    ngay_kham_cuoi: string;
+    so_ngay: number;
+    gia_tri_don_gan_nhat?: number;
+    uu_tien?: number;
+    muc_uu_tien?: 'A' | 'B' | 'C';
+    care_status?: 'chua_lien_he' | 'da_goi' | 'hen_goi_lai' | 'da_chot_lich';
+    next_call_at?: string | null;
+  }[];
+  crmMeta?: {
+    daysThreshold: number;
+    limit: number;
+    onlyHasPhone?: boolean;
+    prioritizeHighValue?: boolean;
+    prioritySummary?: { A: number; B: number; C: number };
+  };
 }
 
 /* ───────── Helpers ───────── */
@@ -127,7 +145,9 @@ function TrialBanner() {
 export default function HomePage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { currentTenantId } = useAuth();
+  const [updatingCareId, setUpdatingCareId] = useState<number | null>(null);
+  const [crmFilterMode, setCrmFilterMode] = useState<'all' | 'telesale'>('all');
+  const { currentTenantId, currentRole } = useAuth();
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -140,6 +160,26 @@ export default function HomePage() {
   };
 
   useEffect(() => { if (currentTenantId) fetchDashboard(); }, [currentTenantId]);
+
+  const updateCareStatus = async (benhnhanId: number, status: 'da_goi' | 'hen_goi_lai' | 'da_chot_lich') => {
+    setUpdatingCareId(benhnhanId);
+    try {
+      const payload: any = { benhnhan_id: benhnhanId, status };
+      if (status === 'hen_goi_lai') {
+        const next = new Date();
+        next.setDate(next.getDate() + 1);
+        next.setHours(9, 0, 0, 0);
+        payload.next_call_at = next.toISOString();
+      }
+      await axios.put('/api/crm/care-status', payload);
+      toast.success('Đã cập nhật trạng thái chăm sóc');
+      await fetchDashboard();
+    } catch {
+      toast.error('Không cập nhật được trạng thái chăm sóc');
+    } finally {
+      setUpdatingCareId(null);
+    }
+  };
 
   const todayFmt = data?.today ? formatNgay(data.today) : new Date().toLocaleDateString('vi-VN');
   const s = data?.stats || {
@@ -158,8 +198,37 @@ export default function HomePage() {
   const lich = data?.lichHomNay || [];
   const ckList = data?.choKhamList || [];
   const crm = data?.crm || [];
-  const crmMeta = data?.crmMeta || { daysThreshold: 90, limit: 20 };
+  const crmMeta = data?.crmMeta || {
+    daysThreshold: 90,
+    limit: 20,
+    onlyHasPhone: false,
+    prioritizeHighValue: true,
+    prioritySummary: { A: 0, B: 0, C: 0 },
+  };
   const totalVCL = vcl.henQuaHan.length + vcl.donKinhNo.length;
+  const isTeamLead = currentRole === 'owner' || currentRole === 'admin';
+  const crmFiltered = crmFilterMode === 'telesale'
+    ? crm.filter((c) => c.care_status === 'chua_lien_he' || c.care_status === 'hen_goi_lai')
+    : crm;
+
+  const careStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'da_goi':
+        return { text: 'Đã gọi', cls: 'bg-blue-100 text-blue-700' };
+      case 'hen_goi_lai':
+        return { text: 'Hẹn gọi lại', cls: 'bg-amber-100 text-amber-700' };
+      case 'da_chot_lich':
+        return { text: 'Đã chốt lịch', cls: 'bg-green-100 text-green-700' };
+      default:
+        return { text: 'Chưa liên hệ', cls: 'bg-gray-100 text-gray-600' };
+    }
+  };
+
+  const priorityBadge = (tier?: string) => {
+    if (tier === 'A') return { text: 'Ưu tiên A', cls: 'bg-red-100 text-red-700' };
+    if (tier === 'B') return { text: 'Ưu tiên B', cls: 'bg-orange-100 text-orange-700' };
+    return { text: 'Ưu tiên C', cls: 'bg-teal-100 text-teal-700' };
+  };
 
   return (
     <ProtectedRoute>
@@ -442,24 +511,85 @@ export default function HomePage() {
               <div className="px-4 py-3 border-b bg-teal-50 flex items-center gap-2">
                 <HeartHandshake className="w-4 h-4 text-teal-600" />
                 <span className="font-semibold text-sm text-teal-800">Khách cần chăm sóc</span>
-                {crm.length > 0 && <span className="ml-auto text-xs bg-teal-600 text-white px-2 py-0.5 rounded-full">{crm.length}</span>}
+                {crmFiltered.length > 0 && <span className="ml-auto text-xs bg-teal-600 text-white px-2 py-0.5 rounded-full">{crmFiltered.length}</span>}
               </div>
               <div className="p-3 space-y-1 max-h-64 overflow-y-auto">
-                <p className="text-[11px] text-gray-500 px-1 pb-1">Hiển thị tối đa {crmMeta.limit} khách, ngưỡng {crmMeta.daysThreshold}+ ngày chưa quay lại</p>
-                {crm.length === 0 ? (
+                <p className="text-[11px] text-gray-500 px-1 pb-1">
+                  Tối đa {crmMeta.limit} khách, ngưỡng {crmMeta.daysThreshold}+ ngày
+                  {crmMeta.onlyHasPhone ? ' • Chỉ có SĐT' : ''}
+                  {crmMeta.prioritizeHighValue ? ' • Ưu tiên đơn giá trị cao' : ''}
+                </p>
+                {isTeamLead && (
+                  <div className="px-1 pb-2 flex items-center gap-1.5">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-700">A {crmMeta.prioritySummary?.A || 0}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-orange-100 text-orange-700">B {crmMeta.prioritySummary?.B || 0}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-teal-100 text-teal-700">C {crmMeta.prioritySummary?.C || 0}</span>
+                  </div>
+                )}
+                {isTeamLead && (
+                  <div className="px-1 pb-2 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCrmFilterMode('all')}
+                      className={`text-[10px] px-2 py-1 rounded ${crmFilterMode === 'all' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >Tất cả</button>
+                    <button
+                      type="button"
+                      onClick={() => setCrmFilterMode('telesale')}
+                      className={`text-[10px] px-2 py-1 rounded ${crmFilterMode === 'telesale' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >Telesale: Chưa liên hệ + Hẹn gọi lại</button>
+                  </div>
+                )}
+                {crmFiltered.length === 0 ? (
                   <div className="text-center py-6 text-gray-400">
                     <HeartHandshake className="w-8 h-8 mx-auto mb-2 text-teal-300" />
-                    <p className="text-sm">Tất cả khách hàng đều hoạt động!</p>
+                    <p className="text-sm">Không có khách phù hợp bộ lọc</p>
                   </div>
                 ) : (
-                  crm.map((c) => (
+                  crmFiltered.map((c) => (
                     <Link key={c.id} href={`/ke-don-kinh?bn=${c.id}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-teal-50 transition-colors">
                       <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0">
                         <Users className="w-3.5 h-3.5 text-teal-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-gray-800 truncate block">{c.ten}</span>
-                        <span className="text-xs text-gray-500">{c.so_ngay} ngày chưa quay lại</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-800 truncate block">{c.ten}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${priorityBadge(c.muc_uu_tien).cls}`}>{priorityBadge(c.muc_uu_tien).text}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${careStatusBadge(c.care_status).cls}`}>{careStatusBadge(c.care_status).text}</span>
+                        </div>
+                        <span className="text-xs text-gray-500 block">{c.so_ngay} ngày chưa quay lại{(c.gia_tri_don_gan_nhat || 0) > 0 ? ` • Đơn gần nhất ${(c.gia_tri_don_gan_nhat || 0).toLocaleString()}đ` : ''}</span>
+                        <div className="flex items-center gap-1 mt-1">
+                          <button
+                            type="button"
+                            disabled={updatingCareId === c.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              updateCareStatus(c.id, 'da_goi');
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
+                          >Đã gọi</button>
+                          <button
+                            type="button"
+                            disabled={updatingCareId === c.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              updateCareStatus(c.id, 'hen_goi_lai');
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50"
+                          >Hẹn gọi lại</button>
+                          <button
+                            type="button"
+                            disabled={updatingCareId === c.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              updateCareStatus(c.id, 'da_chot_lich');
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50"
+                          >Đã chốt lịch</button>
+                        </div>
                       </div>
                       {c.dienthoai && (
                         <a href={`tel:${c.dienthoai}`} onClick={e => e.stopPropagation()} className="p-1.5 text-green-600 hover:bg-green-100 rounded-lg flex-shrink-0">

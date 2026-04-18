@@ -68,6 +68,8 @@ export default function QuanLyPhongKham() {
   const [tenantAddress, setTenantAddress] = useState('');
   const [crmDaysThreshold, setCrmDaysThreshold] = useState('90');
   const [crmLimit, setCrmLimit] = useState('20');
+  const [crmOnlyHasPhone, setCrmOnlyHasPhone] = useState(false);
+  const [crmPrioritizeHighValue, setCrmPrioritizeHighValue] = useState(true);
   
   // Add member 
   const [showAddMember, setShowAddMember] = useState(false);
@@ -149,6 +151,8 @@ export default function QuanLyPhongKham() {
         const cfg = settings?.dashboard?.crm || {};
         const days = Number(cfg.daysThreshold);
         const limit = Number(cfg.limit);
+        const onlyHasPhone = cfg.onlyHasPhone === true;
+        const prioritizeHighValue = cfg.prioritizeHighValue !== false;
 
         setTenantInfo({
           id: t.id,
@@ -164,6 +168,8 @@ export default function QuanLyPhongKham() {
         setTenantAddress(t.address || '');
         setCrmDaysThreshold(String(Number.isFinite(days) ? days : 90));
         setCrmLimit(String(Number.isFinite(limit) ? limit : 20));
+        setCrmOnlyHasPhone(onlyHasPhone);
+        setCrmPrioritizeHighValue(prioritizeHighValue);
       } catch {}
     })();
   }, [currentTenantId]);
@@ -181,6 +187,8 @@ export default function QuanLyPhongKham() {
             ...((tenantInfo.settings || {}).dashboard?.crm || {}),
             daysThreshold: nextDays,
             limit: nextLimit,
+            onlyHasPhone: crmOnlyHasPhone,
+            prioritizeHighValue: crmPrioritizeHighValue,
           },
         },
       };
@@ -342,6 +350,24 @@ export default function QuanLyPhongKham() {
                       <p className="text-xs text-gray-500 mt-1">Từ 5 đến 100 khách</p>
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={crmOnlyHasPhone}
+                        onChange={e => setCrmOnlyHasPhone(e.target.checked)}
+                      />
+                      Chỉ hiện khách có số điện thoại
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={crmPrioritizeHighValue}
+                        onChange={e => setCrmPrioritizeHighValue(e.target.checked)}
+                      />
+                      Ưu tiên khách có đơn gần nhất giá cao
+                    </label>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button onClick={handleUpdateTenant}>Lưu</Button>
@@ -353,6 +379,8 @@ export default function QuanLyPhongKham() {
                 <p><span className="font-medium">Tên:</span> {currentTenant?.name || '—'}</p>
                 <p><span className="font-medium">Mã:</span> {currentTenant?.code || '—'}</p>
                 <p><span className="font-medium">CRM chăm sóc:</span> {crmDaysThreshold}+ ngày, tối đa {crmLimit} khách</p>
+                <p><span className="font-medium">Bộ lọc:</span> {crmOnlyHasPhone ? 'Chỉ khách có SĐT' : 'Bao gồm cả khách chưa có SĐT'}</p>
+                <p><span className="font-medium">Ưu tiên:</span> {crmPrioritizeHighValue ? 'Đơn gần nhất giá cao' : 'Theo số ngày chưa quay lại'}</p>
                 <p><span className="font-medium">Trạng thái:</span>{' '}
                   <Badge variant="outline" className="text-green-700">Hoạt động</Badge>
                 </p>
