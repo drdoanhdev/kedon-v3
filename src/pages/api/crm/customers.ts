@@ -77,12 +77,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const onlyHasPhoneQuery = parseBool(normalizeQueryVal(req.query.onlyHasPhone));
     const effectiveOnlyHasPhone = typeof onlyHasPhoneQuery === 'boolean' ? onlyHasPhoneQuery : cfgOnlyHasPhone;
 
-    const [donKinhRes, overdueHenRes, careRes] = await Promise.all([
+    const [donKinhRes, donThuocRes, overdueHenRes, careRes] = await Promise.all([
       supabase
         .from('DonKinh')
         .select('benhnhanid, ngaykham, giatrong, giagong, benhnhan:BenhNhan(id, ten, dienthoai)')
         .eq('tenant_id', tenantId)
         .order('ngaykham', { ascending: false }),
+
+      supabase
+        .from('DonThuoc')
+        .select('benhnhanid, ngay_kham, ngaylap, tongtien, benhnhan:BenhNhan(id, ten, dienthoai)')
+        .eq('tenant_id', tenantId)
+        .order('ngay_kham', { ascending: false }),
 
       supabase
         .from('hen_kham_lai')
@@ -98,11 +104,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ]);
 
     const donKinhData = donKinhRes.data || [];
+    const donThuocData = donThuocRes.data || [];
     const overdueData = overdueHenRes.data || [];
     const careData = careRes.data || [];
 
-    const latestByPatient = new Map<string, any>();
+    const latestServiceByPatient = new Map<string, any>();
     const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();
+
+    const updateLatestService = (bnId: string, benhnhan: any, ngayService: string | null | undefined, latestValue: number) => {
+      if (!bnId || !benhnhan || !ngayService) return;
+      const current = latestServiceByPatient.get(bnId);
+      if (!current) {
+        latestServiceByPatient.set(bnId, {
+          benhnhanid: bnId,
+          benhnhan,
+          ngay_service: ngayService,
+          gia_tri_don_gan_nhat: latestValue,
+        });
+        return;
+      }
+      const newTs = new Date(ngayService).getTime();
+      const curTs = new Date(current.ngay_service).getTime();
+      if (newTs > curTs) {
+        latestServiceByPatient.set(bnId, {
+          benhnhanid: bnId,
+          benhnhan,
+          ngay_service: ngayService,
+          gia_tri_don_gan_nhat: latestValue,
+        });
+      }
+    };
 
     donKinhData.forEach((dk: any) => {
       const bnId = String(dk.benhnhanid || '');
@@ -115,9 +146,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         serviceCount: prev.serviceCount + 1,
       });
 
-      if (!latestByPatient.has(bnId)) {
-        latestByPatient.set(bnId, dk);
-      }
+      updateLatestService(bnId, dk.benhnhan, dk.ngaykham, orderValue);
+    });
+
+    donThuocData.forEach((dt: any) => {
+      const bnId = String(dt.benhnhanid || '');
+      if (!bnId) return;
+
+      const serviceValue = Number(dt.tongtien || 0);
+      const prev = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
+      patientStatsById.set(bnId, {
+        totalValue: prev.totalValue + serviceValue,
+        serviceCount: prev.serviceCount + 1,
+      });
+
+      updateLatestService(bnId, dt.benhnhan, dt.ngay_kham || dt.ngaylap, serviceValue);
     });
 
     const overdueByPatient = new Map<string, number>();
@@ -138,15 +181,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const tierRank: Record<string, number> = { A: 1, B: 2, C: 3 };
 
-    let customers = Array.from(latestByPatient.values())
-      .filter((dk: any) => dk.ngaykham && dk.ngaykham < thresholdDateStr && dk.benhnhan)
-      .filter((dk: any) => !effectiveOnlyHasPhone || !!dk.benhnhan?.dienthoai)
-      .map((dk: any) => {
-        const bnId = String(dk.benhnhanid || '');
+    let customers = Array.from(latestServiceByPatient.values())
+      .filter((s: any) => s.ngay_service && s.ngay_service < thresholdDateStr && s.benhnhan)
+      .filter((s: any) => !effectiveOnlyHasPhone || !!s.benhnhan?.dienthoai)
+      .map((s: any) => {
+        const bnId = String(s.benhnhanid || '');
         const patientStats = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
         const overdueCount = overdueByPatient.get(bnId) || 0;
-        const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(dk.ngaykham).getTime()) / (1000 * 60 * 60 * 24));
-        const latestOrderValue = (dk.giatrong || 0) + (dk.giagong || 0);
+        const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(s.ngay_service).getTime()) / (1000 * 60 * 60 * 24));
+        const latestOrderValue = Number(s.gia_tri_don_gan_nhat || 0);
 
         const latestValueBonus = crmPrioritizeHighValue ? Math.min(latestOrderValue / crmValuePerPoint, crmValueBonusCap) : 0;
         const lifetimeValueBonus = Math.min(patientStats.totalValue / crmLifetimeValuePerPoint, crmLifetimeValueBonusCap);
@@ -156,14 +199,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const score = daysSince + latestValueBonus + lifetimeValueBonus + serviceCountBonus + overdueBonus;
         const tier: PriorityTier = score >= crmPriorityAThreshold ? 'A' : score >= crmPriorityBThreshold ? 'B' : 'C';
 
-        const care = careByPatient.get(dk.benhnhan.id);
+        const care = careByPatient.get(s.benhnhan.id);
         const careStatusVal = (care?.status || 'chua_lien_he') as CareStatus;
 
         return {
-          id: dk.benhnhan.id,
-          ten: dk.benhnhan.ten,
-          dienthoai: dk.benhnhan.dienthoai,
-          ngay_kham_cuoi: dk.ngaykham,
+          id: s.benhnhan.id,
+          ten: s.benhnhan.ten,
+          dienthoai: s.benhnhan.dienthoai,
+          ngay_kham_cuoi: s.ngay_service,
           so_ngay: daysSince,
           gia_tri_don_gan_nhat: latestOrderValue,
           tong_gia_tri_dich_vu: patientStats.totalValue,
