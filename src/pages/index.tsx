@@ -28,7 +28,9 @@ interface DashboardData {
   today: string;
   stats: {
     tongBenhNhan: number; choKham: number; henHomNay: number;
-    canXuLy: number; trongSapHet: number; gongSapHet: number;
+    canXuLy: number; henTong: number;
+    trongSapHet: number; gongSapHet: number;
+    trongCanDat: number; trongDangVe: number;
   };
   viecCanLam: { henQuaHan: any[]; donKinhNo: any[]; henCanXuLy: any[] };
   khoKinh: {
@@ -139,7 +141,17 @@ export default function HomePage() {
   useEffect(() => { if (currentTenantId) fetchDashboard(); }, [currentTenantId]);
 
   const todayFmt = data?.today ? formatNgay(data.today) : new Date().toLocaleDateString('vi-VN');
-  const s = data?.stats || { tongBenhNhan: 0, choKham: 0, henHomNay: 0, canXuLy: 0, trongSapHet: 0, gongSapHet: 0 };
+  const s = data?.stats || {
+    tongBenhNhan: 0,
+    choKham: 0,
+    henHomNay: 0,
+    canXuLy: 0,
+    henTong: 0,
+    trongSapHet: 0,
+    gongSapHet: 0,
+    trongCanDat: 0,
+    trongDangVe: 0,
+  };
   const vcl = data?.viecCanLam || { henQuaHan: [], donKinhNo: [], henCanXuLy: [] };
   const kk = data?.khoKinh || { trong: { het: [], sapHet: [] }, gong: { het: [], sapHet: [] } };
   const lich = data?.lichHomNay || [];
@@ -186,20 +198,22 @@ export default function HomePage() {
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0"><CalendarDays className="w-4.5 h-4.5 text-green-600" /></div>
                 <div className="min-w-0">
-                  <div className="text-xl font-bold text-gray-800 leading-tight">{s.henHomNay}</div>
-                  <div className="text-[11px] text-gray-500 truncate">Lịch hẹn</div>
+                  <div className="text-xl font-bold text-gray-800 leading-tight">{s.henTong || (s.henHomNay + s.canXuLy)}</div>
+                  <div className="text-[11px] text-gray-500 truncate">Lịch hẹn và nhắc lịch</div>
+                  <div className="text-[10px] text-gray-400 truncate">Hôm nay {s.henHomNay} • Cần xử lý {s.canXuLy}</div>
                 </div>
               </div>
             </Link>
-            <div className="bg-white rounded-xl p-3.5 shadow-sm border-l-4 border-red-500">
+            <Link href="/quan-ly-kho?tab=lens_order" className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow border-l-4 border-red-500">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0"><Bell className="w-4.5 h-4.5 text-red-600" /></div>
                 <div className="min-w-0">
-                  <div className="text-xl font-bold text-gray-800 leading-tight">{s.canXuLy}</div>
-                  <div className="text-[11px] text-gray-500 truncate">Nhắc lịch</div>
+                  <div className="text-xl font-bold text-gray-800 leading-tight">{s.trongCanDat}</div>
+                  <div className="text-[11px] text-gray-500 truncate">Tròng cần đặt</div>
+                  <div className="text-[10px] text-gray-400 truncate">Đang về {s.trongDangVe}</div>
                 </div>
               </div>
-            </div>
+            </Link>
             <Link href="/quan-ly-kho" className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow border-l-4 border-purple-500">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0"><Sparkles className="w-4.5 h-4.5 text-purple-600" /></div>

@@ -27,6 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       benhnhanRes,
       lensLowRes,
       frameLowRes,
+      lensOrderRes,
       crmRes,
     ] = await Promise.all([
       // 1. Chờ khám hôm nay
@@ -84,13 +85,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .not('trang_thai', 'eq', false),
 
-      // 8. CRM: Bệnh nhân lâu chưa quay lại (>3 tháng)
+      // 8. Tròng cần đặt / đang về
+      supabase
+        .from('lens_order')
+        .select('trang_thai, so_luong_mieng')
+        .eq('tenant_id', tenantId)
+        .in('trang_thai', ['cho_dat', 'da_dat']),
+
+      // 9. CRM: Bệnh nhân lâu chưa quay lại (>3 tháng)
       supabase
         .from('DonKinh')
         .select('benhnhanid, ngaykham, benhnhan:BenhNhan(id, ten, dienthoai)')
         .eq('tenant_id', tenantId)
-        .order('ngaykham', { ascending: false })
-        .limit(200),
+        .order('ngaykham', { ascending: false }),
     ]);
 
     // Process data
@@ -136,11 +143,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const frameHet = frameAlerts.filter((a: any) => a.trang_thai === 'HET');
     const frameSapHet = frameAlerts.filter((a: any) => a.trang_thai === 'SAP_HET');
 
+    // Tròng cần đặt / đang về
+    const lensOrderData = lensOrderRes.data || [];
+    const trongCanDat = lensOrderData
+      .filter((o: any) => o.trang_thai === 'cho_dat')
+      .reduce((sum: number, o: any) => sum + (o.so_luong_mieng || 0), 0);
+    const trongDangVe = lensOrderData
+      .filter((o: any) => o.trang_thai === 'da_dat')
+      .reduce((sum: number, o: any) => sum + (o.so_luong_mieng || 0), 0);
+
     // CRM: patients not returning >90 days
     const crmData = crmRes.data || [];
-    const latestByPatient = new Map<number, any>();
+    const latestByPatient = new Map<string, any>();
     crmData.forEach((dk: any) => {
-      const bnId = dk.benhnhanid;
+      const bnId = String(dk.benhnhanid || '');
       if (bnId && !latestByPatient.has(bnId)) {
         latestByPatient.set(bnId, dk);
       }
@@ -170,8 +186,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         choKham: choKhamCho.length,
         henHomNay: henHomNay.length,
         canXuLy: henCanXuLy.length,
+        henTong: henHomNay.length + henCanXuLy.length,
         trongSapHet: lensAlerts.length,
         gongSapHet: frameAlerts.length,
+        trongCanDat,
+        trongDangVe,
       },
       viecCanLam: {
         henQuaHan: henQuaHan.slice(0, 5),

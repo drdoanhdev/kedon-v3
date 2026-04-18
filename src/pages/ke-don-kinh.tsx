@@ -145,7 +145,7 @@ const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
               <p className="text-xs flex items-center gap-1">
                 <span><strong>Ngày:</strong> {new Date(don.ngaykham || don.ngay_kham || '').toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                 {(don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0) > 0 && (
-                  <span className="text-blue-600 font-semibold ml-auto">Nợ {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</span>
+                  <span className="text-red-600 font-semibold ml-auto">Nợ {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</span>
                 )}
               </p>
               <p className="text-xs"><strong>MP:</strong> {don.sokinh_moi_mp || 'N/A'} {don.thiluc_kinhmoi_mp ? `→ ${don.thiluc_kinhmoi_mp}` : ''}</p>
