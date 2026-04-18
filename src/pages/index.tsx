@@ -631,6 +631,9 @@ export default function HomePage() {
                     </Link>
                   ))
                 )}
+                <Link href="/cham-soc-khach-hang" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-1">
+                  Mở trang chăm sóc khách hàng →
+                </Link>
               </div>
             </div>
 

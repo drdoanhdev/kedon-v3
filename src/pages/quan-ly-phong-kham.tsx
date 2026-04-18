@@ -70,6 +70,112 @@ export default function QuanLyPhongKham() {
   const [crmLimit, setCrmLimit] = useState('20');
   const [crmOnlyHasPhone, setCrmOnlyHasPhone] = useState(false);
   const [crmPrioritizeHighValue, setCrmPrioritizeHighValue] = useState(true);
+  const [crmPriorityAThreshold, setCrmPriorityAThreshold] = useState('140');
+  const [crmPriorityBThreshold, setCrmPriorityBThreshold] = useState('105');
+  const [crmValuePerPoint, setCrmValuePerPoint] = useState('200000');
+  const [crmValueBonusCap, setCrmValueBonusCap] = useState('50');
+  const [crmLifetimeValuePerPoint, setCrmLifetimeValuePerPoint] = useState('1500000');
+  const [crmLifetimeValueBonusCap, setCrmLifetimeValueBonusCap] = useState('35');
+  const [crmServiceCountPoint, setCrmServiceCountPoint] = useState('3');
+  const [crmServiceCountBonusCap, setCrmServiceCountBonusCap] = useState('25');
+  const [crmOverduePoint, setCrmOverduePoint] = useState('15');
+  const [crmOverdueBonusCap, setCrmOverdueBonusCap] = useState('40');
+
+  const CRM_DEFAULTS = {
+    daysThreshold: '90',
+    limit: '20',
+    priorityAThreshold: '140',
+    priorityBThreshold: '105',
+    valuePerPoint: '200000',
+    valueBonusCap: '50',
+    lifetimeValuePerPoint: '1500000',
+    lifetimeValueBonusCap: '35',
+    serviceCountPoint: '3',
+    serviceCountBonusCap: '25',
+    overduePoint: '15',
+    overdueBonusCap: '40',
+    onlyHasPhone: false,
+    prioritizeHighValue: true,
+  };
+
+  const CRM_PRESETS: Record<'small' | 'medium' | 'large', typeof CRM_DEFAULTS> = {
+    small: {
+      daysThreshold: '120',
+      limit: '20',
+      priorityAThreshold: '155',
+      priorityBThreshold: '120',
+      valuePerPoint: '250000',
+      valueBonusCap: '40',
+      lifetimeValuePerPoint: '2000000',
+      lifetimeValueBonusCap: '28',
+      serviceCountPoint: '2',
+      serviceCountBonusCap: '20',
+      overduePoint: '18',
+      overdueBonusCap: '35',
+      onlyHasPhone: true,
+      prioritizeHighValue: true,
+    },
+    medium: {
+      daysThreshold: '90',
+      limit: '35',
+      priorityAThreshold: '140',
+      priorityBThreshold: '105',
+      valuePerPoint: '200000',
+      valueBonusCap: '50',
+      lifetimeValuePerPoint: '1500000',
+      lifetimeValueBonusCap: '35',
+      serviceCountPoint: '3',
+      serviceCountBonusCap: '25',
+      overduePoint: '15',
+      overdueBonusCap: '40',
+      onlyHasPhone: true,
+      prioritizeHighValue: true,
+    },
+    large: {
+      daysThreshold: '75',
+      limit: '60',
+      priorityAThreshold: '125',
+      priorityBThreshold: '95',
+      valuePerPoint: '150000',
+      valueBonusCap: '70',
+      lifetimeValuePerPoint: '1200000',
+      lifetimeValueBonusCap: '45',
+      serviceCountPoint: '4',
+      serviceCountBonusCap: '35',
+      overduePoint: '12',
+      overdueBonusCap: '50',
+      onlyHasPhone: true,
+      prioritizeHighValue: true,
+    },
+  };
+
+  const applyCrmConfig = (cfg: typeof CRM_DEFAULTS) => {
+    setCrmDaysThreshold(cfg.daysThreshold);
+    setCrmLimit(cfg.limit);
+    setCrmPriorityAThreshold(cfg.priorityAThreshold);
+    setCrmPriorityBThreshold(cfg.priorityBThreshold);
+    setCrmValuePerPoint(cfg.valuePerPoint);
+    setCrmValueBonusCap(cfg.valueBonusCap);
+    setCrmLifetimeValuePerPoint(cfg.lifetimeValuePerPoint);
+    setCrmLifetimeValueBonusCap(cfg.lifetimeValueBonusCap);
+    setCrmServiceCountPoint(cfg.serviceCountPoint);
+    setCrmServiceCountBonusCap(cfg.serviceCountBonusCap);
+    setCrmOverduePoint(cfg.overduePoint);
+    setCrmOverdueBonusCap(cfg.overdueBonusCap);
+    setCrmOnlyHasPhone(cfg.onlyHasPhone);
+    setCrmPrioritizeHighValue(cfg.prioritizeHighValue);
+  };
+
+  const handleApplyPreset = (size: 'small' | 'medium' | 'large') => {
+    applyCrmConfig(CRM_PRESETS[size]);
+    const label = size === 'small' ? 'Nhỏ' : size === 'medium' ? 'Vừa' : 'Lớn';
+    toast.success(`Đã áp dụng preset cửa hàng ${label}. Bấm Lưu để ghi nhận.`);
+  };
+
+  const handleResetCrmDefaults = () => {
+    applyCrmConfig(CRM_DEFAULTS);
+    toast.success('Đã khôi phục cấu hình mặc định. Bấm Lưu để ghi nhận.');
+  };
   
   // Add member 
   const [showAddMember, setShowAddMember] = useState(false);
@@ -151,6 +257,16 @@ export default function QuanLyPhongKham() {
         const cfg = settings?.dashboard?.crm || {};
         const days = Number(cfg.daysThreshold);
         const limit = Number(cfg.limit);
+        const aThreshold = Number(cfg.priorityAThreshold);
+        const bThreshold = Number(cfg.priorityBThreshold);
+        const valuePerPoint = Number(cfg.valuePerPoint);
+        const valueBonusCap = Number(cfg.valueBonusCap);
+        const lifetimeValuePerPoint = Number(cfg.lifetimeValuePerPoint);
+        const lifetimeValueBonusCap = Number(cfg.lifetimeValueBonusCap);
+        const serviceCountPoint = Number(cfg.serviceCountPoint);
+        const serviceCountBonusCap = Number(cfg.serviceCountBonusCap);
+        const overduePoint = Number(cfg.overduePoint);
+        const overdueBonusCap = Number(cfg.overdueBonusCap);
         const onlyHasPhone = cfg.onlyHasPhone === true;
         const prioritizeHighValue = cfg.prioritizeHighValue !== false;
 
@@ -168,6 +284,16 @@ export default function QuanLyPhongKham() {
         setTenantAddress(t.address || '');
         setCrmDaysThreshold(String(Number.isFinite(days) ? days : 90));
         setCrmLimit(String(Number.isFinite(limit) ? limit : 20));
+        setCrmPriorityAThreshold(String(Number.isFinite(aThreshold) ? aThreshold : 140));
+        setCrmPriorityBThreshold(String(Number.isFinite(bThreshold) ? bThreshold : 105));
+        setCrmValuePerPoint(String(Number.isFinite(valuePerPoint) ? valuePerPoint : 200000));
+        setCrmValueBonusCap(String(Number.isFinite(valueBonusCap) ? valueBonusCap : 50));
+        setCrmLifetimeValuePerPoint(String(Number.isFinite(lifetimeValuePerPoint) ? lifetimeValuePerPoint : 1500000));
+        setCrmLifetimeValueBonusCap(String(Number.isFinite(lifetimeValueBonusCap) ? lifetimeValueBonusCap : 35));
+        setCrmServiceCountPoint(String(Number.isFinite(serviceCountPoint) ? serviceCountPoint : 3));
+        setCrmServiceCountBonusCap(String(Number.isFinite(serviceCountBonusCap) ? serviceCountBonusCap : 25));
+        setCrmOverduePoint(String(Number.isFinite(overduePoint) ? overduePoint : 15));
+        setCrmOverdueBonusCap(String(Number.isFinite(overdueBonusCap) ? overdueBonusCap : 40));
         setCrmOnlyHasPhone(onlyHasPhone);
         setCrmPrioritizeHighValue(prioritizeHighValue);
       } catch {}
@@ -179,6 +305,17 @@ export default function QuanLyPhongKham() {
     try {
       const nextDays = Math.min(Math.max(parseInt(crmDaysThreshold || '90', 10) || 90, 30), 365);
       const nextLimit = Math.min(Math.max(parseInt(crmLimit || '20', 10) || 20, 5), 100);
+      const nextValuePerPoint = Math.min(Math.max(parseInt(crmValuePerPoint || '200000', 10) || 200000, 50000), 2000000);
+      const nextValueBonusCap = Math.min(Math.max(parseInt(crmValueBonusCap || '50', 10) || 50, 0), 200);
+      const nextA = Math.min(Math.max(parseInt(crmPriorityAThreshold || '140', 10) || 140, 60), 400);
+      const nextBRaw = Math.min(Math.max(parseInt(crmPriorityBThreshold || '105', 10) || 105, 30), 300);
+      const nextB = Math.min(nextBRaw, nextA - 1);
+      const nextLifetimeValuePerPoint = Math.min(Math.max(parseInt(crmLifetimeValuePerPoint || '1500000', 10) || 1500000, 100000), 10000000);
+      const nextLifetimeValueBonusCap = Math.min(Math.max(parseInt(crmLifetimeValueBonusCap || '35', 10) || 35, 0), 200);
+      const nextServiceCountPoint = Math.min(Math.max(parseInt(crmServiceCountPoint || '3', 10) || 3, 0), 20);
+      const nextServiceCountBonusCap = Math.min(Math.max(parseInt(crmServiceCountBonusCap || '25', 10) || 25, 0), 200);
+      const nextOverduePoint = Math.min(Math.max(parseInt(crmOverduePoint || '15', 10) || 15, 0), 100);
+      const nextOverdueBonusCap = Math.min(Math.max(parseInt(crmOverdueBonusCap || '40', 10) || 40, 0), 300);
       const nextSettings = {
         ...(tenantInfo.settings || {}),
         dashboard: {
@@ -187,6 +324,16 @@ export default function QuanLyPhongKham() {
             ...((tenantInfo.settings || {}).dashboard?.crm || {}),
             daysThreshold: nextDays,
             limit: nextLimit,
+            priorityAThreshold: nextA,
+            priorityBThreshold: nextB,
+            valuePerPoint: nextValuePerPoint,
+            valueBonusCap: nextValueBonusCap,
+            lifetimeValuePerPoint: nextLifetimeValuePerPoint,
+            lifetimeValueBonusCap: nextLifetimeValueBonusCap,
+            serviceCountPoint: nextServiceCountPoint,
+            serviceCountBonusCap: nextServiceCountBonusCap,
+            overduePoint: nextOverduePoint,
+            overdueBonusCap: nextOverdueBonusCap,
             onlyHasPhone: crmOnlyHasPhone,
             prioritizeHighValue: crmPrioritizeHighValue,
           },
@@ -210,6 +357,16 @@ export default function QuanLyPhongKham() {
         setTenantInfo((prev) => prev ? { ...prev, settings: nextSettings } : prev);
         setCrmDaysThreshold(String(nextDays));
         setCrmLimit(String(nextLimit));
+        setCrmPriorityAThreshold(String(nextA));
+        setCrmPriorityBThreshold(String(nextB));
+        setCrmValuePerPoint(String(nextValuePerPoint));
+        setCrmValueBonusCap(String(nextValueBonusCap));
+        setCrmLifetimeValuePerPoint(String(nextLifetimeValuePerPoint));
+        setCrmLifetimeValueBonusCap(String(nextLifetimeValueBonusCap));
+        setCrmServiceCountPoint(String(nextServiceCountPoint));
+        setCrmServiceCountBonusCap(String(nextServiceCountBonusCap));
+        setCrmOverduePoint(String(nextOverduePoint));
+        setCrmOverdueBonusCap(String(nextOverdueBonusCap));
         setEditTenant(false);
       } else {
         toast.error(data.message || 'Lỗi cập nhật');
@@ -325,48 +482,167 @@ export default function QuanLyPhongKham() {
                   <Input value={tenantAddress} onChange={e => setTenantAddress(e.target.value)} />
                 </div>
                 <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Cấu hình Khách cần chăm sóc (Dashboard)</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <Label>Ngưỡng ngày chưa quay lại</Label>
-                      <Input
-                        type="number"
-                        min={30}
-                        max={365}
-                        value={crmDaysThreshold}
-                        onChange={e => setCrmDaysThreshold(e.target.value)}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Từ 30 đến 365 ngày</p>
-                    </div>
-                    <div>
-                      <Label>Số khách hiển thị tối đa</Label>
-                      <Input
-                        type="number"
-                        min={5}
-                        max={100}
-                        value={crmLimit}
-                        onChange={e => setCrmLimit(e.target.value)}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Từ 5 đến 100 khách</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <p className="text-sm font-medium text-gray-700">Cấu hình Khách cần chăm sóc (Dashboard)</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-gray-500">Preset nhanh:</span>
+                      <Button type="button" variant="outline" size="sm" onClick={() => handleApplyPreset('small')}>Nhỏ</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => handleApplyPreset('medium')}>Vừa</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => handleApplyPreset('large')}>Lớn</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={handleResetCrmDefaults}>Khôi phục mặc định</Button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={crmOnlyHasPhone}
-                        onChange={e => setCrmOnlyHasPhone(e.target.checked)}
-                      />
-                      Chỉ hiện khách có số điện thoại
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={crmPrioritizeHighValue}
-                        onChange={e => setCrmPrioritizeHighValue(e.target.checked)}
-                      />
-                      Ưu tiên khách có đơn gần nhất giá cao
-                    </label>
+                  <p className="text-xs text-gray-500 mb-2">Preset chỉ áp dụng tạm vào biểu mẫu. Cần bấm Lưu để cập nhật chính thức.</p>
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <div className="grid grid-cols-12 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                      <div className="col-span-4">Thông số</div>
+                      <div className="col-span-3">Giá trị</div>
+                      <div className="col-span-5">Chú thích</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Ngưỡng ngày chưa quay lại</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={30} max={365} value={crmDaysThreshold} onChange={e => setCrmDaysThreshold(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Lọc khách đã lâu chưa quay lại. Khuyên dùng 60-120 ngày.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Số khách hiển thị tối đa</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={5} max={100} value={crmLimit} onChange={e => setCrmLimit(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Số lượng khách hiển thị trên card mỗi lần tải.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Mốc điểm Rất khẩn (A)</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={60} max={400} value={crmPriorityAThreshold} onChange={e => setCrmPriorityAThreshold(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Điểm từ mốc này trở lên sẽ vào nhóm Rất khẩn.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Mốc điểm Khẩn (B)</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={30} max={300} value={crmPriorityBThreshold} onChange={e => setCrmPriorityBThreshold(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Từ mốc này tới dưới A là nhóm Khẩn. Hệ thống sẽ tự đảm bảo B nhỏ hơn A.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Giá trị đơn / 1 điểm ưu tiên</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={50000} max={2000000} value={crmValuePerPoint} onChange={e => setCrmValuePerPoint(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Ví dụ 200000 nghĩa là mỗi 200k của đơn gần nhất sẽ cộng 1 điểm.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Trần điểm cộng từ doanh thu</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={0} max={200} value={crmValueBonusCap} onChange={e => setCrmValueBonusCap(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Giới hạn tác động của đơn giá cao để không lấn át yếu tố số ngày.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Tổng tiền dịch vụ / 1 điểm</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={100000} max={10000000} value={crmLifetimeValuePerPoint} onChange={e => setCrmLifetimeValuePerPoint(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Dựa trên tổng chi tiêu lịch sử tại phòng khám. Ví dụ 1.500.000đ = 1 điểm.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Trần điểm từ tổng tiền dịch vụ</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={0} max={200} value={crmLifetimeValueBonusCap} onChange={e => setCrmLifetimeValueBonusCap(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Khống chế ảnh hưởng của khách hàng chi tiêu rất cao.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Điểm mỗi lần sử dụng dịch vụ</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={0} max={20} value={crmServiceCountPoint} onChange={e => setCrmServiceCountPoint(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Tăng ưu tiên cho khách quay lại nhiều lần (khách thân thiết).</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Trần điểm từ số lần dịch vụ</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={0} max={200} value={crmServiceCountBonusCap} onChange={e => setCrmServiceCountBonusCap(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Giới hạn điểm cộng tích lũy từ số lần đã dùng dịch vụ.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Điểm mỗi hẹn khám lại quá hạn</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={0} max={100} value={crmOverduePoint} onChange={e => setCrmOverduePoint(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Mỗi lịch hẹn quá hạn sẽ đẩy mức ưu tiên chăm sóc lên cao hơn.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Trần điểm từ hẹn quá hạn</Label>
+                      </div>
+                      <div className="col-span-3">
+                        <Input type="number" min={0} max={300} value={crmOverdueBonusCap} onChange={e => setCrmOverdueBonusCap(e.target.value)} />
+                      </div>
+                      <div className="col-span-5 text-xs text-gray-500">Tránh trường hợp quá nhiều hẹn quá hạn làm méo ưu tiên tổng thể.</div>
+                    </div>
+
+                    <div className="grid grid-cols-12 px-3 py-2 border-t items-center gap-2">
+                      <div className="col-span-4">
+                        <Label>Bộ lọc & chiến lược</Label>
+                      </div>
+                      <div className="col-span-8 flex flex-col md:flex-row md:items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={crmOnlyHasPhone}
+                            onChange={e => setCrmOnlyHasPhone(e.target.checked)}
+                          />
+                          Chỉ hiện khách có số điện thoại
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={crmPrioritizeHighValue}
+                            onChange={e => setCrmPrioritizeHighValue(e.target.checked)}
+                          />
+                          Ưu tiên khách có đơn gần nhất giá cao
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -381,6 +657,11 @@ export default function QuanLyPhongKham() {
                 <p><span className="font-medium">CRM chăm sóc:</span> {crmDaysThreshold}+ ngày, tối đa {crmLimit} khách</p>
                 <p><span className="font-medium">Bộ lọc:</span> {crmOnlyHasPhone ? 'Chỉ khách có SĐT' : 'Bao gồm cả khách chưa có SĐT'}</p>
                 <p><span className="font-medium">Ưu tiên:</span> {crmPrioritizeHighValue ? 'Đơn gần nhất giá cao' : 'Theo số ngày chưa quay lại'}</p>
+                <p><span className="font-medium">Mốc ưu tiên:</span> Rất khẩn từ {crmPriorityAThreshold} điểm, Khẩn từ {crmPriorityBThreshold} điểm</p>
+                <p><span className="font-medium">Quy đổi doanh thu:</span> {Number(crmValuePerPoint || 0).toLocaleString('vi-VN')}đ = 1 điểm, trần {crmValueBonusCap} điểm</p>
+                <p><span className="font-medium">Quy đổi tổng tiền dịch vụ:</span> {Number(crmLifetimeValuePerPoint || 0).toLocaleString('vi-VN')}đ = 1 điểm, trần {crmLifetimeValueBonusCap} điểm</p>
+                <p><span className="font-medium">Điểm số lần dịch vụ:</span> {crmServiceCountPoint} điểm/lần, trần {crmServiceCountBonusCap} điểm</p>
+                <p><span className="font-medium">Điểm hẹn quá hạn:</span> {crmOverduePoint} điểm/lần, trần {crmOverdueBonusCap} điểm</p>
                 <p><span className="font-medium">Trạng thái:</span>{' '}
                   <Badge variant="outline" className="text-green-700">Hoạt động</Badge>
                 </p>

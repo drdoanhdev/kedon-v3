@@ -29,10 +29,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const crmCfg = tenantSettings?.dashboard?.crm || {};
     const daysThresholdRaw = Number(crmCfg.daysThreshold);
     const crmLimitRaw = Number(crmCfg.limit);
+    const priorityAThresholdRaw = Number(crmCfg.priorityAThreshold);
+    const priorityBThresholdRaw = Number(crmCfg.priorityBThreshold);
+    const valuePerPointRaw = Number(crmCfg.valuePerPoint);
+    const valueBonusCapRaw = Number(crmCfg.valueBonusCap);
+    const lifetimeValuePerPointRaw = Number(crmCfg.lifetimeValuePerPoint);
+    const lifetimeValueBonusCapRaw = Number(crmCfg.lifetimeValueBonusCap);
+    const serviceCountPointRaw = Number(crmCfg.serviceCountPoint);
+    const serviceCountBonusCapRaw = Number(crmCfg.serviceCountBonusCap);
+    const overduePointRaw = Number(crmCfg.overduePoint);
+    const overdueBonusCapRaw = Number(crmCfg.overdueBonusCap);
     const crmOnlyHasPhone = crmCfg.onlyHasPhone === true;
     const crmPrioritizeHighValue = crmCfg.prioritizeHighValue !== false;
     const crmDaysThreshold = Number.isFinite(daysThresholdRaw) ? Math.min(Math.max(daysThresholdRaw, 30), 365) : 90;
     const crmLimit = Number.isFinite(crmLimitRaw) ? Math.min(Math.max(crmLimitRaw, 5), 100) : 20;
+    const crmValuePerPoint = Number.isFinite(valuePerPointRaw) ? Math.min(Math.max(valuePerPointRaw, 50000), 2000000) : 200000;
+    const crmValueBonusCap = Number.isFinite(valueBonusCapRaw) ? Math.min(Math.max(valueBonusCapRaw, 0), 200) : 50;
+    const crmLifetimeValuePerPoint = Number.isFinite(lifetimeValuePerPointRaw) ? Math.min(Math.max(lifetimeValuePerPointRaw, 100000), 10000000) : 1500000;
+    const crmLifetimeValueBonusCap = Number.isFinite(lifetimeValueBonusCapRaw) ? Math.min(Math.max(lifetimeValueBonusCapRaw, 0), 200) : 35;
+    const crmServiceCountPoint = Number.isFinite(serviceCountPointRaw) ? Math.min(Math.max(serviceCountPointRaw, 0), 20) : 3;
+    const crmServiceCountBonusCap = Number.isFinite(serviceCountBonusCapRaw) ? Math.min(Math.max(serviceCountBonusCapRaw, 0), 200) : 25;
+    const crmOverduePoint = Number.isFinite(overduePointRaw) ? Math.min(Math.max(overduePointRaw, 0), 100) : 15;
+    const crmOverdueBonusCap = Number.isFinite(overdueBonusCapRaw) ? Math.min(Math.max(overdueBonusCapRaw, 0), 300) : 40;
+    const crmPriorityAThresholdBase = Number.isFinite(priorityAThresholdRaw) ? Math.min(Math.max(priorityAThresholdRaw, 60), 400) : 140;
+    const crmPriorityBThresholdBase = Number.isFinite(priorityBThresholdRaw) ? Math.min(Math.max(priorityBThresholdRaw, 30), 300) : 105;
+    const crmPriorityAThreshold = Math.max(crmPriorityAThresholdBase, crmPriorityBThresholdBase + 1);
+    const crmPriorityBThreshold = Math.min(crmPriorityBThresholdBase, crmPriorityAThreshold - 1);
 
     // Run all queries in parallel
     const [
@@ -45,6 +67,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       frameLowRes,
       lensOrderRes,
       crmRes,
+      overdueHenRes,
     ] = await Promise.all([
       // 1. Chờ khám hôm nay
       supabase
@@ -114,6 +137,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .select('benhnhanid, ngaykham, giatrong, giagong, benhnhan:BenhNhan(id, ten, dienthoai)')
         .eq('tenant_id', tenantId)
         .order('ngaykham', { ascending: false }),
+
+      // 10. Hẹn khám lại quá hạn theo bệnh nhân
+      supabase
+        .from('hen_kham_lai')
+        .select('benhnhanid')
+        .eq('tenant_id', tenantId)
+        .eq('trang_thai', 'cho')
+        .lt('ngay_hen', todayStr),
     ]);
 
     // Process data
@@ -171,11 +202,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // CRM: patients not returning >90 days
     const crmData = crmRes.data || [];
     const latestByPatient = new Map<string, any>();
+    const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();
     crmData.forEach((dk: any) => {
       const bnId = String(dk.benhnhanid || '');
+      const orderValue = (dk.giatrong || 0) + (dk.giagong || 0);
+      if (bnId) {
+        const prev = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
+        patientStatsById.set(bnId, {
+          totalValue: prev.totalValue + orderValue,
+          serviceCount: prev.serviceCount + 1,
+        });
+      }
       if (bnId && !latestByPatient.has(bnId)) {
         latestByPatient.set(bnId, dk);
       }
+    });
+
+    const overdueByPatient = new Map<string, number>();
+    (overdueHenRes.data || []).forEach((h: any) => {
+      const bnId = String(h.benhnhanid || '');
+      if (!bnId) return;
+      overdueByPatient.set(bnId, (overdueByPatient.get(bnId) || 0) + 1);
     });
     const thresholdDate = new Date(now.getTime() + 7 * 60 * 60 * 1000);
     thresholdDate.setDate(thresholdDate.getDate() - crmDaysThreshold);
@@ -186,10 +233,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .filter((dk: any) => dk.ngaykham && dk.ngaykham < thresholdDateStr && dk.benhnhan)
       .filter((dk: any) => !crmOnlyHasPhone || !!dk.benhnhan?.dienthoai)
       .map((dk: any) => {
+        const bnId = String(dk.benhnhanid || '');
+        const patientStats = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
+        const overdueCount = overdueByPatient.get(bnId) || 0;
         const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(dk.ngaykham).getTime()) / (1000 * 60 * 60 * 24));
         const latestOrderValue = (dk.giatrong || 0) + (dk.giagong || 0);
-        const priorityScore = daysSince + (crmPrioritizeHighValue ? Math.min(latestOrderValue / 200000, 50) : 0);
-        const priorityTier = priorityScore >= 140 ? 'A' : priorityScore >= 105 ? 'B' : 'C';
+        const latestValueBonus = crmPrioritizeHighValue ? Math.min(latestOrderValue / crmValuePerPoint, crmValueBonusCap) : 0;
+        const lifetimeValueBonus = Math.min(patientStats.totalValue / crmLifetimeValuePerPoint, crmLifetimeValueBonusCap);
+        const serviceCountBonus = Math.min(patientStats.serviceCount * crmServiceCountPoint, crmServiceCountBonusCap);
+        const overdueBonus = Math.min(overdueCount * crmOverduePoint, crmOverdueBonusCap);
+        const priorityScore = daysSince + latestValueBonus + lifetimeValueBonus + serviceCountBonus + overdueBonus;
+        const priorityTier = priorityScore >= crmPriorityAThreshold ? 'A' : priorityScore >= crmPriorityBThreshold ? 'B' : 'C';
         return {
           id: dk.benhnhan.id,
           ten: dk.benhnhan.ten,
@@ -197,6 +251,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ngay_kham_cuoi: dk.ngaykham,
           so_ngay: daysSince,
           gia_tri_don_gan_nhat: latestOrderValue,
+          tong_gia_tri_dich_vu: patientStats.totalValue,
+          so_lan_su_dung_dich_vu: patientStats.serviceCount,
+          so_hen_qua_han: overdueCount,
           uu_tien: Math.round(priorityScore),
           muc_uu_tien: priorityTier,
         };
@@ -270,6 +327,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         limit: crmLimit,
         onlyHasPhone: crmOnlyHasPhone,
         prioritizeHighValue: crmPrioritizeHighValue,
+        priorityConfig: {
+          priorityAThreshold: crmPriorityAThreshold,
+          priorityBThreshold: crmPriorityBThreshold,
+          valuePerPoint: crmValuePerPoint,
+          valueBonusCap: crmValueBonusCap,
+          lifetimeValuePerPoint: crmLifetimeValuePerPoint,
+          lifetimeValueBonusCap: crmLifetimeValueBonusCap,
+          serviceCountPoint: crmServiceCountPoint,
+          serviceCountBonusCap: crmServiceCountBonusCap,
+          overduePoint: crmOverduePoint,
+          overdueBonusCap: crmOverdueBonusCap,
+        },
         prioritySummary: crmPrioritySummary,
       },
     });
