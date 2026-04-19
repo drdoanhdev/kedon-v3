@@ -37,6 +37,24 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+async function fetchAllRows(table: string, select: string, tenantId: string): Promise<any[]> {
+  const PAGE_SIZE = 1000;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .eq('tenant_id', tenantId)
+      .range(from, from + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 function maybeServeCached(res: NextApiResponse, cacheKey: string): boolean {
   const cached = RESPONSE_CACHE.get(cacheKey);
   if (!cached) return false;
@@ -148,12 +166,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     if (maybeServeCached(res, cacheKey)) return;
 
-    const donKinhRes = await supabase
-      .from('DonKinh')
-      .select('benhnhanid, ngaykham, giatrong, giagong')
-      .eq('tenant_id', tenantId)
-      .order('ngaykham', { ascending: false });
-    const donKinhData: any[] = (donKinhRes.data ?? []) as any[];
+    const donKinhData: any[] = await fetchAllRows('DonKinh', 'benhnhanid, ngaykham, giatrong, giagong', tenantId);
 
     const latestKinhByPatient = new Map<string, { benhnhanid: string; ngay_kham_cuoi: string; ngay_kham_cuoi_ms: number; gia_tri_don_gan_nhat: number }>();
     const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();

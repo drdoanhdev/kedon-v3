@@ -12,6 +12,24 @@ function toDateMs(val: unknown): number {
   return Number.isFinite(ms) ? ms : NaN;
 }
 
+async function fetchAllRows(table: string, select: string, tenantId: string): Promise<any[]> {
+  const PAGE_SIZE = 1000;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .eq('tenant_id', tenantId)
+      .range(from, from + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -68,6 +86,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const crmPriorityBThreshold = Math.min(crmPriorityBThresholdBase, crmPriorityAThreshold - 1);
 
     // Run all queries in parallel
+    // 9. CRM: fetch ALL DonKinh (paginated) — runs in parallel with other queries
+    const crmAllDonKinhPromise = fetchAllRows(
+      'DonKinh',
+      'benhnhanid, ngaykham, giatrong, giagong',
+      tenantId,
+    );
+
     const [
       choKhamRes,
       henHomNayRes,
@@ -77,8 +102,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lensLowRes,
       frameLowRes,
       lensOrderRes,
-      crmRes,
       overdueHenRes,
+      crmAllDonKinh,
     ] = await Promise.all([
       // 1. Chờ khám hôm nay
       supabase
@@ -142,13 +167,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .in('trang_thai', ['cho_dat', 'da_dat']),
 
-      // 9. CRM: Bệnh nhân lâu chưa quay lại (>3 tháng)
-      supabase
-        .from('DonKinh')
-        .select('benhnhanid, ngaykham, giatrong, giagong, benhnhan:BenhNhan(id, ten, dienthoai)')
-        .eq('tenant_id', tenantId)
-        .order('ngaykham', { ascending: false }),
-
       // 10. Hẹn khám lại quá hạn theo bệnh nhân
       supabase
         .from('hen_kham_lai')
@@ -156,6 +174,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .eq('trang_thai', 'cho')
         .lt('ngay_hen', todayStr),
+
+      // 9. CRM: ALL DonKinh (paginated)
+      crmAllDonKinhPromise,
     ]);
 
     // Process data
@@ -210,9 +231,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .filter((o: any) => o.trang_thai === 'da_dat')
       .reduce((sum: number, o: any) => sum + (o.so_luong_mieng || 0), 0);
 
-    // CRM: patients not returning >90 days
-    const crmData = crmRes.data || [];
-    const latestByPatient = new Map<string, any>();
+    // CRM: patients not returning >N days — using ALL DonKinh (paginated)
+    const crmData: any[] = crmAllDonKinh as any[];
+    const latestByPatient = new Map<string, { benhnhanid: string; ngaykham: string; __visitMs: number; giatrong: number; giagong: number }>();
     const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();
     crmData.forEach((dk: any) => {
       const patientIdNum = Number(dk.benhnhanid);
@@ -222,16 +243,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!Number.isFinite(visitMs)) return;
 
       const orderValue = toFiniteNumber(dk.giatrong) + toFiniteNumber(dk.giagong);
-      if (bnId) {
-        const prev = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
-        patientStatsById.set(bnId, {
-          totalValue: prev.totalValue + orderValue,
-          serviceCount: prev.serviceCount + 1,
-        });
-      }
+      const prev = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
+      patientStatsById.set(bnId, {
+        totalValue: prev.totalValue + orderValue,
+        serviceCount: prev.serviceCount + 1,
+      });
+
       const prevLatest = latestByPatient.get(bnId);
       if (!prevLatest || visitMs > prevLatest.__visitMs) {
-        latestByPatient.set(bnId, { ...dk, __visitMs: visitMs });
+        latestByPatient.set(bnId, { benhnhanid: bnId, ngaykham: dk.ngaykham, __visitMs: visitMs, giatrong: dk.giatrong, giagong: dk.giagong });
       }
     });
 
@@ -246,11 +266,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const thresholdDateMs = thresholdDate.getTime();
     const tierRank: Record<string, number> = { A: 1, B: 2, C: 3 };
 
+    // Candidate IDs for CRM (patients whose last visit is older than threshold)
+    const crmCandidateIds = Array.from(latestByPatient.values())
+      .filter((dk) => Number.isFinite(dk.__visitMs) && dk.__visitMs < thresholdDateMs)
+      .map((dk) => Number(dk.benhnhanid))
+      .filter((id) => Number.isFinite(id));
+
+    // Batch-fetch BenhNhan info for candidates
+    const crmBenhNhanMap = new Map<number, { id: number; ten: string; dienthoai?: string }>();
+    if (crmCandidateIds.length > 0) {
+      const BN_CHUNK = 500;
+      for (let i = 0; i < crmCandidateIds.length; i += BN_CHUNK) {
+        const chunk = crmCandidateIds.slice(i, i + BN_CHUNK);
+        const { data: bnRows } = await supabase
+          .from('BenhNhan')
+          .select('id, ten, dienthoai')
+          .eq('tenant_id', tenantId)
+          .in('id', chunk);
+        (bnRows || []).forEach((bn: any) => crmBenhNhanMap.set(Number(bn.id), bn));
+      }
+    }
+
     const crmKhachCanChamSoc = Array.from(latestByPatient.values())
-      .filter((dk: any) => Number.isFinite(dk.__visitMs) && dk.__visitMs < thresholdDateMs && dk.benhnhan)
-      .filter((dk: any) => !crmOnlyHasPhone || !!dk.benhnhan?.dienthoai)
-      .map((dk: any) => {
-        const bnId = String(dk.benhnhanid || '');
+      .filter((dk) => Number.isFinite(dk.__visitMs) && dk.__visitMs < thresholdDateMs)
+      .map((dk) => {
+        const patientId = Number(dk.benhnhanid);
+        const benhnhan = crmBenhNhanMap.get(patientId);
+        if (!benhnhan) return null;
+        const bnId = dk.benhnhanid;
         const patientStats = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
         const overdueCount = overdueByPatient.get(bnId) || 0;
         const daysSince = Math.max(0, Math.floor((new Date(todayStr).getTime() - dk.__visitMs) / (1000 * 60 * 60 * 24)));
@@ -262,9 +305,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const priorityScore = daysSince + latestValueBonus + lifetimeValueBonus + serviceCountBonus + overdueBonus;
         const priorityTier = priorityScore >= crmPriorityAThreshold ? 'A' : priorityScore >= crmPriorityBThreshold ? 'B' : 'C';
         return {
-          id: dk.benhnhan.id,
-          ten: dk.benhnhan.ten,
-          dienthoai: dk.benhnhan.dienthoai,
+          id: benhnhan.id,
+          ten: benhnhan.ten,
+          dienthoai: benhnhan.dienthoai,
           ngay_kham_cuoi: dk.ngaykham,
           so_ngay: daysSince,
           gia_tri_don_gan_nhat: latestOrderValue,
@@ -275,7 +318,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           muc_uu_tien: priorityTier,
         };
       })
-      .sort((a: any, b: any) => {
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .filter((c) => !crmOnlyHasPhone || !!c.dienthoai)
+      .sort((a, b) => {
         const rankA = tierRank[a.muc_uu_tien] || 99;
         const rankB = tierRank[b.muc_uu_tien] || 99;
         if (rankA !== rankB) return rankA - rankB;
