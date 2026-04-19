@@ -62,6 +62,12 @@ function setCached(cacheKey: string, payload: any): void {
   }
 }
 
+function toDateMs(val: unknown): number {
+  if (!val) return NaN;
+  const ms = new Date(String(val)).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -149,24 +155,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .order('ngaykham', { ascending: false });
     const donKinhData: any[] = (donKinhRes.data ?? []) as any[];
 
-    const latestKinhByPatient = new Map<string, any>();
+    const latestKinhByPatient = new Map<string, { benhnhanid: string; ngay_kham_cuoi: string; ngay_kham_cuoi_ms: number; gia_tri_don_gan_nhat: number }>();
     const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();
 
     donKinhData.forEach((dk: any) => {
-      const bnId = String(dk.benhnhanid || '');
-      if (!bnId) return;
+      const patientIdNum = Number(dk.benhnhanid);
+      if (!Number.isFinite(patientIdNum) || patientIdNum <= 0) return;
 
-      const orderValue = (dk.giatrong || 0) + (dk.giagong || 0);
+      const latestVisitMs = toDateMs(dk.ngaykham);
+      if (!Number.isFinite(latestVisitMs)) return;
+
+      const bnId = String(patientIdNum);
+      const orderValue = toNumber(dk.giatrong, 0) + toNumber(dk.giagong, 0);
       const prev = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
       patientStatsById.set(bnId, {
         totalValue: prev.totalValue + orderValue,
         serviceCount: prev.serviceCount + 1,
       });
 
-      if (!latestKinhByPatient.has(bnId)) {
+      const prevLatest = latestKinhByPatient.get(bnId);
+      if (!prevLatest || latestVisitMs > prevLatest.ngay_kham_cuoi_ms) {
         latestKinhByPatient.set(bnId, {
           benhnhanid: bnId,
           ngay_kham_cuoi: dk.ngaykham,
+          ngay_kham_cuoi_ms: latestVisitMs,
           gia_tri_don_gan_nhat: orderValue,
         });
       }
@@ -174,11 +186,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const thresholdDate = new Date(todayStart);
     thresholdDate.setDate(thresholdDate.getDate() - crmDaysThreshold);
-    const thresholdDateStr = thresholdDate.toISOString().split('T')[0];
+    const thresholdDateMs = thresholdDate.getTime();
     const tierRank: Record<string, number> = { A: 1, B: 2, C: 3 };
 
     const candidateIds = Array.from(latestKinhByPatient.values())
-      .filter((s: any) => s.ngay_kham_cuoi && s.ngay_kham_cuoi < thresholdDateStr)
+      .filter((s: any) => Number.isFinite(s.ngay_kham_cuoi_ms) && s.ngay_kham_cuoi_ms < thresholdDateMs)
       .map((s: any) => Number(s.benhnhanid))
       .filter((id: number) => Number.isFinite(id));
 
@@ -279,7 +291,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     let customers = Array.from(latestKinhByPatient.values())
-      .filter((s: any) => s.ngay_kham_cuoi && s.ngay_kham_cuoi < thresholdDateStr)
+      .filter((s: any) => Number.isFinite(s.ngay_kham_cuoi_ms) && s.ngay_kham_cuoi_ms < thresholdDateMs)
       .map((s: any) => {
         const patientId = Number(s.benhnhanid);
         const benhnhan = benhNhanMap.get(patientId);
@@ -287,7 +299,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const bnId = String(s.benhnhanid || '');
         const patientStats = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
         const overdueCount = overdueByPatient.get(bnId) || 0;
-        const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(s.ngay_kham_cuoi).getTime()) / (1000 * 60 * 60 * 24));
+        const daysSince = Math.max(0, Math.floor((new Date(todayStr).getTime() - s.ngay_kham_cuoi_ms) / (1000 * 60 * 60 * 24)));
         const latestOrderValue = Number(s.gia_tri_don_gan_nhat || 0);
 
         const latestValueBonus = crmPrioritizeHighValue ? Math.min(latestOrderValue / crmValuePerPoint, crmValueBonusCap) : 0;

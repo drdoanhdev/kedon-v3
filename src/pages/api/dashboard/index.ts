@@ -1,6 +1,17 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
+function toFiniteNumber(val: unknown, fallback = 0): number {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toDateMs(val: unknown): number {
+  if (!val) return NaN;
+  const ms = new Date(String(val)).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -157,8 +168,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Đơn kính còn nợ
     const donKinhNo = donKinhGan.filter((dk: any) => {
-      const tong = (dk.giatrong || 0) + (dk.giagong || 0);
-      const daTT = dk.sotien_da_thanh_toan || 0;
+      const tong = toFiniteNumber(dk.giatrong) + toFiniteNumber(dk.giagong);
+      const daTT = toFiniteNumber(dk.sotien_da_thanh_toan);
       return tong > daTT && tong > 0;
     });
 
@@ -204,8 +215,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const latestByPatient = new Map<string, any>();
     const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();
     crmData.forEach((dk: any) => {
-      const bnId = String(dk.benhnhanid || '');
-      const orderValue = (dk.giatrong || 0) + (dk.giagong || 0);
+      const patientIdNum = Number(dk.benhnhanid);
+      if (!Number.isFinite(patientIdNum) || patientIdNum <= 0) return;
+      const bnId = String(patientIdNum);
+      const visitMs = toDateMs(dk.ngaykham);
+      if (!Number.isFinite(visitMs)) return;
+
+      const orderValue = toFiniteNumber(dk.giatrong) + toFiniteNumber(dk.giagong);
       if (bnId) {
         const prev = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
         patientStatsById.set(bnId, {
@@ -213,8 +229,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           serviceCount: prev.serviceCount + 1,
         });
       }
-      if (bnId && !latestByPatient.has(bnId)) {
-        latestByPatient.set(bnId, dk);
+      const prevLatest = latestByPatient.get(bnId);
+      if (!prevLatest || visitMs > prevLatest.__visitMs) {
+        latestByPatient.set(bnId, { ...dk, __visitMs: visitMs });
       }
     });
 
@@ -226,18 +243,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     const thresholdDate = new Date(now.getTime() + 7 * 60 * 60 * 1000);
     thresholdDate.setDate(thresholdDate.getDate() - crmDaysThreshold);
-    const thresholdDateStr = thresholdDate.toISOString().split('T')[0];
+    const thresholdDateMs = thresholdDate.getTime();
     const tierRank: Record<string, number> = { A: 1, B: 2, C: 3 };
 
     const crmKhachCanChamSoc = Array.from(latestByPatient.values())
-      .filter((dk: any) => dk.ngaykham && dk.ngaykham < thresholdDateStr && dk.benhnhan)
+      .filter((dk: any) => Number.isFinite(dk.__visitMs) && dk.__visitMs < thresholdDateMs && dk.benhnhan)
       .filter((dk: any) => !crmOnlyHasPhone || !!dk.benhnhan?.dienthoai)
       .map((dk: any) => {
         const bnId = String(dk.benhnhanid || '');
         const patientStats = patientStatsById.get(bnId) || { totalValue: 0, serviceCount: 0 };
         const overdueCount = overdueByPatient.get(bnId) || 0;
-        const daysSince = Math.floor((new Date(todayStr).getTime() - new Date(dk.ngaykham).getTime()) / (1000 * 60 * 60 * 24));
-        const latestOrderValue = (dk.giatrong || 0) + (dk.giagong || 0);
+        const daysSince = Math.max(0, Math.floor((new Date(todayStr).getTime() - dk.__visitMs) / (1000 * 60 * 60 * 24)));
+        const latestOrderValue = toFiniteNumber(dk.giatrong) + toFiniteNumber(dk.giagong);
         const latestValueBonus = crmPrioritizeHighValue ? Math.min(latestOrderValue / crmValuePerPoint, crmValueBonusCap) : 0;
         const lifetimeValueBonus = Math.min(patientStats.totalValue / crmLifetimeValuePerPoint, crmLifetimeValueBonusCap);
         const serviceCountBonus = Math.min(patientStats.serviceCount * crmServiceCountPoint, crmServiceCountBonusCap);
