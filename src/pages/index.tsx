@@ -6,8 +6,8 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
   Users, Clock, CalendarDays, Bell, AlertTriangle, Glasses,
-  Pill, BarChart3, ChevronRight, Phone, RefreshCw, CheckCircle2,
-  UserCheck, Package, Sparkles, HeartHandshake,
+  Phone, RefreshCw, CheckCircle2,
+  UserCheck, Sparkles, HeartHandshake,
 } from 'lucide-react';
 
 /* ───────── Types ───────── */
@@ -236,9 +236,9 @@ export default function HomePage() {
   };
 
   const priorityBadge = (tier?: string) => {
-    if (tier === 'A') return { text: 'Rất khẩn', cls: 'bg-red-100 text-red-700' };
-    if (tier === 'B') return { text: 'Khẩn', cls: 'bg-orange-100 text-orange-700' };
-    return { text: 'Theo dõi', cls: 'bg-teal-100 text-teal-700' };
+    if (tier === 'A') return { text: 'Cấp A', cls: 'bg-red-100 text-red-700' };
+    if (tier === 'B') return { text: 'Cấp B', cls: 'bg-orange-100 text-orange-700' };
+    return { text: 'Cấp C', cls: 'bg-teal-100 text-teal-700' };
   };
 
   return (
@@ -443,135 +443,60 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ══════ ROW 3: LỊCH HÔM NAY + CHỜ KHÁM ══════ */}
+          {/* ══════ CRM + LỊCH + CHỜ KHÁM (layout mới) ══════ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-            {/* LEFT: Lịch hôm nay */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b bg-green-50 flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-green-600" />
-                <span className="font-semibold text-sm text-green-800">Lịch hôm nay</span>
-                {lich.length > 0 && <span className="ml-auto text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">{lich.length}</span>}
-              </div>
-              <div className="p-3 space-y-1 max-h-72 overflow-y-auto">
-                {lich.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <CalendarDays className="w-8 h-8 mx-auto mb-2" />
-                    <p className="text-sm">Không có lịch hẹn hôm nay</p>
-                  </div>
-                ) : (
-                  lich.map((h: any) => (
-                    <div key={h.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="text-xs font-mono font-bold text-blue-600 w-11 text-center flex-shrink-0">
-                        {formatGio(h.gio_hen) || '—'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-gray-800 truncate block">{h.ten_benhnhan}</span>
-                        <span className="text-xs text-gray-500">{h.ly_do}</span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {h.trang_thai === 'da_den' ? (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">Đã đến</span>
-                        ) : h.trang_thai === 'huy' ? (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Hủy</span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">Chờ</span>
-                        )}
-                        {h.dienthoai && <a href={`tel:${h.dienthoai}`} className="p-1 text-green-600 hover:bg-green-100 rounded"><Phone className="w-3 h-3" /></a>}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <Link href="/lich-hen" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-1">Xem tất cả →</Link>
-              </div>
-            </div>
-
-            {/* RIGHT: Đang chờ khám */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b bg-orange-50 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-600" />
-                <span className="font-semibold text-sm text-orange-800">Đang chờ khám</span>
-                {ckList.length > 0 && <span className="ml-auto text-xs bg-orange-600 text-white px-2 py-0.5 rounded-full">{ckList.length}</span>}
-              </div>
-              <div className="p-3 max-h-72 overflow-y-auto">
-                {ckList.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <UserCheck className="w-8 h-8 mx-auto mb-2" />
-                    <p className="text-sm">Không có bệnh nhân chờ</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {ckList.map((ck: any) => (
-                      <Link key={ck.id} href={ck.BenhNhan?.id ? `/ke-don-kinh?bn=${ck.BenhNhan.id}` : '/cho-kham'} className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors">
-                        <UserCheck className="w-3.5 h-3.5 text-orange-600" />
-                        <span className="text-sm font-medium text-gray-800">{ck.BenhNhan?.ten || 'BN'}</span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-                <Link href="/cho-kham" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-2">Mở phòng chờ →</Link>
-              </div>
-            </div>
-          </div>
-
-          {/* ══════ ROW 4: CRM + MODULE NHANH ══════ */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-            {/* LEFT: CRM khách cần chăm sóc */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {/* LEFT (span 2 rows): CRM khách cần chăm sóc */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden lg:row-span-2 h-full">
               <div className="px-4 py-3 border-b bg-teal-50 flex items-center gap-2">
                 <HeartHandshake className="w-4 h-4 text-teal-600" />
                 <span className="font-semibold text-sm text-teal-800">Khách cần chăm sóc</span>
                 {crmFiltered.length > 0 && <span className="ml-auto text-xs bg-teal-600 text-white px-2 py-0.5 rounded-full">{crmFiltered.length}</span>}
               </div>
-              <div className="p-3 space-y-1 max-h-64 overflow-y-auto">
-                <p className="text-[11px] text-gray-500 px-1 pb-1">
-                  Tối đa {crmMeta.limit} khách, ngưỡng {crmMeta.daysThreshold}+ ngày
-                  {crmMeta.onlyHasPhone ? ' • Chỉ có SĐT' : ''}
-                  {crmMeta.prioritizeHighValue ? ' • Ưu tiên đơn giá trị cao' : ''}
-                </p>
-                <div className="px-1 pb-2 flex items-center gap-1.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setCrmPriorityFilter('all')}
-                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >Tất cả {crmByStatus.length}</button>
-                  <button
-                    type="button"
-                    onClick={() => setCrmPriorityFilter('A')}
-                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'A' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
-                  >Rất khẩn {crmPrioritySummaryByFilter.A}</button>
-                  <button
-                    type="button"
-                    onClick={() => setCrmPriorityFilter('B')}
-                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'B' ? 'bg-orange-600 text-white' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}
-                  >Khẩn {crmPrioritySummaryByFilter.B}</button>
-                  <button
-                    type="button"
-                    onClick={() => setCrmPriorityFilter('C')}
-                    className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'C' ? 'bg-teal-600 text-white' : 'bg-teal-100 text-teal-700 hover:bg-teal-200'}`}
-                  >Theo dõi {crmPrioritySummaryByFilter.C}</button>
-                </div>
-                {isTeamLead && (
-                  <div className="px-1 pb-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCrmFilterMode('all');
-                        setCrmPriorityFilter('all');
-                      }}
-                      className={`text-[10px] px-2 py-1 rounded ${crmFilterMode === 'all' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                    >Tất cả</button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCrmFilterMode('telesale');
-                        setCrmPriorityFilter('all');
-                      }}
-                      className={`text-[10px] px-2 py-1 rounded ${crmFilterMode === 'telesale' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                    >Telesale: Chưa liên hệ + Hẹn gọi lại</button>
+              <div className="p-3 space-y-1 max-h-[36rem] overflow-y-auto">
+                <div className="px-1 pb-2 space-y-2">
+                  <div className="flex flex-wrap gap-1.5 text-[10px]">
+                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Tối đa {crmMeta.limit} khách</span>
+                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Nhắc sau {crmMeta.daysThreshold}+ ngày</span>
+                    {crmMeta.onlyHasPhone && (
+                      <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Chỉ khách có SĐT</span>
+                    )}
+                    {crmMeta.prioritizeHighValue && (
+                      <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Ưu tiên khách đơn giá cao</span>
+                    )}
                   </div>
-                )}
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {isTeamLead && (
+                      <button
+                        type="button"
+                        onClick={() => setCrmFilterMode((m) => (m === 'telesale' ? 'all' : 'telesale'))}
+                        className={`text-[10px] px-2 py-0.5 rounded ${crmFilterMode === 'telesale' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        title="Bật/Tắt lọc Telesale: Chưa liên hệ + Hẹn gọi lại"
+                      >Telesale</button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCrmPriorityFilter('all')}
+                      className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >Tất cả {crmByStatus.length}</button>
+                    <button
+                      type="button"
+                      onClick={() => setCrmPriorityFilter('A')}
+                      className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'A' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                    >Cấp A {crmPrioritySummaryByFilter.A}</button>
+                    <button
+                      type="button"
+                      onClick={() => setCrmPriorityFilter('B')}
+                      className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'B' ? 'bg-orange-600 text-white' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}
+                    >Cấp B {crmPrioritySummaryByFilter.B}</button>
+                    <button
+                      type="button"
+                      onClick={() => setCrmPriorityFilter('C')}
+                      className={`text-[10px] px-2 py-0.5 rounded ${crmPriorityFilter === 'C' ? 'bg-teal-600 text-white' : 'bg-teal-100 text-teal-700 hover:bg-teal-200'}`}
+                    >Cấp C {crmPrioritySummaryByFilter.C}</button>
+                  </div>
+                </div>
                 {crmFiltered.length === 0 ? (
                   <div className="text-center py-6 text-gray-400">
                     <HeartHandshake className="w-8 h-8 mx-auto mb-2 text-teal-300" />
@@ -637,29 +562,70 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* RIGHT: Module nhanh */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
-                <Package className="w-4 h-4 text-gray-600" />
-                <span className="font-semibold text-sm text-gray-800">Quản lý nhanh</span>
+            {/* RIGHT TOP: Lịch hôm nay */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden lg:h-[18rem] flex flex-col">
+              <div className="px-4 py-3 border-b bg-green-50 flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-green-600" />
+                <span className="font-semibold text-sm text-green-800">Lịch hôm nay</span>
+                {lich.length > 0 && <span className="ml-auto text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">{lich.length}</span>}
               </div>
-              <div className="p-3 grid grid-cols-2 gap-2.5">
-                {[
-                  { href: '/benh-nhan', icon: Users, label: 'Bệnh nhân', bg: 'bg-blue-50', text: 'text-blue-600' },
-                  { href: '/don-kinh', icon: Glasses, label: 'Đơn kính', bg: 'bg-purple-50', text: 'text-purple-600' },
-                  { href: '/don-thuoc', icon: Pill, label: 'Đơn thuốc', bg: 'bg-green-50', text: 'text-green-600' },
-                  { href: '/bao-cao', icon: BarChart3, label: 'Báo cáo', bg: 'bg-yellow-50', text: 'text-yellow-600' },
-                  { href: '/quan-ly-kho', icon: Sparkles, label: 'Kho tròng', bg: 'bg-purple-50', text: 'text-purple-600' },
-                  { href: '/quan-ly-kinh', icon: Glasses, label: 'Kho gọng', bg: 'bg-pink-50', text: 'text-pink-600' },
-                ].map(({ href, icon: Icon, label, bg, text }) => (
-                  <Link key={href} href={href} className="flex items-center gap-2.5 p-3 rounded-lg hover:bg-gray-50 transition-all group border border-gray-100">
-                    <div className={`w-8 h-8 ${bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
-                      <Icon className={`w-4 h-4 ${text}`} />
+              <div className="p-3 space-y-1 overflow-y-auto flex-1 min-h-0">
+                {lich.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <CalendarDays className="w-8 h-8 mx-auto mb-2" />
+                    <p className="text-sm">Không có lịch hẹn hôm nay</p>
+                  </div>
+                ) : (
+                  lich.map((h: any) => (
+                    <div key={h.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="text-xs font-mono font-bold text-blue-600 w-11 text-center flex-shrink-0">
+                        {formatGio(h.gio_hen) || '—'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-gray-800 truncate block">{h.ten_benhnhan}</span>
+                        <span className="text-xs text-gray-500">{h.ly_do}</span>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {h.trang_thai === 'da_den' ? (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full">Đã đến</span>
+                        ) : h.trang_thai === 'huy' ? (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full">Hủy</span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">Chờ</span>
+                        )}
+                        {h.dienthoai && <a href={`tel:${h.dienthoai}`} className="p-1 text-green-600 hover:bg-green-100 rounded"><Phone className="w-3 h-3" /></a>}
+                      </div>
                     </div>
-                    <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{label}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-300 ml-auto" />
-                  </Link>
-                ))}
+                  ))
+                )}
+                <Link href="/lich-hen" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-1">Xem tất cả →</Link>
+              </div>
+            </div>
+
+            {/* RIGHT BOTTOM: Đang chờ khám */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden lg:h-[18rem] flex flex-col">
+              <div className="px-4 py-3 border-b bg-orange-50 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-orange-600" />
+                <span className="font-semibold text-sm text-orange-800">Đang chờ khám</span>
+                {ckList.length > 0 && <span className="ml-auto text-xs bg-orange-600 text-white px-2 py-0.5 rounded-full">{ckList.length}</span>}
+              </div>
+              <div className="p-3 overflow-y-auto flex-1 min-h-0">
+                {ckList.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <UserCheck className="w-8 h-8 mx-auto mb-2" />
+                    <p className="text-sm">Không có bệnh nhân chờ</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {ckList.map((ck: any) => (
+                      <Link key={ck.id} href={ck.BenhNhan?.id ? `/ke-don-kinh?bn=${ck.BenhNhan.id}` : '/cho-kham'} className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors">
+                        <UserCheck className="w-3.5 h-3.5 text-orange-600" />
+                        <span className="text-sm font-medium text-gray-800">{ck.BenhNhan?.ten || 'BN'}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                <Link href="/cho-kham" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-2">Mở phòng chờ →</Link>
               </div>
             </div>
           </div>

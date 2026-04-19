@@ -324,7 +324,6 @@ export default function ChamSocKhachHangPage() {
           onlyHasPhone,
           sortBy: 'priority',
           sortDir: 'asc',
-          _t: Date.now(),
         },
       });
       setData(res.data);
