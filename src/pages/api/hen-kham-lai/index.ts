@@ -1,11 +1,12 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  if (!(await requireFeature(ctx, res, 'appointments'))) return;
   const { tenantId } = ctx;
 
   if (req.method === 'GET') {

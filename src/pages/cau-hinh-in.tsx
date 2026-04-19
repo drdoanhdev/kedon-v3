@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import toast from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { FeatureGate } from '../components/FeatureGate';
 import { Printer } from 'lucide-react';
 
 interface PrintConfig {
@@ -130,6 +131,7 @@ export default function CauHinhIn() {
 
   return (
     <ProtectedRoute>
+      <FeatureGate feature="print_config">
       <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6" style={{ minHeight: 'calc(100vh - 72px)' }}>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
@@ -335,6 +337,7 @@ export default function CauHinhIn() {
           {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
         </button>
       </div>
+      </FeatureGate>
     </ProtectedRoute>
   );
 }

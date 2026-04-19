@@ -1,7 +1,7 @@
 // API: Check stock availability for lens + frame before prescription
 // Used by ke-don-kinh frontend to show real-time stock status
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -12,6 +12,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  if (!(await requireFeature(ctx, res, 'inventory_lens'))) return;
   const { tenantId } = ctx;
 
   try {

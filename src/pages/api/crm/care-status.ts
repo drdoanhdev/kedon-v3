@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 const ALLOWED_STATUSES = ['chua_lien_he', 'da_goi', 'hen_goi_lai', 'da_chot_lich'] as const;
 type CareStatus = typeof ALLOWED_STATUSES[number];
@@ -9,6 +9,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  if (!(await requireFeature(ctx, res, 'crm', 'manage_crm'))) return;
   const { tenantId, userId } = ctx;
 
   try {

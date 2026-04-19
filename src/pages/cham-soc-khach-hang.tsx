@@ -3,6 +3,7 @@ import Link from 'next/link';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { FeatureGate } from '../components/FeatureGate';
 import { useAuth } from '../contexts/AuthContext';
 import { HeartHandshake, Phone, RefreshCw } from 'lucide-react';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
@@ -379,6 +380,7 @@ export default function ChamSocKhachHangPage() {
 
   return (
     <ProtectedRoute>
+      <FeatureGate feature="crm">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 px-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -667,6 +669,7 @@ export default function ChamSocKhachHangPage() {
           </div>
         </main>
       </div>
+      </FeatureGate>
     </ProtectedRoute>
   );
 }

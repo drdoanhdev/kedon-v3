@@ -223,6 +223,130 @@ export async function requireTenant(
   };
 }
 
+// ===== Feature gate middleware =====
+
+import { planHasFeature, roleHasPermission, getMinPlanForFeature, PLAN_LABELS, FEATURE_LABELS, type FeatureKey, type Permission, type PlanKey } from './featureConfig';
+
+// Cache tenant plan để tránh query lặp
+const tenantPlanCache = new Map<string, { plan: string; expiry: number }>();
+const PLAN_CACHE_TTL = 120_000; // 2 phút
+
+/**
+ * Kiểm tra tenant có quyền truy cập feature không.
+ * Gọi SAU requireTenant() — cần TenantContext.
+ */
+export async function requireFeature(
+  ctx: TenantContext,
+  res: NextApiResponse,
+  feature: FeatureKey,
+  permission?: Permission
+): Promise<boolean> {
+  // 1. Lấy plan của tenant (cached)
+  const now = Date.now();
+  let plan = 'trial';
+  const cached = tenantPlanCache.get(ctx.tenantId);
+  if (cached && cached.expiry > now) {
+    plan = cached.plan;
+  } else {
+    const { data, error } = await supabaseAdmin
+      .from('tenants')
+      .select('plan')
+      .eq('id', ctx.tenantId)
+      .single();
+    if (!error && data) {
+      plan = data.plan || 'trial';
+      tenantPlanCache.set(ctx.tenantId, { plan, expiry: now + PLAN_CACHE_TTL });
+    }
+  }
+
+  // 2. Check plan → feature
+  if (!planHasFeature(plan, feature)) {
+    const featureLabel = FEATURE_LABELS[feature] || feature;
+    const minPlan = getMinPlanForFeature(feature);
+    res.status(403).json({
+      message: `Tính năng "${featureLabel}" yêu cầu gói ${PLAN_LABELS[minPlan]}. Vui lòng nâng cấp.`,
+      code: 'PLAN_REQUIRED',
+      requiredFeature: feature,
+    });
+    return false;
+  }
+
+  // 3. Check role → permission (chỉ cho gói multi-user)
+  if (permission && plan !== 'trial' && plan !== 'basic') {
+    if (!roleHasPermission(ctx.role, permission)) {
+      res.status(403).json({
+        message: 'Bạn không có quyền thực hiện thao tác này.',
+        code: 'PERMISSION_DENIED',
+        requiredPermission: permission,
+      });
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// ===== Trial expiry check =====
+
+/**
+ * Kiểm tra trial đã hết hạn chưa. Dùng cho POST tạo đơn thuốc/kính mới.
+ * Chỉ block khi gói là trial VÀ đã hết hạn (theo ngày hoặc số đơn).
+ * Trả về true nếu OK (có thể tạo đơn), false nếu bị block.
+ */
+export async function checkTrialLimit(
+  ctx: TenantContext,
+  res: NextApiResponse
+): Promise<boolean> {
+  // Lấy thông tin tenant
+  const { data: tenant } = await supabaseAdmin
+    .from('tenants')
+    .select('plan, trial_start, trial_days, trial_max_prescriptions, plan_expires_at')
+    .eq('id', ctx.tenantId)
+    .single();
+
+  if (!tenant) return true;
+
+  // Chỉ check trial
+  if (tenant.plan !== 'trial') return true;
+
+  // Check hết hạn ngày
+  if (tenant.trial_start && tenant.trial_days) {
+    const startDate = new Date(tenant.trial_start);
+    const endDate = new Date(startDate.getTime() + tenant.trial_days * 86400000);
+    if (new Date() > endDate) {
+      res.status(403).json({
+        message: 'Gói dùng thử đã hết hạn. Vui lòng nâng cấp để tiếp tục tạo đơn.',
+        code: 'TRIAL_EXPIRED',
+      });
+      return false;
+    }
+  }
+
+  // Check hết hạn số đơn
+  if (tenant.trial_max_prescriptions) {
+    const { count: countThuoc } = await supabaseAdmin
+      .from('DonThuoc')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId);
+
+    const { count: countKinh } = await supabaseAdmin
+      .from('DonKinh')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', ctx.tenantId);
+
+    const totalPrescriptions = (countThuoc || 0) + (countKinh || 0);
+    if (totalPrescriptions >= tenant.trial_max_prescriptions) {
+      res.status(403).json({
+        message: `Gói dùng thử đã đạt giới hạn ${tenant.trial_max_prescriptions} đơn. Vui lòng nâng cấp để tiếp tục tạo đơn.`,
+        code: 'TRIAL_LIMIT_REACHED',
+      });
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // ===== Convenience: set no-cache headers =====
 export function setNoCacheHeaders(res: NextApiResponse) {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');

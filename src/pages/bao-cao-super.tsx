@@ -9,6 +9,7 @@ import { BarChart } from '../components/ui/chart';
 import { toast } from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { FeatureGate } from '../components/FeatureGate';
 import Link from 'next/link';
 
 // ═══════════════════════════════════════════════════════════
@@ -281,6 +282,7 @@ export default function BaoCaoSuperPage() {
   // ── MAIN RENDER ──
   return (
     <ProtectedRoute>
+      <FeatureGate feature="advanced_reports">
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30">
         <div className="p-3 lg:p-6 max-w-[1400px] mx-auto">
 
@@ -863,6 +865,7 @@ export default function BaoCaoSuperPage() {
           )}
         </div>
       </div>
+      </FeatureGate>
     </ProtectedRoute>
   );
 }

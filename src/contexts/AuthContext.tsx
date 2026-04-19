@@ -22,6 +22,7 @@ export interface Tenant {
   name?: string | null
   code?: string | null
   status?: string | null
+  plan?: string | null
 }
 
 export interface TenantMembership {
@@ -258,7 +259,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           try {
             const { data: tdata, error: terr } = await supabaseAuth
               .from('tenants')
-              .select('id, name, code, status')
+              .select('id, name, code, status, plan')
               .in('id', tenantIds)
             if (terr) throw terr
             if (tdata) tenantRows = tdata as Tenant[]
@@ -266,7 +267,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             try {
               const { data: tdata2, error: terr2 } = await supabaseAuth
                 .from('tenant')
-                .select('id, name, code, status')
+                .select('id, name, code, status, plan')
                 .in('id', tenantIds)
               if (!terr2 && tdata2) tenantRows = tdata2 as Tenant[]
             } catch {}

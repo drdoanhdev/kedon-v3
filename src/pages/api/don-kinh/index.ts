@@ -1,6 +1,6 @@
 //src/pages/api/don-kinh/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { withDebtFields, calcDebt, calcKinhProfit } from '../../../lib/debt';
 
 // Cache: whether FK columns exist in DonKinh table
@@ -129,6 +129,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.status(500).json({ message: 'Lỗi khi lấy dữ liệu đơn kính', details: message });
     }
   } else if (req.method === 'POST') {
+    // Kiểm tra giới hạn trial trước khi tạo đơn mới
+    if (!(await checkTrialLimit(ctx, res))) return;
     try {
       const {
         benhnhanid,

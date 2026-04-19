@@ -1,14 +1,14 @@
 // API: Nhập kho gọng kính - GET lịch sử, POST nhập mới
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  if (!(await requireFeature(ctx, res, 'inventory_lens', 'manage_inventory'))) return;
   const { tenantId } = ctx;
-
   try {
     // GET: Lịch sử nhập kho gọng
     if (req.method === 'GET') {

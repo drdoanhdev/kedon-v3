@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Phone, MessageSquare, Check, X, Trash2, CalendarDays, Clock, RefreshCw, Copy, Pencil, Plus, Settings } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { FeatureGate } from '../components/FeatureGate';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -355,6 +356,7 @@ export default function LichHen() {
 
   return (
     <ProtectedRoute>
+      <FeatureGate feature="appointments">
       <div className="min-h-screen bg-gray-50">
 
 
@@ -920,6 +922,7 @@ export default function LichHen() {
           </DialogContent>
         </Dialog>
       </div>
+      </FeatureGate>
     </ProtectedRoute>
   );
 }

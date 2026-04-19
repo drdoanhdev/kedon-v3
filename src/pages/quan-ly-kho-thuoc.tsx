@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { FeatureGate } from '../components/FeatureGate';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -224,6 +225,7 @@ export default function QuanLyKhoThuoc() {
   // ============================================
   return (
     <ProtectedRoute>
+      <FeatureGate feature="inventory_drug">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-6 px-4">
           <div className="flex items-center justify-between mb-6">
@@ -649,6 +651,7 @@ export default function QuanLyKhoThuoc() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </FeatureGate>
     </ProtectedRoute>
   );
 }

@@ -1,6 +1,6 @@
 //src/pages/api/don-thuoc/index.ts L1
 import { NextApiRequest, NextApiResponse } from "next";
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { withDebtFields, calcDebt } from '../../../lib/debt';
 
 // === INVENTORY HELPERS ===
@@ -227,6 +227,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "POST") {
+    // Kiểm tra giới hạn trial trước khi tạo đơn mới
+    if (!(await checkTrialLimit(ctx, res))) return;
     try {
       console.log('🔍 POST /api/don-thuoc - Request body:', JSON.stringify(req.body, null, 2));
       

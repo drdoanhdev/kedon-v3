@@ -54,15 +54,15 @@ const FALLBACK_PLANS: Plan[] = [
   {
     name: 'Dùng thử', key: 'trial', price: 'Miễn phí', priceNum: 0,
     period: '3 tháng hoặc 1.000 đơn',
-    features: ['Quản lý bệnh nhân', 'Kê đơn thuốc & kính', 'Báo cáo cơ bản', '1 người dùng'],
+    features: ['Quản lý bệnh nhân', 'Kê đơn thuốc & kính', 'Phòng chờ khám', 'Danh mục thuốc cơ bản', 'Báo cáo cơ bản', '1 người dùng'],
   },
   {
-    name: 'Cơ bản', key: 'basic', price: '299.000đ', priceNum: 299000, period: '/tháng',
-    features: ['Tất cả tính năng Trial', 'Đơn thuốc không giới hạn', 'Tối đa 3 người dùng', 'Hỗ trợ email'],
+    name: 'Cơ bản', key: 'basic', price: '99.000đ', priceNum: 99000, period: '/tháng',
+    features: ['Tất cả tính năng Dùng thử', 'Đơn thuốc không giới hạn', 'Lịch hẹn khám', 'Cấu hình mẫu in', 'Hỗ trợ qua tin nhắn', '1 người dùng'],
   },
   {
-    name: 'Chuyên nghiệp', key: 'pro', price: '599.000đ', priceNum: 599000, period: '/tháng',
-    features: ['Tất cả tính năng Cơ bản', 'Nhân viên không giới hạn', 'Báo cáo nâng cao', 'Nhận diện khuôn mặt', 'Hỗ trợ ưu tiên'],
+    name: 'Chuyên nghiệp', key: 'pro', price: '199.000đ', priceNum: 199000, period: '/tháng',
+    features: ['Tất cả tính năng Cơ bản', 'Quản lý kho kính & thuốc', 'Báo cáo nâng cao', 'Chăm sóc khách hàng (CRM)', 'Quản lý nhân viên (4 cấp)', 'Phân quyền chi tiết', 'Tối đa 10 người dùng', 'Hỗ trợ ưu tiên'],
     popular: true,
   },
 ];

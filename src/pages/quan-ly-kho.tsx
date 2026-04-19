@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { FeatureGate } from '../components/FeatureGate';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -773,6 +774,7 @@ export default function QuanLyKho() {
   // ============================================
   return (
     <ProtectedRoute>
+      <FeatureGate feature="inventory_lens">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
           <div className="flex items-center justify-between mb-4 sm:mb-6">
@@ -1881,6 +1883,7 @@ export default function QuanLyKho() {
           </Dialog>
         </main>
       </div>
+      </FeatureGate>
     </ProtectedRoute>
   );
 }

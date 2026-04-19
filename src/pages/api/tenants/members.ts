@@ -83,6 +83,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Role không hợp lệ. Phải là admin, doctor hoặc staff' });
       }
 
+      // Kiểm tra giới hạn số thành viên theo gói
+      const { data: tenant } = await supabaseAdmin
+        .from('tenants')
+        .select('plan')
+        .eq('id', tenantId)
+        .single();
+
+      const tenantPlan = tenant?.plan || 'trial';
+
+      const { data: planInfo } = await supabaseAdmin
+        .from('subscription_plans')
+        .select('max_users')
+        .eq('plan_key', tenantPlan)
+        .single();
+
+      if (planInfo?.max_users) {
+        const { count } = await supabaseAdmin
+          .from('tenantmembership')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('active', true);
+
+        if (count !== null && count >= planInfo.max_users) {
+          return res.status(403).json({
+            message: `Gói ${tenantPlan === 'trial' ? 'Dùng thử' : tenantPlan === 'basic' ? 'Cơ bản' : 'hiện tại'} chỉ cho phép tối đa ${planInfo.max_users} thành viên. Vui lòng nâng cấp gói để thêm thành viên.`,
+            code: 'MAX_USERS_REACHED',
+          });
+        }
+      }
+
       // Tìm user theo email
       const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
       const existingUser = authUsers?.users?.find(u => u.email === email);
