@@ -279,7 +279,7 @@ export default function KeDon() {
                   tenthuoc: item.thuoc.tenthuoc,
                   donvitinh: item.thuoc.donvitinh, // Luôn từ bảng Thuoc
                   giaban: (item as any).don_gia_ban ?? item.thuoc.giaban,
-                  gianhap: (item as any).don_gia_von ?? item.thuoc.gianhap || 0,
+                  gianhap: (item as any).don_gia_von ?? (item.thuoc.gianhap || 0),
                   gia_nguon: 'snapshot_line',
                   soluongmacdinh: item.thuoc.soluongmacdinh,
                   la_thu_thuat: item.thuoc.la_thu_thuat,
