@@ -1,6 +1,6 @@
 //src/pages/api/ke-don/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 type ThuocInput = {
   id: number;
@@ -15,7 +15,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const tenant = await requireTenant(req, res);
   if (!tenant) return;
+  const branchAccess = await resolveBranchAccess(tenant, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = tenant;
+  const { branchId } = branchAccess;
   const supabase = supabaseAdmin;
 
   if (req.method !== 'POST') {
@@ -53,6 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       tongtien,
       trangthai_thanh_toan: trangthai_thanh_toan || 'đã trả',
       tenant_id: tenantId,
+      ...(branchId ? { branch_id: branchId } : {}),
     };
 
     const { data: newDonThuocData, error: insertDonThuocError } = await supabase

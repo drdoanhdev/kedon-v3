@@ -85,6 +85,24 @@ Theo dõi trạng thái migration trên từng database.
 |------|------|-------|:------:|:--------:|
 | V036 | V036_add_fk_columns_donkinh.sql | Thêm hang_trong_mp_id, hang_trong_mt_id, gong_kinh_id vào DonKinh | ✅ | ❌ |
 
+## Phase 9: Pricing model v2
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V049 | V049_branch_pricing_and_cost_snapshots.sql | Nền tảng giá theo chi nhánh + snapshot giá/vốn chi tiết đơn thuốc | ✅ | ❌ |
+
+## Phase 10: Branch transfer hardening
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V050 | V050_branch_transfer_inventory_audit_and_gong_unique.sql | Hoàn thiện điều chuyển thuốc/tròng/gọng: log audit điều chuyển + unique gọng theo chi nhánh | ✅ | ❌ |
+
+## Phase 11: Lens transfer schema fix
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V051 | V051_fix_lens_stock_unique_per_branch.sql | Sửa unique lens_stock theo tenant + chi nhánh để tránh lỗi duplicate khi điều chuyển tròng | ✅ | ❌ |
+
 ---
 
 ## Files không phải migration (không đánh số)

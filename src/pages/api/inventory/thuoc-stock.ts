@@ -1,6 +1,6 @@
 // API: Danh sách tồn kho thuốc + cảnh báo
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -8,7 +8,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'inventory_drug', 'manage_inventory'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -22,6 +25,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .select('id, mathuoc, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_can_co, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
       .order('tenthuoc', { ascending: true });
+
+    if (branchId) {
+      query = query.eq('branch_id', branchId);
+    }
 
     // Lọc chỉ thuốc, không lấy thủ thuật
     query = query.or('la_thu_thuat.is.null,la_thu_thuat.eq.false');

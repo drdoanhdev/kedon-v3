@@ -3,6 +3,7 @@ import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { AuthProvider } from '../contexts/AuthContext';
+import { BranchProvider } from '../contexts/BranchContext';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -20,6 +21,7 @@ export default function App({ Component, pageProps }: AppProps) {
   const showHeader = !noHeaderPages.includes(router.pathname);
   return (
     <AuthProvider>
+      <BranchProvider>
       <FooterProvider>
       <ConfirmProvider>
       <div className="min-h-screen bg-[#f6faf7]">
@@ -77,6 +79,7 @@ export default function App({ Component, pageProps }: AppProps) {
       </div>
       </ConfirmProvider>
       </FooterProvider>
+      </BranchProvider>
     </AuthProvider>
   );
 }

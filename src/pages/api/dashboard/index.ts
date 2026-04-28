@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 function toFiniteNumber(val: unknown, fallback = 0): number {
   const n = Number(val);
@@ -12,16 +12,19 @@ function toDateMs(val: unknown): number {
   return Number.isFinite(ms) ? ms : NaN;
 }
 
-async function fetchAllRows(table: string, select: string, tenantId: string): Promise<any[]> {
+async function fetchAllRows(table: string, select: string, tenantId: string, branchId?: string | null): Promise<any[]> {
   const PAGE_SIZE = 1000;
   let all: any[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(table)
       .select(select)
-      .eq('tenant_id', tenantId)
-      .range(from, from + PAGE_SIZE - 1);
+      .eq('tenant_id', tenantId);
+    if (branchId) {
+      query = query.eq('branch_id', branchId);
+    }
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     all = all.concat(data);
     if (data.length < PAGE_SIZE) break;
@@ -35,7 +38,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
@@ -91,7 +97,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       'DonKinh',
       'benhnhanid, ngaykham, giatrong, giagong',
       tenantId,
+      branchId,
     );
+
+    // Helper: add branch filter to query builder
+    const bq = (q: any) => branchId ? q.eq('branch_id', branchId) : q;
 
     const [
       choKhamRes,
@@ -105,48 +115,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       overdueHenRes,
       crmAllDonKinh,
     ] = await Promise.all([
-      // 1. Chờ khám hôm nay
-      supabase
+      // 1. Chờ khám hôm nay (per-branch)
+      bq(supabase
         .from('ChoKham')
         .select('id, benhnhanid, thoigian, trangthai, BenhNhan:benhnhanid(id, ten, dienthoai)', { count: 'exact' })
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .gte('thoigian', todayStr)
         .lt('thoigian', todayStr + 'T23:59:59')
         .order('thoigian', { ascending: true }),
 
-      // 2. Lịch hẹn hôm nay
-      supabase
+      // 2. Lịch hẹn hôm nay (per-branch)
+      bq(supabase
         .from('hen_kham_lai')
         .select('*')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .eq('ngay_hen', todayStr)
         .order('gio_hen', { ascending: true, nullsFirst: false }),
 
-      // 3. Lịch hẹn cần xử lý (chờ, quá hạn)
-      supabase
+      // 3. Lịch hẹn cần xử lý (per-branch)
+      bq(supabase
         .from('hen_kham_lai')
         .select('*')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .eq('trang_thai', 'cho')
         .lte('ngay_hen', todayStr)
         .order('ngay_hen', { ascending: true })
         .limit(20),
 
-      // 4. Đơn kính gần đây - chưa giao / cần theo dõi
-      supabase
+      // 4. Đơn kính gần đây (per-branch)
+      bq(supabase
         .from('DonKinh')
         .select('id, benhnhanid, ngaykham, ghichu, giatrong, giagong, sotien_da_thanh_toan, benhnhan:BenhNhan(id, ten, dienthoai)')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .order('ngaykham', { ascending: false })
         .limit(10),
 
-      // 5. Tổng bệnh nhân
-      supabase
+      // 5. Tổng bệnh nhân (per-branch)
+      bq(supabase
         .from('BenhNhan')
         .select('id', { count: 'exact', head: true })
-        .eq('tenant_id', tenantId),
+        .eq('tenant_id', tenantId)),
 
-      // 6. Tròng kính sắp hết / hết
+      // 6. Tròng kính sắp hết / hết (SHARED - no branch filter)
       supabase
         .from('lens_stock')
         .select('id, sph, cyl, add_power, ton_hien_tai, trang_thai_ton, HangTrong(ten_hang)')
@@ -154,24 +164,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .in('trang_thai_ton', ['HET', 'SAP_HET']),
 
       // 7. Gọng kính sắp hết / hết
-      supabase
+      bq(supabase
         .from('GongKinh')
         .select('id, ten_gong, mau_sac, ton_kho, muc_ton_can_co')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .not('trang_thai', 'eq', false),
 
       // 8. Tròng cần đặt / đang về
       supabase
         .from('lens_order')
-        .select('trang_thai, so_luong_mieng')
+        .select('trang_thai, so_luong_mieng, DonKinh(id, branch_id)')
         .eq('tenant_id', tenantId)
         .in('trang_thai', ['cho_dat', 'da_dat']),
 
-      // 10. Hẹn khám lại quá hạn theo bệnh nhân
-      supabase
+      // 10. Hẹn khám lại quá hạn (per-branch)
+      bq(supabase
         .from('hen_kham_lai')
         .select('benhnhanid')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .eq('trang_thai', 'cho')
         .lt('ngay_hen', todayStr),
 
@@ -223,7 +233,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const frameSapHet = frameAlerts.filter((a: any) => a.trang_thai === 'SAP_HET');
 
     // Tròng cần đặt / đang về
-    const lensOrderData = lensOrderRes.data || [];
+    const lensOrderDataRaw = lensOrderRes.data || [];
+    const lensOrderData = branchId
+      ? lensOrderDataRaw.filter((o: any) => o?.DonKinh?.branch_id === branchId)
+      : lensOrderDataRaw;
     const trongCanDat = lensOrderData
       .filter((o: any) => o.trang_thai === 'cho_dat')
       .reduce((sum: number, o: any) => sum + (o.so_luong_mieng || 0), 0);

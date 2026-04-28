@@ -1,7 +1,7 @@
 // API: Check stock availability for lens + frame before prescription
 // Used by ke-don-kinh frontend to show real-time stock status
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -13,7 +13,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'inventory_lens'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  let { branchId } = branchAccess;
+
+  // Safety fallback for frame/lens stock checks: prefer main active branch
+  // instead of tenant-wide result when branch context is missing.
+  if (!branchId) {
+    const { data: mainBranch } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active')
+      .order('is_main', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (mainBranch?.id) {
+      branchId = mainBranch.id;
+    }
+  }
 
   try {
     const { hang_trong, ten_gong, sokinh } = req.query;
@@ -62,6 +82,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               .eq('hang_trong_id', ht.id)
               .eq('sph', parsed.sph)
               .eq('cyl', parsed.cyl);
+            if (branchId) {
+              stockQuery = stockQuery.eq('branch_id', branchId);
+            }
             // Filter by add_power: match exact value or null for single-vision
             if (parsed.add_power !== undefined) {
               stockQuery = stockQuery.eq('add_power', parsed.add_power);
@@ -88,13 +111,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Check frame stock if ten_gong provided
     if (ten_gong) {
-      const { data: gong } = await supabase
+      let gongQuery = supabase
         .from('GongKinh')
         .select('ton_kho')
         .eq('tenant_id', tenantId)
-        .eq('ten_gong', ten_gong as string)
-        .limit(1)
-        .maybeSingle();
+        .eq('ten_gong', ten_gong as string);
+
+      if (branchId) {
+        gongQuery = gongQuery.eq('branch_id', branchId);
+      }
+
+      const { data: gong } = await gongQuery.limit(1).maybeSingle();
 
       if (gong) {
         result.frame = { ton_kho: gong.ton_kho ?? 0 };

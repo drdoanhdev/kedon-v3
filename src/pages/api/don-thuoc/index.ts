@@ -1,6 +1,6 @@
 //src/pages/api/don-thuoc/index.ts L1
 import { NextApiRequest, NextApiResponse } from "next";
-import { requireTenant, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { withDebtFields, calcDebt } from '../../../lib/debt';
 
 // === INVENTORY HELPERS ===
@@ -89,9 +89,41 @@ type ThuocInput = {
   id: number;
   soluong: number;
   giaban: number;
+  giavon?: number;
+  gia_nguon?: string;
   donvitinh: string; // Chỉ để hiển thị, không lưu vào DB
   cachdung: string;
 };
+
+let chiTietPriceSnapshotSupported: boolean | null = null;
+
+async function supportsChiTietPriceSnapshotColumns(): Promise<boolean> {
+  if (chiTietPriceSnapshotSupported !== null) return chiTietPriceSnapshotSupported;
+
+  const { error } = await supabase
+    .from('ChiTietDonThuoc')
+    .select('don_gia_ban, don_gia_von')
+    .limit(1);
+
+  if (!error) {
+    chiTietPriceSnapshotSupported = true;
+    return true;
+  }
+
+  // Backward-compatible with DBs chưa chạy V049
+  if (error.code === '42703') {
+    chiTietPriceSnapshotSupported = false;
+    return false;
+  }
+
+  // Unknown errors: keep feature enabled and let insert fail explicitly if any.
+  chiTietPriceSnapshotSupported = true;
+  return true;
+}
+
+function normalizeMoney(v: unknown): number {
+  return Math.max(0, Math.round(Number(v) || 0));
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -99,7 +131,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method === "GET") {
     try {
@@ -121,10 +156,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sotien_da_thanh_toan,
           lai,
           trangthai_thanh_toan,
-          benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)
+          benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi),
+          branch:branches(id, ten_chi_nhanh)
         `, { count: "exact" })
         .eq("tenant_id", tenantId)
         .order("ngay_kham", { ascending: false });
+
+      // Branch filter (enterprise multi-branch)
+      if (branchId) {
+        query = query.eq("branch_id", branchId);
+      }
 
       if (benhnhanid) {
         query = query.eq("benhnhanid", benhnhanid as string);
@@ -249,9 +290,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           console.log('❌ Thuoc validation failed:', t);
           return res.status(400).json({ message: "Dữ liệu thuốc không hợp lệ", details: `thuocid: ${t.id}, soluong: ${t.soluong}` });
         }
+        if (!Number.isFinite(Number(t.giaban)) || Number(t.giaban) < 0) {
+          return res.status(400).json({ message: "Đơn giá bán không hợp lệ", details: `thuocid: ${t.id}, giaban: ${t.giaban}` });
+        }
+        if (t.giavon !== undefined && (!Number.isFinite(Number(t.giavon)) || Number(t.giavon) < 0)) {
+          return res.status(400).json({ message: "Đơn giá vốn không hợp lệ", details: `thuocid: ${t.id}, giavon: ${t.giavon}` });
+        }
       }
 
-  const tongtien = (thuocs as ThuocInput[]).reduce((sum, t) => sum + t.soluong * t.giaban, 0);
+  const tongtien = (thuocs as ThuocInput[]).reduce((sum, t) => sum + t.soluong * normalizeMoney(t.giaban), 0);
   // Clamp số tiền đã thanh toán vào [0, tongtien] để tránh lớn hơn tổng tiền khi sửa đơn
   const paidRounded = Math.max(0, Math.min(Math.round((sotien_da_thanh_toan as number) || 0), tongtien));
   const no = paidRounded < tongtien;
@@ -270,7 +317,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi khi lấy gian nhập thuốc', error: thuocDetailsForProfitError.message });
       }
       const gianhapMap = new Map((thuocDetailsForProfit || []).map(t => [t.id, (t as any).gianhap || 0]));
-      const lai = (thuocs as ThuocInput[]).reduce((sum, t) => sum + t.soluong * (t.giaban - (gianhapMap.get(t.id) || 0)), 0);
+      const lineCostMap = new Map((thuocs as ThuocInput[]).map(t => [t.id, normalizeMoney(t.giavon ?? gianhapMap.get(t.id) ?? 0)]));
+      const lai = (thuocs as ThuocInput[]).reduce((sum, t) => {
+        const lineSell = normalizeMoney(t.giaban);
+        const lineCost = lineCostMap.get(t.id) || 0;
+        return sum + t.soluong * (lineSell - lineCost);
+      }, 0);
 
       const { data: donthuoc, error: donthuocError } = await supabase
         .from("DonThuoc")
@@ -286,6 +338,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             trangthai_thanh_toan,
             madonthuoc: `DT${Date.now().toString().slice(-6)}`,
             tenant_id: tenantId,
+            ...(branchId ? { branch_id: branchId } : {}),
           },
         ])
         .select(`
@@ -323,6 +376,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const thuocDetailsMap = new Map(thuocDetails.map(t => [t.id, t]));
+      const snapshotSupported = await supportsChiTietPriceSnapshotColumns();
 
       const chiTietInserts = (thuocs as ThuocInput[]).map((t) => {
         const details = thuocDetailsMap.get(t.id);
@@ -330,12 +384,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           // This case should ideally not happen if validation is correct
           throw new Error(`Không tìm thấy thông tin chi tiết cho thuốc ID: ${t.id}`);
         }
-        return {
+        const insertItem: Record<string, any> = {
           donthuocid: donthuoc.id,
           thuocid: t.id,
           soluong: t.soluong,
           // Bỏ qua cachdung và donvitinh, sẽ lấy từ bảng Thuoc khi cần
         };
+        if (snapshotSupported) {
+          insertItem.don_gia_ban = normalizeMoney(t.giaban);
+          insertItem.don_gia_von = lineCostMap.get(t.id) || 0;
+        }
+        return insertItem;
       });
 
       console.log('🔍 About to insert ChiTietDonThuoc:', chiTietInserts);
@@ -385,9 +444,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!t.id || !Number.isInteger(t.soluong) || t.soluong <= 0) {
           return res.status(400).json({ message: "Dữ liệu thuốc không hợp lệ", details: `thuocid: ${t.id}, soluong: ${t.soluong}` });
         }
+        if (!Number.isFinite(Number(t.giaban)) || Number(t.giaban) < 0) {
+          return res.status(400).json({ message: "Đơn giá bán không hợp lệ", details: `thuocid: ${t.id}, giaban: ${t.giaban}` });
+        }
+        if (t.giavon !== undefined && (!Number.isFinite(Number(t.giavon)) || Number(t.giavon) < 0)) {
+          return res.status(400).json({ message: "Đơn giá vốn không hợp lệ", details: `thuocid: ${t.id}, giavon: ${t.giavon}` });
+        }
       }
 
-  const tongtien = (thuocs as ThuocInput[]).reduce((sum, t) => sum + t.soluong * t.giaban, 0);
+  const tongtien = (thuocs as ThuocInput[]).reduce((sum, t) => sum + t.soluong * normalizeMoney(t.giaban), 0);
   // Clamp số tiền đã thanh toán khi cập nhật
   const paidRounded = Math.max(0, Math.min(Math.round((sotien_da_thanh_toan as number) || 0), tongtien));
   const no = paidRounded < tongtien;
@@ -403,7 +468,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi khi lấy gian nhập thuốc để cập nhật', error: thuocDetailsProfitUpdateError.message });
       }
       const gianhapMapUpdate = new Map((thuocDetailsProfitUpdate || []).map(t => [t.id, (t as any).gianhap || 0]));
-      const laiUpdate = (thuocs as ThuocInput[]).reduce((sum, t) => sum + t.soluong * (t.giaban - (gianhapMapUpdate.get(t.id) || 0)), 0);
+      const lineCostMapUpdate = new Map((thuocs as ThuocInput[]).map(t => [t.id, normalizeMoney(t.giavon ?? gianhapMapUpdate.get(t.id) ?? 0)]));
+      const laiUpdate = (thuocs as ThuocInput[]).reduce((sum, t) => {
+        const lineSell = normalizeMoney(t.giaban);
+        const lineCost = lineCostMapUpdate.get(t.id) || 0;
+        return sum + t.soluong * (lineSell - lineCost);
+      }, 0);
 
     const { data: donthuoc, error: donthuocError } = await supabase
         .from("DonThuoc")
@@ -452,18 +522,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const thuocDetailsMap = new Map(thuocDetails.map(t => [t.id, t]));
+      const snapshotSupported = await supportsChiTietPriceSnapshotColumns();
 
       const chiTietInserts = (thuocs as ThuocInput[]).map((t) => {
         const details = thuocDetailsMap.get(t.id);
         if (!details) {
           throw new Error(`Không tìm thấy thông tin chi tiết cho thuốc ID: ${t.id} khi cập nhật`);
         }
-        return {
+        const insertItem: Record<string, any> = {
           donthuocid: id,
           thuocid: t.id,
           soluong: t.soluong,
           // Bỏ qua cachdung và donvitinh, sẽ lấy từ bảng Thuoc khi cần
         };
+        if (snapshotSupported) {
+          insertItem.don_gia_ban = normalizeMoney(t.giaban);
+          insertItem.don_gia_von = lineCostMapUpdate.get(t.id) || 0;
+        }
+        return insertItem;
       });
 
       const { error: chiTietError } = await supabase

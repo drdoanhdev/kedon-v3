@@ -65,6 +65,10 @@ const FALLBACK_PLANS: Plan[] = [
     features: ['Tất cả tính năng Cơ bản', 'Quản lý kho kính & thuốc', 'Báo cáo nâng cao', 'Chăm sóc khách hàng (CRM)', 'Quản lý nhân viên (4 cấp)', 'Phân quyền chi tiết', 'Tối đa 10 người dùng', 'Hỗ trợ ưu tiên'],
     popular: true,
   },
+  {
+    name: 'Doanh nghiệp', key: 'enterprise', price: '199.000đ', priceNum: 199000, period: '/tháng',
+    features: ['Tất cả tính năng Chuyên nghiệp', 'Quản lý chuỗi cửa hàng', 'Giá: 199K + 79K/chi nhánh thêm', 'Điều chuyển kho giữa chi nhánh', 'Tra cứu khách hàng liên chi nhánh', 'Báo cáo chuỗi tổng hợp', 'Điều chuyển nhân viên', 'Không giới hạn người dùng', 'Hỗ trợ 24/7'],
+  },
 ];
 
 function formatVND(amount: number): string {
@@ -79,6 +83,7 @@ export default function BillingPage() {
   const [paymentHistory, setPaymentHistory] = useState<PaymentOrder[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [selectedMonths, setSelectedMonths] = useState(1);
+  const [branchCount, setBranchCount] = useState(1); // enterprise: number of branches (1 included)
   const [creating, setCreating] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState<{ type: 'success' | 'error' | 'cancel'; text: string } | null>(null);
   const sepayFormRef = useRef<HTMLFormElement>(null);
@@ -136,6 +141,7 @@ export default function BillingPage() {
   const handleUpgrade = async (planKey: string) => {
     setSelectedPlan(planKey);
     setSelectedMonths(1);
+    setBranchCount(1);
   };
 
   const handleCreateOrder = async () => {
@@ -146,7 +152,7 @@ export default function BillingPage() {
       const res = await fetch('/api/tenants/sepay-checkout', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ plan: selectedPlan, months: selectedMonths }),
+        body: JSON.stringify({ plan: selectedPlan, months: selectedMonths, ...(selectedPlan === 'enterprise' ? { branch_count: branchCount } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -193,7 +199,7 @@ export default function BillingPage() {
                 clearInterval(pollInterval);
                 setPaymentMessage({
                   type: 'success',
-                  text: `Gói ${data.order.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'} đã được kích hoạt thành công! (Xác thực tự động qua webhook)`,
+                  text: `Gói ${data.order.plan === 'enterprise' ? 'Doanh nghiệp' : data.order.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'} đã được kích hoạt thành công! (Xác thực tự động qua webhook)`,
                 });
                 fetchTrial();
                 fetchPayments();
@@ -301,7 +307,7 @@ export default function BillingPage() {
           {trial && trial.plan !== 'trial' && (
             <div className="rounded-xl p-6 mb-8 bg-green-50 border border-green-200">
               <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
-                ✅ Gói {trial.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}
+                ✅ Gói {trial.plan === 'enterprise' ? 'Doanh nghiệp' : trial.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}
               </h2>
               <p className="text-green-800 text-sm">
                 Đang hoạt động. Hạn sử dụng: <span className="font-semibold">
@@ -316,7 +322,7 @@ export default function BillingPage() {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">
-                  Nâng cấp gói {selectedPlan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}
+                  Nâng cấp gói {selectedPlan === 'enterprise' ? 'Doanh nghiệp' : selectedPlan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}
                 </h2>
 
                 <div className="mb-4">
@@ -338,27 +344,66 @@ export default function BillingPage() {
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <div className="flex justify-between items-center text-sm mb-1">
-                    <span className="text-gray-600">Đơn giá</span>
-                    <span>{formatVND(plans.find(p => p.key === selectedPlan)?.priceNum || 0)}/tháng</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm mb-1">
-                    <span className="text-gray-600">Số tháng</span>
-                    <span>× {selectedMonths}</span>
-                  </div>
-                  {selectedMonths >= 6 && (
-                    <div className="flex justify-between items-center text-sm text-green-600 mb-1">
-                      <span>🎁 Ưu đãi</span>
-                      <span>Miễn phí hỗ trợ ưu tiên</span>
+                {/* Branch count selector (enterprise only) */}
+                {selectedPlan === 'enterprise' && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Số chi nhánh</label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setBranchCount(Math.max(1, branchCount - 1))}
+                        className="w-9 h-9 rounded-lg bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition"
+                        disabled={branchCount <= 1}
+                      >−</button>
+                      <span className="text-lg font-bold text-gray-900 w-8 text-center">{branchCount}</span>
+                      <button
+                        onClick={() => setBranchCount(branchCount + 1)}
+                        className="w-9 h-9 rounded-lg bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition"
+                      >+</button>
+                      <span className="text-sm text-gray-500 ml-2">
+                        (1 chi nhánh chính miễn phí, mỗi chi nhánh thêm +79.000đ/tháng)
+                      </span>
                     </div>
-                  )}
-                  <div className="flex justify-between items-center pt-2 border-t mt-2">
-                    <span className="font-semibold">Tổng cộng</span>
-                    <span className="text-xl font-bold text-blue-700">
-                      {formatVND((plans.find(p => p.key === selectedPlan)?.priceNum || 0) * selectedMonths)}
-                    </span>
                   </div>
+                )}
+
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  {(() => {
+                    const basePriceNum = plans.find(p => p.key === selectedPlan)?.priceNum || 0;
+                    const extraBranches = selectedPlan === 'enterprise' ? Math.max(0, branchCount - 1) : 0;
+                    const branchFee = extraBranches * 79000;
+                    const monthlyTotal = basePriceNum + branchFee;
+                    const total = monthlyTotal * selectedMonths;
+                    return (
+                      <>
+                        <div className="flex justify-between items-center text-sm mb-1">
+                          <span className="text-gray-600">Đơn giá gói</span>
+                          <span>{formatVND(basePriceNum)}/tháng</span>
+                        </div>
+                        {selectedPlan === 'enterprise' && extraBranches > 0 && (
+                          <div className="flex justify-between items-center text-sm mb-1">
+                            <span className="text-gray-600">Chi nhánh thêm ({extraBranches} × 79K)</span>
+                            <span>+{formatVND(branchFee)}/tháng</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center text-sm mb-1">
+                          <span className="text-gray-600">Số tháng</span>
+                          <span>× {selectedMonths}</span>
+                        </div>
+                        {selectedMonths >= 6 && (
+                          <div className="flex justify-between items-center text-sm text-green-600 mb-1">
+                            <span>🎁 Ưu đãi</span>
+                            <span>Miễn phí hỗ trợ ưu tiên</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-2 border-t mt-2">
+                          <span className="font-semibold">Tổng cộng</span>
+                          <span className="text-xl font-bold text-blue-700">
+                            {formatVND(total)}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex gap-3">
@@ -381,34 +426,37 @@ export default function BillingPage() {
           )}
 
           {/* Pricing cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {plans.map((plan) => {
               const isCurrent = trial?.plan === plan.key;
+              const isEnterprise = plan.key === 'enterprise';
               return (
                 <div
                   key={plan.key}
-                  className={`relative bg-white rounded-2xl shadow-lg p-6 border-2 transition-all ${
-                    plan.popular
-                      ? 'border-purple-400 shadow-purple-100'
+                  className={`relative rounded-2xl shadow-lg p-6 border-2 transition-all ${
+                    isEnterprise
+                      ? isCurrent ? 'bg-amber-50 border-amber-400' : 'bg-amber-50 border-amber-200 hover:border-amber-400'
+                      : plan.popular
+                      ? 'bg-white border-purple-400 shadow-purple-100'
                       : isCurrent
-                      ? 'border-blue-400'
-                      : 'border-gray-100 hover:border-gray-300'
+                      ? 'bg-white border-blue-400'
+                      : 'bg-white border-gray-100 hover:border-gray-300'
                   }`}
                 >
-                  {plan.popular && (
+                  {plan.popular && !isEnterprise && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-semibold px-3 py-1 rounded-full">
                       Phổ biến nhất
                     </div>
                   )}
                   {isCurrent && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-full">
+                    <div className={`absolute -top-3 left-1/2 -translate-x-1/2 ${isEnterprise ? 'bg-amber-600' : 'bg-blue-600'} text-white text-xs font-semibold px-3 py-1 rounded-full`}>
                       Gói hiện tại
                     </div>
                   )}
                   <div className="text-center mb-6">
-                    <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
+                    <h3 className="text-xl font-bold text-gray-900">{isEnterprise ? '🏪 ' : ''}{plan.name}</h3>
                     <div className="mt-3">
-                      <span className="text-3xl font-bold">{plan.price}</span>
+                      <span className={`text-3xl font-bold ${isEnterprise ? 'text-amber-700' : ''}`}>{plan.price}</span>
                       {plan.period && (
                         <span className="text-gray-500 text-sm">{plan.period}</span>
                       )}
@@ -417,7 +465,7 @@ export default function BillingPage() {
                   <ul className="space-y-3 mb-6">
                     {plan.features.map((f, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                        <span className="text-green-500 mt-0.5">✓</span>
+                        <span className={`${isEnterprise ? 'text-amber-500' : 'text-green-500'} mt-0.5`}>✓</span>
                         {f}
                       </li>
                     ))}
@@ -436,7 +484,9 @@ export default function BillingPage() {
                   ) : (
                     <button
                       className={`w-full py-2.5 rounded-xl font-medium transition ${
-                        plan.popular
+                        isEnterprise
+                          ? 'bg-amber-600 text-white hover:bg-amber-700'
+                          : plan.popular
                           ? 'bg-purple-600 text-white hover:bg-purple-700'
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
@@ -469,7 +519,7 @@ export default function BillingPage() {
                     {paymentHistory.map((p) => (
                       <tr key={p.id} className="border-b last:border-0">
                         <td className="py-2">{p.paid_at ? new Date(p.paid_at).toLocaleDateString('vi-VN') : '-'}</td>
-                        <td className="py-2">{p.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}</td>
+                        <td className="py-2">{p.plan === 'enterprise' ? 'Doanh nghiệp' : p.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'}</td>
                         <td className="py-2">{p.months} tháng</td>
                         <td className="py-2 text-right font-medium">{formatVND(p.amount)}</td>
                         <td className="py-2 text-center font-mono text-xs text-gray-500">{p.transfer_code}</td>

@@ -1,12 +1,15 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'advanced_reports', 'view_reports'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method !== 'GET') {
     return res.status(405).json({ message: `Method ${req.method} not allowed` });
@@ -34,6 +37,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     prevToD.setDate(prevToD.getDate() + 1);
     const prevToStr = prevToD.toISOString().split('T')[0];
 
+    // Helper: apply branch filter to per-branch queries
+    const bq = (q: any) => branchId ? q.eq('branch_id', branchId) : q;
+
     // ===================== PARALLEL QUERIES =====================
     const [
       donThuocRes, donThuocPrevRes,
@@ -45,78 +51,78 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lensStockRes, gongKinhRes,
       thuocNhapRes, thuocHuyRes,
     ] = await Promise.all([
-      // Current period
-      supabase.from('DonThuoc')
+      // Current period — PER-BRANCH
+      bq(supabase.from('DonThuoc')
         .select('id, ngay_kham, tongtien, sotien_da_thanh_toan, chuyen_khoa, benhnhanid, lai')
         .eq('tenant_id', tenantId)
-        .gte('ngay_kham', fromStr).lt('ngay_kham', toStr),
+        .gte('ngay_kham', fromStr).lt('ngay_kham', toStr)),
 
-      // Previous period 
-      supabase.from('DonThuoc')
+      // Previous period — PER-BRANCH
+      bq(supabase.from('DonThuoc')
         .select('id, tongtien, sotien_da_thanh_toan, lai')
         .eq('tenant_id', tenantId)
-        .gte('ngay_kham', prevFromStr).lt('ngay_kham', prevToStr),
+        .gte('ngay_kham', prevFromStr).lt('ngay_kham', prevToStr)),
 
-      // Current period glasses 
-      supabase.from('DonKinh')
+      // Current period glasses — PER-BRANCH
+      bq(supabase.from('DonKinh')
         .select('id, ngaykham, giatrong, giagong, sotien_da_thanh_toan, lai, benhnhanid')
         .eq('tenant_id', tenantId)
-        .gte('ngaykham', fromStr).lt('ngaykham', toStr),
+        .gte('ngaykham', fromStr).lt('ngaykham', toStr)),
 
-      // Previous period glasses
-      supabase.from('DonKinh')
+      // Previous period glasses — PER-BRANCH
+      bq(supabase.from('DonKinh')
         .select('id, giatrong, giagong, sotien_da_thanh_toan, lai')
         .eq('tenant_id', tenantId)
-        .gte('ngaykham', prevFromStr).lt('ngaykham', prevToStr),
+        .gte('ngaykham', prevFromStr).lt('ngaykham', prevToStr)),
 
-      // Total patients
-      supabase.from('BenhNhan')
+      // Total patients — PER-BRANCH
+      bq(supabase.from('BenhNhan')
         .select('id, namsinh', { count: 'exact' })
-        .eq('tenant_id', tenantId),
+        .eq('tenant_id', tenantId)),
 
-      // New patients this period (approximate via first DonThuoc)
-      supabase.from('BenhNhan')
+      // New patients this period — PER-BRANCH
+      bq(supabase.from('BenhNhan')
         .select('id', { count: 'exact' })
         .eq('tenant_id', tenantId)
-        .gte('created_at', fromStr).lt('created_at', toStr),
+        .gte('created_at', fromStr).lt('created_at', toStr)),
 
-      // ChoKham in period
-      supabase.from('ChoKham')
+      // ChoKham in period — PER-BRANCH
+      bq(supabase.from('ChoKham')
         .select('id, thoigian, trangthai')
         .eq('tenant_id', tenantId)
-        .gte('thoigian', fromStr).lt('thoigian', toStr),
+        .gte('thoigian', fromStr).lt('thoigian', toStr)),
 
-      // Appointments in period
-      supabase.from('hen_kham_lai')
+      // Appointments in period — PER-BRANCH
+      bq(supabase.from('hen_kham_lai')
         .select('id, ngay_hen, trang_thai')
         .eq('tenant_id', tenantId)
-        .gte('ngay_hen', fromStr).lte('ngay_hen', to as string),
+        .gte('ngay_hen', fromStr).lte('ngay_hen', to as string)),
 
-      // Thuoc (drugs) with stock
+      // Thuoc (drugs) — SHARED
       supabase.from('Thuoc')
         .select('id, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_toi_thieu, la_thu_thuat')
         .eq('tenant_id', tenantId)
         .eq('ngung_kinh_doanh', false),
 
-      // Lens stock alerts
+      // Lens stock alerts — SHARED
       supabase.from('lens_stock')
         .select('id, sph, cyl, ton_hien_tai, trang_thai_ton, HangTrong:hang_trong_id(ten_hang)')
         .eq('tenant_id', tenantId)
         .in('trang_thai_ton', ['HET', 'SAP_HET']),
 
-      // Frame stock
-      supabase.from('GongKinh')
+      // Frame stock — SHARED
+      bq(supabase.from('GongKinh')
         .select('id, ten_gong, gia_nhap, gia_ban, ton_kho, muc_ton_can_co')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId))
         .not('trang_thai', 'eq', false),
 
-      // Drug imports in period
+      // Drug imports in period — SHARED
       supabase.from('thuoc_nhap_kho')
         .select('id, thuoc_id, so_luong, don_gia, thanh_tien, ngay_nhap')
         .eq('tenant_id', tenantId)
         .gte('ngay_nhap', fromStr).lt('ngay_nhap', toStr),
 
-      // Drug wastage in period
+      // Drug wastage in period — SHARED
       supabase.from('thuoc_huy')
         .select('id, thuoc_id, so_luong, ly_do, ngay_huy')
         .eq('tenant_id', tenantId)

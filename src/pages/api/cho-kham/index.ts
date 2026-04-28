@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 // Lấy đầu ngày hôm nay theo giờ Việt Nam (UTC+7)
 function getTodayStartVN(): string {
@@ -15,26 +15,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method === 'POST') {
-    return handlePost(req, res, tenantId);
+    return handlePost(req, res, tenantId, branchId);
   } else if (req.method === 'GET') {
-    return handleGet(req, res, tenantId);
+    return handleGet(req, res, tenantId, branchId);
   } else if (req.method === 'PATCH') {
-    return handlePatch(req, res, tenantId);
+    return handlePatch(req, res, tenantId, branchId);
   } else if (req.method === 'DELETE') {
-    return handleDelete(req, res, tenantId);
+    return handleDelete(req, res, tenantId, branchId);
   } else {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 }
 
-async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
+async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: string, branchId: string | null) {
   try {
     const todayStart = getTodayStartVN();
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('ChoKham')
       .select(`
         id,
@@ -54,6 +57,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
       .gte('thoigian', todayStart)
       .order('thoigian', { ascending: true });
 
+    if (branchId) {
+      query = query.eq('branch_id', branchId);
+    }
+
+    const { data, error } = await query;
+
     if (error) throw error;
 
     return res.status(200).json({ success: true, data });
@@ -63,7 +72,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
   }
 }
 
-async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
+async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: string, branchId: string | null) {
   try {
     const { patient_id, camera_location, avatar } = req.body;
 
@@ -121,7 +130,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
         thoigian: thoigianVN,
         trangthai: 'chờ',
         avatar_url: avatar || null,
-        tenant_id: tenantId
+        tenant_id: tenantId,
+        ...(branchId ? { branch_id: branchId } : {}),
       })
       .select()
       .single();
@@ -140,7 +150,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
   }
 }
 
-async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
+async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: string, branchId: string | null) {
   try {
     const { id, benhnhanid, trangthai } = req.body;
 
@@ -191,7 +201,7 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: 
   }
 }
 
-async function handleDelete(req: NextApiRequest, res: NextApiResponse, tenantId: string) {
+async function handleDelete(req: NextApiRequest, res: NextApiResponse, tenantId: string, branchId: string | null) {
   try {
     const { id } = req.query;
 

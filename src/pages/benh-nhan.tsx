@@ -23,6 +23,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute'
 import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
 import ChoKhamPanel, { ChoKhamPanelRef } from '@/components/ChoKhamPanel';
+import { useBranch } from '../contexts/BranchContext';
 
 interface BenhNhan {
   id?: number;
@@ -33,6 +34,7 @@ interface BenhNhan {
   tuoi?: number;
   created_at?: string;
   ngay_kham_gan_nhat?: string;
+  branch?: { id: string; ten_chi_nhanh: string } | null;
 }
 
 interface DonThuoc {
@@ -97,6 +99,7 @@ const TRANG_THAI_MAP: Record<string, { label: string; color: string; bg: string 
 
 export default function BenhNhanPage() {
   const { confirm } = useConfirm();
+  const { isMultiBranch } = useBranch();
   const [benhNhans, setBenhNhans] = useState<BenhNhan[]>([]);
   const [search, setSearch] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
@@ -1119,6 +1122,7 @@ export default function BenhNhanPage() {
                       >
                         <div className="flex items-center gap-1">Khám GN {renderSortIndicator('ngay_kham_gan_nhat')}</div>
                       </th>
+                      {isMultiBranch && <th className="px-2 py-1">Chi nhánh</th>}
                       <th className="px-2 py-1 text-center">Hành Động</th>
                     </tr>
                   </thead>
@@ -1157,6 +1161,9 @@ export default function BenhNhanPage() {
                           <td className="px-2 py-1">{bn.diachi}</td>
                           <td className="px-1 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</td>
                           <td className="px-1 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</td>
+                          {isMultiBranch && (
+                            <td className="px-2 py-1 text-xs text-gray-500">{bn.branch?.ten_chi_nhanh || '-'}</td>
+                          )}
                           <td className="px-2 py-1 text-center">
                             <div className="inline-flex items-center gap-0.5">
                               <Button size="sm" variant="outline" onClick={() => handleEdit(bn)} className="h-7 w-7 p-0" title="Sửa">

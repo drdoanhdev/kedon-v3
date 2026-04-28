@@ -1,6 +1,35 @@
 // API: Nhập kho gọng theo nhóm giá
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+
+async function getBranchScopedNhomIds(tenantId: string, branchId: string | null): Promise<number[] | null> {
+  if (!branchId) return null;
+
+  const [{ data: gongs }, { data: donKinhs }] = await Promise.all([
+    supabase
+      .from('GongKinh')
+      .select('nhom_gia_gong_id')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .not('nhom_gia_gong_id', 'is', null),
+    supabase
+      .from('DonKinh')
+      .select('nhom_gia_gong_id')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .not('nhom_gia_gong_id', 'is', null),
+  ]);
+
+  const idSet = new Set<number>();
+  (gongs || []).forEach((r: any) => {
+    if (typeof r.nhom_gia_gong_id === 'number') idSet.add(r.nhom_gia_gong_id);
+  });
+  (donKinhs || []).forEach((r: any) => {
+    if (typeof r.nhom_gia_gong_id === 'number') idSet.add(r.nhom_gia_gong_id);
+  });
+
+  return Array.from(idSet);
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -8,7 +37,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'inventory_lens', 'manage_inventory'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
+  const allowedNhomIds = await getBranchScopedNhomIds(tenantId, branchId);
   try {
     // GET: Lịch sử nhập kho theo nhóm giá
     if (req.method === 'GET') {
@@ -20,6 +53,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .order('ngay_nhap', { ascending: false })
         .limit(parseInt(limit as string));
+
+      if (allowedNhomIds) {
+        if (allowedNhomIds.length === 0) {
+          return res.status(200).json([]);
+        }
+        query = query.in('nhom_gia_gong_id', allowedNhomIds);
+      }
 
       if (nhom_gia_gong_id) query = query.eq('nhom_gia_gong_id', nhom_gia_gong_id);
 
@@ -34,6 +74,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (!nhom_gia_gong_id || !so_luong || so_luong <= 0) {
         return res.status(400).json({ error: 'nhom_gia_gong_id và so_luong > 0 là bắt buộc' });
+      }
+
+      if (allowedNhomIds && !allowedNhomIds.includes(parseInt(nhom_gia_gong_id))) {
+        return res.status(403).json({ error: 'Không có quyền nhập kho cho nhóm giá của chi nhánh khác' });
       }
 
       // Kiểm tra nhóm thuộc tenant

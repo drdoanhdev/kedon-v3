@@ -106,6 +106,8 @@ export type Permission =
   | 'manage_clinic'         // Cài đặt phòng khám
   | 'manage_members'        // Quản lý thành viên
   | 'manage_inventory'      // Quản lý kho
+  | 'manage_branches'       // Quản lý chi nhánh
+  | 'manage_transfers'      // Quản lý điều chuyển
   | 'view_revenue'          // Xem doanh thu & giá bán
   | 'view_reports'          // Xem báo cáo
   | 'manage_crm'            // Chăm sóc khách hàng
@@ -123,6 +125,8 @@ const ROLE_PERMISSIONS: Record<TenantRole, Permission[]> = {
     'manage_clinic',
     'manage_members',
     'manage_inventory',
+    'manage_branches',
+    'manage_transfers',
     'view_revenue',
     'view_reports',
     'manage_crm',
@@ -138,6 +142,8 @@ const ROLE_PERMISSIONS: Record<TenantRole, Permission[]> = {
     'manage_clinic',
     'manage_members',
     'manage_inventory',
+    'manage_branches',
+    'manage_transfers',
     'view_revenue',
     'view_reports',
     'manage_crm',

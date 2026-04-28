@@ -1,6 +1,6 @@
 // API: Kho tròng kính theo độ (lens_stock)
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -8,7 +8,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'inventory_lens', 'manage_inventory'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   try {
     // GET: Lấy danh sách tồn kho tròng
@@ -28,6 +31,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .order('hang_trong_id')
         .order('sph')
         .order('cyl');
+
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
 
       if (show_inactive !== '1') {
         query = query.eq('HangTrong.trang_thai', true);
@@ -67,6 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ton_dau_ky: parseInt(ton_dau_ky) || 0,
         ton_hien_tai: parseInt(ton_dau_ky) || 0,
         muc_ton_can_co: parseInt(muc_ton_can_co) || 10,
+        ...(branchId ? { branch_id: branchId } : {}),
       };
       // mat chỉ dùng cho đa tròng (khi có add_power)
       if (mat && ['trai', 'phai'].includes(mat)) insertData.mat = mat;
@@ -93,12 +101,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) return res.status(400).json({ error: 'Thiếu id' });
 
       // Lấy record hiện tại để tính delta tồn đầu kỳ
-      const { data: current } = await supabase
+      let currentQuery = supabase
         .from('lens_stock')
         .select('ton_dau_ky, ton_hien_tai')
         .eq('id', id)
-        .eq('tenant_id', tenantId)
-        .single();
+        .eq('tenant_id', tenantId);
+
+      if (branchId) {
+        currentQuery = currentQuery.eq('branch_id', branchId);
+      }
+
+      const { data: current } = await currentQuery.single();
 
       if (!current) return res.status(404).json({ error: 'Không tìm thấy dòng kho' });
 
@@ -124,13 +137,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (add_power !== undefined) updateFields.add_power = add_power === '' || add_power === null ? null : parseFloat(add_power);
       if (mat !== undefined) updateFields.mat = (mat && ['trai', 'phai'].includes(mat)) ? mat : null;
 
-      const { data, error } = await supabase
+      let updateQuery = supabase
         .from('lens_stock')
         .update(updateFields)
         .eq('id', id)
         .eq('tenant_id', tenantId)
-        .select('*, HangTrong(id, ten_hang, loai_trong, kieu_quan_ly, gia_nhap, gia_ban, trang_thai)')
-        .single();
+        .select('*, HangTrong(id, ten_hang, loai_trong, kieu_quan_ly, gia_nhap, gia_ban, trang_thai)');
+
+      if (branchId) {
+        updateQuery = updateQuery.eq('branch_id', branchId);
+      }
+
+      const { data, error } = await updateQuery.single();
 
       if (error) {
         if (error.code === '23505') {
@@ -162,11 +180,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      const { error } = await supabase
+      let deleteQuery = supabase
         .from('lens_stock')
         .delete()
         .eq('id', stockId)
         .eq('tenant_id', tenantId);
+
+      if (branchId) {
+        deleteQuery = deleteQuery.eq('branch_id', branchId);
+      }
+
+      const { error } = await deleteQuery;
 
       if (error) throw error;
       return res.status(200).json({ success: true });

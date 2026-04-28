@@ -3,6 +3,7 @@
  * Use this instead of raw fetch() for API calls that need tenant context.
  */
 import { supabaseAuth } from './supabaseAuth';
+import { getDeviceLabel, getOrCreateDeviceId } from './deviceIdentity';
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
@@ -19,6 +20,22 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
   const tenantId = localStorage.getItem('currentTenantId');
   if (tenantId) {
     headers['x-tenant-id'] = tenantId;
+  }
+
+  // Branch context (enterprise multi-branch)
+  const branchKey = tenantId ? `currentBranchId_${tenantId}` : null;
+  const branchId = branchKey ? localStorage.getItem(branchKey) : null;
+  if (branchId) {
+    headers['x-branch-id'] = branchId;
+  }
+
+  const deviceId = getOrCreateDeviceId();
+  if (deviceId) {
+    headers['x-device-id'] = deviceId;
+  }
+  const deviceLabel = getDeviceLabel();
+  if (deviceLabel) {
+    headers['x-device-label'] = deviceLabel;
   }
 
   return headers;

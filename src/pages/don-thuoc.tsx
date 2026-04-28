@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
+import { useBranch } from '../contexts/BranchContext';
 
 interface DonThuoc {
   id: number;
@@ -33,6 +34,7 @@ interface DonThuoc {
   no: boolean;
   lai?: number;
   con_no?: number; // trường mới backend trả về
+  branch?: { id: string; ten_chi_nhanh: string } | null;
 }
 
 interface ChiTietDonThuoc {
@@ -84,6 +86,7 @@ export default function DonThuocPage() {
   const [payDonId, setPayDonId] = useState<number | null>(null);
   const [payAmount, setPayAmount] = useState(''); // nhập theo nghìn
   const { user, signIn } = useAuth();
+  const { isMultiBranch } = useBranch();
 
   // Đặt tiêu đề trang tĩnh
   useEffect(() => {
@@ -508,6 +511,7 @@ export default function DonThuocPage() {
                       <th className="px-2 py-1 text-right">Tổng Tiền</th>
                       <th className="px-2 py-1 text-right">Nợ</th>
                       {showProfit && <th className="px-2 py-1 text-right">Lãi (ước tính)</th>}
+                      {isMultiBranch && <th className="px-2 py-1 text-left">Chi nhánh</th>}
                       <th className="px-2 py-1 text-center w-[90px]">Hành Động</th>
                     </tr>
                   </thead>
@@ -547,6 +551,9 @@ export default function DonThuocPage() {
                             <td className="px-2 py-1 text-right">{isDebt ? (remaining / 1000).toFixed(0) + 'k' : '0k'}</td>
                             {showProfit && (
                               <td className="px-2 py-1 text-right text-emerald-600 font-medium">{dt.lai !== undefined ? ((dt.lai / 1000).toFixed(0) + 'k') : '...'}</td>
+                            )}
+                            {isMultiBranch && (
+                              <td className="px-2 py-1 text-xs text-gray-500">{dt.branch?.ten_chi_nhanh || '-'}</td>
                             )}
                             <td className="px-2 py-1 text-center w-[90px]">
                               <div className="flex items-center justify-center gap-1 whitespace-nowrap">

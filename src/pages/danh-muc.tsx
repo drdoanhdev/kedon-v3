@@ -226,7 +226,7 @@ function DanhMucPage() {
       // Thêm cache-busting parameters
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(7);
-      const thuocRes = await axios.get(`/api/thuoc?_t=${timestamp}&_r=${random}`, {
+      const thuocRes = await axios.get(`/api/thuoc?scope=shared&_t=${timestamp}&_r=${random}`, {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
@@ -267,7 +267,7 @@ function DanhMucPage() {
 
   const fetchGongKinh = async () => {
     try {
-      const response = await axios.get('/api/gong-kinh');
+      const response = await axios.get('/api/gong-kinh?scope=shared');
       setDsGongKinh(response.data || []);
     } catch (error) {
       console.error('Lỗi khi tải gọng kính:', error);
@@ -354,13 +354,13 @@ function DanhMucPage() {
           payload.mathuoc = generateMaThuoc(thuocs);
         }
         console.log('📝 POST payload (no id):', payload);
-        await axios.post('/api/thuoc', payload);
+        await axios.post('/api/thuoc?scope=shared', payload);
         toast.success('Đã thêm thuốc');
       } else {
         // Thêm id vào payload khi cập nhật
         payload.id = thuocForm.id;
         console.log('✏️ PUT payload (with id):', payload);
-        await axios.put('/api/thuoc', payload);
+        await axios.put('/api/thuoc?scope=shared', payload);
         toast.success('Đã cập nhật thuốc');
       }
       setOpenThuoc(false);
@@ -389,7 +389,7 @@ function DanhMucPage() {
   const deleteThuoc = async (id: number) => {
     if (!await confirm('Bạn có chắc muốn xoá thuốc này?')) return;
     try {
-      await axios.delete(`/api/thuoc?id=${id}`);
+      await axios.delete(`/api/thuoc?scope=shared&id=${id}`);
       toast.success('Đã xoá thuốc');
       fetchThuocs();
     } catch (error: unknown) {
@@ -590,11 +590,11 @@ function DanhMucPage() {
     }
     try {
       if (isEditingGongKinh) {
-        await axios.put('/api/gong-kinh', gongKinhForm);
+        await axios.put('/api/gong-kinh?scope=shared', gongKinhForm);
         toast.success('Đã cập nhật gọng kính');
       } else {
         const { id, ...payload } = gongKinhForm;
-        await axios.post('/api/gong-kinh', payload);
+        await axios.post('/api/gong-kinh?scope=shared', payload);
         toast.success('Đã thêm gọng kính');
       }
       setOpenGongKinhDialog(false);
@@ -611,7 +611,7 @@ function DanhMucPage() {
   const handleDeleteGongKinh = async (id: number) => {
     if (!await confirm('Bạn có chắc chắn muốn xóa gọng kính này?')) return;
     try {
-      await axios.delete('/api/gong-kinh', { data: { id } });
+      await axios.delete('/api/gong-kinh?scope=shared', { data: { id } });
       toast.success('Xóa gọng kính thành công');
       fetchGongKinh();
     } catch (error) {

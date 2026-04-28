@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useBranch } from '../contexts/BranchContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch } from 'lucide-react';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import type { FeatureKey } from '../lib/featureConfig';
 
 export default function Header() {
   const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole, userRole } = useAuth();
+  const { branches, currentBranchId, currentBranch, switchBranch, isMultiBranch } = useBranch();
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAvatarOpen, setIsAvatarOpen] = useState(false);
@@ -33,6 +35,10 @@ export default function Header() {
     { href: '/bao-cao', label: 'Báo cáo', icon: BarChart, feature: 'basic_reports' },
     { href: '/bao-cao-super', label: 'Báo cáo Pro', icon: BarChart, feature: 'advanced_reports' },
     { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
+    { href: '/quan-ly-chuoi', label: 'Chuỗi cửa hàng', icon: Building2, feature: 'multi_branch' },
+    { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
+    { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
+    { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },
   ];
 
   const isActivePage = (href: string) => router.pathname === href;
@@ -140,6 +146,28 @@ export default function Header() {
                     >
                       {tenants.map(t => (
                         <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Branch selector (enterprise multi-branch) */}
+                {isMultiBranch && branches.length > 0 && (
+                  <div className="px-4 py-3 border-b border-gray-100 bg-amber-50/40">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <GitBranch className="w-4 h-4 text-amber-600" />
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Chi nhánh</span>
+                    </div>
+                    <select
+                      className="w-full text-sm rounded-lg px-2 py-1 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white"
+                      value={currentBranchId || ''}
+                      onChange={e => switchBranch(e.target.value || null)}
+                    >
+                      {(currentRole === 'owner' || currentRole === 'admin') && (
+                        <option value="">Tất cả chi nhánh</option>
+                      )}
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.ten_chi_nhanh}{b.is_main ? ' (Chính)' : ''}</option>
                       ))}
                     </select>
                   </div>

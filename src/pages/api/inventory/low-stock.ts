@@ -1,6 +1,6 @@
 // API: Cảnh báo tồn kho thấp (kho kính: tròng + gọng)
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -8,7 +8,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'inventory_lens', 'manage_inventory'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -21,11 +24,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Tròng kính sắp hết
     if (type !== 'thuoc') {
-    const { data: lensAlerts } = await supabase
+    let lensQuery = supabase
       .from('lens_stock')
       .select('id, sph, cyl, add_power, ton_hien_tai, muc_ton_can_co, trang_thai_ton, HangTrong(ten_hang)')
       .eq('tenant_id', tenantId)
       .in('trang_thai_ton', ['HET', 'SAP_HET']);
+
+    if (branchId) {
+      lensQuery = lensQuery.eq('branch_id', branchId);
+    }
+
+    const { data: lensAlerts } = await lensQuery;
 
     (lensAlerts || []).forEach((item: any) => {
       alerts.push({
@@ -42,11 +51,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Gọng kính sắp hết
     if (type !== 'thuoc') {
-    const { data: frameAlerts } = await supabase
+    let frameQuery = supabase
       .from('GongKinh')
       .select('id, ten_gong, mau_sac, ton_kho, muc_ton_can_co')
       .eq('tenant_id', tenantId)
       .not('trang_thai', 'eq', false);
+
+    if (branchId) {
+      frameQuery = frameQuery.eq('branch_id', branchId);
+    }
+
+    const { data: frameAlerts } = await frameQuery;
 
     (frameAlerts || []).filter((f: any) =>
       (f.ton_kho ?? 0) <= (f.muc_ton_can_co ?? 2)
@@ -65,12 +80,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Thuốc sắp hết / đã hết
     if (type !== 'kinh') {
-    const { data: thuocAlerts } = await supabase
+    let thuocQuery = supabase
       .from('Thuoc')
       .select('id, tenthuoc, donvitinh, tonkho, muc_ton_can_co, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
       .or('la_thu_thuat.is.null,la_thu_thuat.eq.false')
       .or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
+
+    if (branchId) {
+      thuocQuery = thuocQuery.eq('branch_id', branchId);
+    }
+
+    const { data: thuocAlerts } = await thuocQuery;
 
     (thuocAlerts || []).filter((t: any) =>
       (t.tonkho ?? 0) <= (t.muc_ton_can_co ?? 10)
@@ -90,11 +111,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Tròng cần đặt (chờ đặt)
-    const { data: pendingOrders } = await supabase
+    let pendingQuery = supabase
       .from('lens_order')
-      .select('id, sph, cyl, add_power, so_luong_mieng, HangTrong(ten_hang)')
+      .select('id, sph, cyl, add_power, so_luong_mieng, HangTrong(ten_hang), DonKinh(branch_id)')
       .eq('tenant_id', tenantId)
       .eq('trang_thai', 'cho_dat');
+
+    const { data: pendingOrdersRaw } = await pendingQuery;
+    const pendingOrders = branchId
+      ? (pendingOrdersRaw || []).filter((o: any) => o?.DonKinh?.branch_id === branchId)
+      : pendingOrdersRaw;
 
     return res.status(200).json({
       alerts: alerts.sort((a, b) =>

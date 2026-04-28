@@ -2,6 +2,31 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
 
+let supportsPriceSnapshotColumnsCache: boolean | null = null;
+
+async function supportsPriceSnapshotColumns(): Promise<boolean> {
+  if (supportsPriceSnapshotColumnsCache !== null) return supportsPriceSnapshotColumnsCache;
+
+  const { error } = await supabaseAdmin
+    .from('ChiTietDonThuoc')
+    .select('don_gia_ban, don_gia_von')
+    .limit(1);
+
+  if (!error) {
+    supportsPriceSnapshotColumnsCache = true;
+    return true;
+  }
+
+  // DB chưa chạy V049
+  if (error.code === '42703') {
+    supportsPriceSnapshotColumnsCache = false;
+    return false;
+  }
+
+  supportsPriceSnapshotColumnsCache = true;
+  return true;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -30,9 +55,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(404).json({ message: "Không tìm thấy đơn thuốc" });
       }
 
-      const { data, error } = await supabase
-        .from("ChiTietDonThuoc")
-        .select(`
+      const includeSnapshot = await supportsPriceSnapshotColumns();
+      const selectColumns = includeSnapshot
+        ? `
+          id,
+          donthuocid,
+          thuocid,
+          soluong,
+          don_gia_ban,
+          don_gia_von,
+          thuoc:thuocid (
+            id,
+            tenthuoc,
+            donvitinh,
+            cachdung,
+            giaban,
+            gianhap,
+            soluongmacdinh
+          )
+        `
+        : `
           id,
           donthuocid,
           thuocid,
@@ -46,7 +88,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             gianhap,
             soluongmacdinh
           )
-        `)
+        `;
+
+      const { data, error } = await supabase
+        .from("ChiTietDonThuoc")
+        .select(selectColumns)
         .eq("donthuocid", donthuocid);
 
       if (error) {
@@ -60,8 +106,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Xử lý dữ liệu: donvitinh và cachdung luôn lấy từ bảng Thuoc gốc
       const processedData = data?.map(item => {
         const thuocInfo = Array.isArray(item.thuoc) ? item.thuoc[0] : item.thuoc;
+        const snapshotSell = typeof (item as any).don_gia_ban === 'number'
+          ? (item as any).don_gia_ban
+          : (thuocInfo?.giaban || 0);
+        const snapshotCost = typeof (item as any).don_gia_von === 'number'
+          ? (item as any).don_gia_von
+          : (thuocInfo?.gianhap || 0);
         return {
           ...item,
+          don_gia_ban: snapshotSell,
+          don_gia_von: snapshotCost,
+          thuoc: {
+            ...(thuocInfo || {}),
+            giaban: snapshotSell,
+            gianhap: snapshotCost,
+            gia_nguon: 'snapshot_line',
+          },
           donvitinh: thuocInfo?.donvitinh || '', // Luôn từ bảng Thuoc
           cachdung: thuocInfo?.cachdung || '' // Luôn từ bảng Thuoc
         };

@@ -6,7 +6,10 @@ import { SePayPgClient } from 'sepay-pg-node';
 const FALLBACK_PRICES: Record<string, number> = {
   basic: 299000,
   pro: 599000,
+  enterprise: 199000,
 };
+
+const ENTERPRISE_BRANCH_FEE = 79000; // per extra branch per month
 
 async function getPlanPrice(supabase: any, planKey: string): Promise<number | null> {
   try {
@@ -51,15 +54,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!tenant) return;
 
   const { supabase, tenantId, userId } = tenant;
-  const { plan, months = 1 } = req.body;
+  const { plan, months = 1, branch_count = 1 } = req.body;
 
   const planPrice = await getPlanPrice(supabase, plan);
   if (!plan || planPrice === null) {
-    return res.status(400).json({ error: 'Gói không hợp lệ. Chọn: basic hoặc pro' });
+    return res.status(400).json({ error: 'Gói không hợp lệ. Chọn: basic, pro hoặc enterprise' });
   }
 
   const monthCount = Math.min(Math.max(parseInt(months) || 1, 1), 12);
-  const amount = planPrice * monthCount;
+  const branchCount = plan === 'enterprise' ? Math.max(1, parseInt(branch_count) || 1) : 1;
+  const extraBranches = Math.max(0, branchCount - 1);
+  const monthlyPrice = planPrice + (plan === 'enterprise' ? extraBranches * ENTERPRISE_BRANCH_FEE : 0);
+  const amount = monthlyPrice * monthCount;
 
   // Hủy các đơn pending cũ
   await supabase
@@ -92,6 +98,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       transfer_code: transferCode,
       status: 'pending',
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      ...(plan === 'enterprise' && branchCount > 1 ? { metadata: { branch_count: branchCount } } : {}),
     })
     .select()
     .single();
@@ -104,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const client = getSePayClient();
     const checkoutURL = client.checkout.initCheckoutUrl();
-    const planName = plan === 'pro' ? 'Chuyen nghiep' : 'Co ban';
+    const planName = plan === 'enterprise' ? 'Doanh nghiep' : plan === 'pro' ? 'Chuyen nghiep' : 'Co ban';
     const description = `Thanh toan goi ${planName} ${monthCount} thang - ${transferCode}`;
 
     const checkoutFields = client.checkout.initOneTimePaymentFields({

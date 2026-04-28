@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
+import { useBranch } from '../contexts/BranchContext';
 
 interface DonKinh {
   id: number;
@@ -47,6 +48,7 @@ interface DonKinh {
     diachi: string | null;
     tuoi?: number; // thêm trường tuổi nếu có
   };
+  branch?: { id: string; ten_chi_nhanh: string } | null;
 }
 
 // Hàm tính tuổi từ namsinh (yyyy hoặc dd/mm/yyyy)
@@ -84,6 +86,7 @@ export default function DonKinhPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const { user, signIn } = useAuth();
+  const { isMultiBranch } = useBranch();
 
   // Đặt tiêu đề trang tĩnh
   useEffect(() => {
@@ -443,6 +446,7 @@ export default function DonKinhPage() {
                         <th className="px-4 py-2">Tổng tiền</th>
                         {showProfit && <th className="px-4 py-2">Lãi</th>}
                         <th className="px-4 py-2">còn nợ</th>
+                        {isMultiBranch && <th className="px-4 py-2">Chi nhánh</th>}
                         <th className="px-4 py-2 text-center w-[90px]">Hành động</th>
                       </tr>
                     </thead>
@@ -480,6 +484,9 @@ export default function DonKinhPage() {
                               ? formatMoney(dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan)
                               : '-'}
                           </td>
+                          {isMultiBranch && (
+                            <td className="px-4 py-2 text-xs text-gray-500">{(dk as any).branch?.ten_chi_nhanh || '-'}</td>
+                          )}
                           <td className="px-4 py-2 text-center w-[90px]">
                             <div className="flex items-center justify-center gap-1 whitespace-nowrap">
                               <Button size="sm" variant="outline" asChild className="h-7 px-2">
@@ -496,7 +503,7 @@ export default function DonKinhPage() {
                         )})}
                       {paginated.length === 0 && (
                         <tr>
-                          <td colSpan={showProfit ? 12 : 11} className="text-center py-4 text-muted-foreground">
+                          <td colSpan={showProfit ? (isMultiBranch ? 14 : 13) : (isMultiBranch ? 13 : 12)} className="text-center py-4 text-muted-foreground">
                             Không tìm thấy đơn kính.
                           </td>
                         </tr>

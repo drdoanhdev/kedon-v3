@@ -1,6 +1,6 @@
 // API: Nhập kho gọng kính - GET lịch sử, POST nhập mới
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -8,7 +8,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'inventory_lens', 'manage_inventory'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
   try {
     // GET: Lịch sử nhập kho gọng
     if (req.method === 'GET') {
@@ -20,6 +23,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .order('ngay_nhap', { ascending: false })
         .limit(parseInt(limit as string));
+
+      if (branchId) {
+        const { data: branchGongs, error: branchGongsErr } = await supabase
+          .from('GongKinh')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('branch_id', branchId);
+        if (branchGongsErr) throw branchGongsErr;
+
+        const allowedGongIds = (branchGongs || []).map((g) => g.id);
+        if (allowedGongIds.length === 0) {
+          return res.status(200).json([]);
+        }
+        query = query.in('gong_kinh_id', allowedGongIds);
+      }
 
       if (gong_kinh_id) query = query.eq('gong_kinh_id', gong_kinh_id);
 
@@ -37,12 +55,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Kiểm tra gọng thuộc tenant
-      const { data: gong } = await supabase
+      let gongCheckQuery = supabase
         .from('GongKinh')
         .select('id')
         .eq('id', gong_kinh_id)
-        .eq('tenant_id', tenantId)
-        .single();
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        gongCheckQuery = gongCheckQuery.eq('branch_id', branchId);
+      }
+      const { data: gong } = await gongCheckQuery.single();
 
       if (!gong) {
         return res.status(404).json({ error: 'Không tìm thấy gọng kính này' });
@@ -64,11 +85,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error) throw error;
 
       // Lấy lại tồn kho mới nhất (trigger đã cập nhật)
-      const { data: updatedGong } = await supabase
+      let updatedGongQuery = supabase
         .from('GongKinh')
         .select('ton_kho')
         .eq('id', gong_kinh_id)
-        .single();
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        updatedGongQuery = updatedGongQuery.eq('branch_id', branchId);
+      }
+      const { data: updatedGong } = await updatedGongQuery.single();
 
       return res.status(201).json({ ...data, stock: updatedGong });
     }

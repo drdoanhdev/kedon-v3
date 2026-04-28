@@ -19,11 +19,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // GET: Danh sách thành viên của phòng khám
   if (req.method === 'GET') {
     try {
-      const { data: memberships, error } = await supabaseAdmin
+      let memberships: any[] | null = null;
+      let error: any = null;
+
+      const fullRes = await supabaseAdmin
         .from('tenantmembership')
-        .select('id, user_id, role, active, last_login_at, created_at')
+        .select('id, user_id, role, active, last_login_at, created_at, login_security, locked_device_id, locked_device_label, locked_device_at')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: true });
+
+      memberships = fullRes.data as any[] | null;
+      error = fullRes.error;
+
+      if (error && /login_security|locked_device_id|locked_device_label|locked_device_at/i.test(error.message || '')) {
+        const fallbackRes = await supabaseAdmin
+          .from('tenantmembership')
+          .select('id, user_id, role, active, last_login_at, created_at')
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: true });
+
+        memberships = (fallbackRes.data || []).map((m: any) => ({
+          ...m,
+          login_security: {},
+          locked_device_id: null,
+          locked_device_label: null,
+          locked_device_at: null,
+        }));
+        error = fallbackRes.error;
+      }
 
       if (error) {
         return res.status(500).json({ message: 'Lỗi lấy danh sách thành viên', error: error.message });

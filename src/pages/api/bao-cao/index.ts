@@ -1,6 +1,6 @@
 //src/pages/api/bao-cao/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 type ChiTietItem = {
   id: number;
@@ -85,7 +85,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
   
   if (req.method !== 'GET') {
     return res.status(405).json({ message: `Phương thức ${req.method} không được hỗ trợ` });
@@ -116,6 +119,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .eq('tenant_id', tenantId)
       .gte('ngay_kham', from as string)
       .lt('ngay_kham', toDateInclusive);
+
+    if (branchId) queryThuoc = queryThuoc.eq('branch_id', branchId);
 
     if (chuyen_khoa) {
       queryThuoc = queryThuoc.eq('chuyen_khoa', chuyen_khoa as string);
@@ -153,12 +158,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Lấy đơn kính
     console.log(`🔄 [${timestamp}] Querying DonKinh (all records)...`);
-    const queryKinh = supabase
+    let queryKinh = supabase
       .from('DonKinh')
       .select('id, ngaykham, giatrong, giagong, no, sotien_da_thanh_toan, lai')
       .eq('tenant_id', tenantId)
       .gte('ngaykham', from as string)
       .lt('ngaykham', toDateInclusive);
+
+    if (branchId) queryKinh = queryKinh.eq('branch_id', branchId);
 
     const donKinhs = await getAllRecords<DonKinh>(queryKinh, 'DonKinh', timestamp);
     console.log(`✅ [${timestamp}] DonKinh found:`, donKinhs?.length || 0, 'records (total)');

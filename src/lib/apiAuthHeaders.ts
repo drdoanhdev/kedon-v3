@@ -1,6 +1,7 @@
 import axios, { InternalAxiosRequestConfig } from 'axios';
 import apiClient from './apiClient';
 import { supabaseAuth } from './supabaseAuth';
+import { getDeviceLabel, getOrCreateDeviceId } from './deviceIdentity';
 
 let initialized = false;
 
@@ -12,6 +13,11 @@ const TOKEN_REFRESH_MARGIN = 60; // refresh 60s before expiry
 const getCurrentTenantId = (): string | null => {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('currentTenantId');
+};
+
+const getCurrentBranchId = (tenantId: string | null): string | null => {
+  if (typeof window === 'undefined' || !tenantId) return null;
+  return localStorage.getItem(`currentBranchId_${tenantId}`);
 };
 
 const getCachedToken = async (): Promise<string | null> => {
@@ -39,6 +45,7 @@ const injectAuthHeaders = async (
 
   const token = await getCachedToken();
   const tenantId = getCurrentTenantId();
+  const branchId = getCurrentBranchId(tenantId);
 
   const headers = (config.headers || {}) as Record<string, string>;
 
@@ -48,6 +55,19 @@ const injectAuthHeaders = async (
 
   if (tenantId) {
     headers['x-tenant-id'] = tenantId;
+  }
+
+  if (branchId) {
+    headers['x-branch-id'] = branchId;
+  }
+
+  const deviceId = getOrCreateDeviceId();
+  if (deviceId) {
+    headers['x-device-id'] = deviceId;
+  }
+  const deviceLabel = getDeviceLabel();
+  if (deviceLabel) {
+    headers['x-device-label'] = deviceLabel;
   }
 
   config.headers = headers;

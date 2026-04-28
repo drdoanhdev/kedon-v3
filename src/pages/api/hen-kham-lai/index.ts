@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -7,7 +7,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'appointments'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method === 'GET') {
     try {
@@ -19,6 +22,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .order('ngay_hen', { ascending: true })
         .order('gio_hen', { ascending: true, nullsFirst: false });
+
+      // Branch filter (per-branch data)
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
 
       if (fromDate) query = query.gte('ngay_hen', fromDate as string);
       if (toDate) query = query.lte('ngay_hen', toDate as string);
@@ -45,6 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .from('hen_kham_lai')
         .insert([{
           tenant_id: tenantId,
+          ...(branchId ? { branch_id: branchId } : {}),
           benhnhanid: Number(benhnhanid),
           donkinhid: donkinhid ? Number(donkinhid) : null,
           ten_benhnhan: ten_benhnhan || '',

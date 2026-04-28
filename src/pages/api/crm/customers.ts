@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 type CareStatus = 'chua_lien_he' | 'da_goi' | 'hen_goi_lai' | 'da_chot_lich';
 type PriorityTier = 'A' | 'B' | 'C';
@@ -37,16 +37,17 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-async function fetchAllRows(table: string, select: string, tenantId: string): Promise<any[]> {
+async function fetchAllRows(table: string, select: string, tenantId: string, branchId?: string | null): Promise<any[]> {
   const PAGE_SIZE = 1000;
   let all: any[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(table)
       .select(select)
-      .eq('tenant_id', tenantId)
-      .range(from, from + PAGE_SIZE - 1);
+      .eq('tenant_id', tenantId);
+    if (branchId) query = query.eq('branch_id', branchId);
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     all = all.concat(data);
     if (data.length < PAGE_SIZE) break;
@@ -92,7 +93,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'crm', 'manage_crm'))) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
@@ -142,6 +146,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const cacheKey = JSON.stringify({
       tenantId,
+      branchId: branchId || 'all',
       page,
       pageSize,
       search,
@@ -167,7 +172,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     if (maybeServeCached(res, cacheKey)) return;
 
-    const donKinhData: any[] = await fetchAllRows('DonKinh', 'benhnhanid, ngaykham, giatrong, giagong', tenantId);
+    const donKinhData: any[] = await fetchAllRows('DonKinh', 'benhnhanid, ngaykham, giatrong, giagong', tenantId, branchId);
 
     const latestKinhByPatient = new Map<string, { benhnhanid: string; ngay_kham_cuoi: string; ngay_kham_cuoi_ms: number; gia_tri_don_gan_nhat: number }>();
     const patientStatsById = new Map<string, { totalValue: number; serviceCount: number }>();
@@ -249,23 +254,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const idChunks = chunkArray(candidateIds, IN_CHUNK_SIZE);
 
-    const benhNhanQueries = idChunks.map((chunk) =>
-      supabase
+    const benhNhanQueries = idChunks.map((chunk) => {
+      let q = supabase
         .from('BenhNhan')
         .select('id, ten, dienthoai')
         .eq('tenant_id', tenantId)
-        .in('id', chunk)
-    );
+        .in('id', chunk);
+      if (branchId) q = q.eq('branch_id', branchId);
+      return q;
+    });
 
-    const overdueQueries = idChunks.map((chunk) =>
-      supabase
+    const overdueQueries = idChunks.map((chunk) => {
+      let q = supabase
         .from('hen_kham_lai')
         .select('benhnhanid')
         .eq('tenant_id', tenantId)
         .eq('trang_thai', 'cho')
         .lt('ngay_hen', todayStr)
-        .in('benhnhanid', chunk)
-    );
+        .in('benhnhanid', chunk);
+      if (branchId) q = q.eq('branch_id', branchId);
+      return q;
+    });
 
     const careQueries = idChunks.map((chunk) =>
       supabase

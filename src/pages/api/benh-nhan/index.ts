@@ -1,6 +1,6 @@
 //src/pages/api/benh-nhan/index.ts giới, năm sinh
 import { NextApiRequest, NextApiResponse } from "next";
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 // Định nghĩa interface cho dữ liệu bệnh nhân
 interface BenhNhan {
@@ -35,7 +35,10 @@ export default async function handler(
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return; // response đã được gửi bởi requireTenant
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   // Handle GET requests
   if (req.method === "GET") {
@@ -49,12 +52,17 @@ export default async function handler(
 
       if (benhnhanid) {
         // Fetch a specific patient
-        const { data, error } = await supabase
+        let detailQuery = supabase
           .from("BenhNhan")
           .select("id, ten, namsinh, dienthoai, diachi")
           .eq("id", benhnhanid)
-          .eq("tenant_id", tenantId)
-          .single();
+          .eq("tenant_id", tenantId);
+
+        if (branchId) {
+          detailQuery = detailQuery.eq("branch_id", branchId);
+        }
+
+        const { data, error } = await detailQuery.single();
 
         if (error) {
           return res.status(400).json({ message: "Error fetching patient", error: error.message });
@@ -68,9 +76,14 @@ export default async function handler(
         // Fetch patient list with pagination and search
         let query = supabase
           .from("BenhNhan")
-          .select("id, ten, namsinh, dienthoai, diachi, created_at", { count: "exact" })
+          .select("id, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
           .eq("tenant_id", tenantId)
           .order("id", { ascending: false });
+
+        // Branch filter (enterprise multi-branch)
+        if (branchId) {
+          query = query.eq("branch_id", branchId);
+        }
 
         if (search) {
           // Tìm kiếm thông minh: số → SĐT + tên, chữ → tên + địa chỉ
@@ -180,7 +193,8 @@ export default async function handler(
               namsinh: namsinhStr,
               dienthoai, 
               diachi,
-              tenant_id: tenantId
+              tenant_id: tenantId,
+              ...(branchId ? { branch_id: branchId } : {}),
             }])
             .select()
             .single();

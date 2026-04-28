@@ -1,6 +1,6 @@
 //src/pages/api/don-kinh/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { withDebtFields, calcDebt, calcKinhProfit } from '../../../lib/debt';
 
 // Cache: whether FK columns exist in DonKinh table
@@ -25,7 +25,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  if (!branchAccess) return;
   const { tenantId } = ctx;
+  const { branchId } = branchAccess;
 
   if (req.method === 'GET') {
     try {
@@ -37,8 +40,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       let query = supabase
         .from('DonKinh')
-        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`, { count: "exact" })
+        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi), branch:branches(id, ten_chi_nhanh)`, { count: "exact" })
         .eq('tenant_id', tenantId);
+
+      // Branch filter (enterprise multi-branch)
+      if (branchId) {
+        query = query.eq('branch_id', branchId);
+      }
       
       // Nếu có benhnhanid thì filter theo đó
       if (benhnhanid) {
@@ -172,7 +180,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // === Resolve FK IDs from text names ===
       const useFk = await checkFkColumns();
-      const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, {
+      const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, branchId, {
         hangtrong_mp: hangtrong_mp as string,
         hangtrong_mt: hangtrong_mt as string,
         ten_gong: ten_gong as string,
@@ -207,6 +215,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             pd_mp: pd_mp || '',
             pd_mt: pd_mt || '',
             tenant_id: tenantId,
+            ...(branchId ? { branch_id: branchId } : {}),
       };
       if (useFk) {
         insertPayload.hang_trong_mp_id = fkIds.hang_trong_mp_id;
@@ -229,10 +238,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         insertPayload.gia_von_gong = frameCost;
       }
 
-      const { data, error } = await supabase
-        .from('DonKinh')
-        .insert([insertPayload])
-  .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();
+      const insertDonKinh = (payload: Record<string, unknown>) =>
+        supabase
+          .from('DonKinh')
+          .insert([payload])
+          .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`)
+          .maybeSingle();
+
+      let { data, error } = await insertDonKinh(insertPayload);
+
+      // Defensive fallback: some deployments have an out-of-sync id sequence on DonKinh.
+      // If that happens, retry once with an explicit id = max(id)+1.
+      if (error?.code === '23505' && typeof error.message === 'string' && error.message.includes('donkinh_pkey')) {
+        const { data: latestDon } = await supabase
+          .from('DonKinh')
+          .select('id')
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const fallbackId = Number(latestDon?.id || 0) + 1;
+        const retry = await insertDonKinh({ ...insertPayload, id: fallbackId });
+        data = retry.data;
+        error = retry.error;
+        if (!error) {
+          console.warn(`[DonKinh] Sequence lệch, đã retry insert với id=${fallbackId}`);
+        }
+      }
 
       if (error) throw error;
 
@@ -241,7 +273,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (data) {
         const donKinhId = data.id;
         try {
-          const invResult = await processLensInventory(supabase, tenantId, donKinhId, {
+          const invResult = await processLensInventory(supabase, tenantId, branchId, donKinhId, {
             sokinh_moi_mp: sokinh_moi_mp as string,
             hangtrong_mp: hangtrong_mp as string,
             sokinh_moi_mt: sokinh_moi_mt as string,
@@ -304,16 +336,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const nhom_gia_gong_id_put = (req.body as any).nhom_gia_gong_id ? parseInt((req.body as any).nhom_gia_gong_id) : null;
 
       // === Fetch old DonKinh to compare & reverse inventory ===
-      const { data: oldDon } = await supabase
+      let oldDonQuery = supabase
         .from('DonKinh')
         .select('hangtrong_mp, hangtrong_mt, sokinh_moi_mp, sokinh_moi_mt, ten_gong')
         .eq('id', id)
-        .eq('tenant_id', tenantId)
-        .single();
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        oldDonQuery = oldDonQuery.eq('branch_id', branchId);
+      }
+      const { data: oldDon } = await oldDonQuery.single();
 
       // === Resolve FK IDs from text names ===
       const useFk = await checkFkColumns();
-      const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, {
+      const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, branchId, {
         hangtrong_mp: hangtrong_mp as string,
         hangtrong_mt: hangtrong_mt as string,
         ten_gong: ten_gong as string,
@@ -368,11 +403,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         updatePayload.gia_von_gong = frameCost;
       }
 
-      const { data, error } = await supabase
+      let updateQuery = supabase
         .from('DonKinh')
         .update(updatePayload)
         .eq('id', id)
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        updateQuery = updateQuery.eq('branch_id', branchId);
+      }
+      const { data, error } = await updateQuery
   .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();
 
       if (error) throw error;
@@ -392,7 +431,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             // Reverse old inventory
             await reverseInventory(supabase, tenantId, donKinhId);
             // Process new inventory
-            const invResult = await processLensInventory(supabase, tenantId, donKinhId, {
+            const invResult = await processLensInventory(supabase, tenantId, branchId, donKinhId, {
               sokinh_moi_mp: sokinh_moi_mp as string,
               hangtrong_mp: hangtrong_mp as string,
               sokinh_moi_mt: sokinh_moi_mt as string,
@@ -422,12 +461,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id || !add_payment || add_payment <= 0) {
         return res.status(400).json({ message: 'Thiếu hoặc sai tham số (id, add_payment)' });
       }
-      const { data: current, error: curErr } = await supabase
+      let currentQuery = supabase
         .from('DonKinh')
         .select('id, giatrong, giagong, sotien_da_thanh_toan, lai, gianhap_trong, gianhap_gong')
         .eq('id', id)
-        .eq('tenant_id', tenantId)
-        .single();
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        currentQuery = currentQuery.eq('branch_id', branchId);
+      }
+      const { data: current, error: curErr } = await currentQuery.single();
       if (curErr || !current) {
         return res.status(404).json({ message: 'Không tìm thấy đơn kính' });
       }
@@ -437,7 +479,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const debtInfo = calcDebt(total, clampedPaid);
       const newProfit = calcKinhProfit(current.giatrong, current.giagong, (current as any).gianhap_trong || 0, (current as any).gianhap_gong || 0);
 
-      const { data: updated, error: updErr } = await supabase
+      let patchQuery = supabase
         .from('DonKinh')
         .update({
           sotien_da_thanh_toan: clampedPaid,
@@ -445,7 +487,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           // Không thay đổi lai ở partial payment trừ khi muốn tái tính: để giữ logic nhất quán có thể giữ nguyên newProfit
           lai: newProfit,
         })
-        .eq('id', id)
+        .eq('id', id);
+      if (branchId) {
+        patchQuery = patchQuery.eq('branch_id', branchId);
+      }
+      const { data: updated, error: updErr } = await patchQuery
         .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`) // include relations
         .maybeSingle();
 
@@ -464,6 +510,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (!id) return res.status(400).json({ message: 'Thiếu ID để xoá đơn kính' });
 
+      let existingQuery = supabase
+        .from('DonKinh')
+        .select('id')
+        .eq('id', Number(id))
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        existingQuery = existingQuery.eq('branch_id', branchId);
+      }
+      const { data: existing } = await existingQuery.maybeSingle();
+      if (!existing) {
+        return res.status(404).json({ message: 'Không tìm thấy đơn kính' });
+      }
+
       // === REVERSE INVENTORY before deleting ===
       try {
         await reverseInventory(supabase, tenantId, Number(id));
@@ -472,7 +531,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Continue with delete even if reverse fails
       }
 
-      const { error } = await supabase.from('DonKinh').delete().eq('id', Number(id)).eq('tenant_id', tenantId);
+      let deleteQuery = supabase.from('DonKinh').delete().eq('id', Number(id)).eq('tenant_id', tenantId);
+      if (branchId) {
+        deleteQuery = deleteQuery.eq('branch_id', branchId);
+      }
+      const { error } = await deleteQuery;
       if (error) throw error;
 
       res.status(200).json({ message: 'Đã xoá đơn kính' });
@@ -539,6 +602,7 @@ function parseSoKinh(sokinh: string): { sph: number; cyl: number; add_power?: nu
 async function resolveForeignKeys(
   db: typeof import('../../../lib/tenantApi').supabaseAdmin,
   tenantId: string,
+  branchId: string | null,
   fields: { hangtrong_mp: string; hangtrong_mt: string; ten_gong: string }
 ) {
   const result: { hang_trong_mp_id: number | null; hang_trong_mt_id: number | null; gong_kinh_id: number | null } = {
@@ -560,7 +624,9 @@ async function resolveForeignKeys(
     }
   }
   if (fields.ten_gong) {
-    const { data } = await db.from('GongKinh').select('id').eq('tenant_id', tenantId).eq('ten_gong', fields.ten_gong).limit(1).maybeSingle();
+    let gongQuery = db.from('GongKinh').select('id').eq('tenant_id', tenantId).eq('ten_gong', fields.ten_gong);
+    if (branchId) gongQuery = gongQuery.eq('branch_id', branchId);
+    const { data } = await gongQuery.limit(1).maybeSingle();
     if (data) result.gong_kinh_id = data.id;
   }
   return result;
@@ -613,6 +679,7 @@ async function reverseInventory(
 async function processLensInventory(
   db: typeof import('../../../lib/tenantApi').supabaseAdmin,
   tenantId: string,
+  branchId: string | null,
   donKinhId: number,
   fields: {
     sokinh_moi_mp: string;
@@ -688,6 +755,9 @@ async function processLensInventory(
         .eq('hang_trong_id', ht.id)
         .eq('sph', parsed.sph)
         .eq('cyl', parsed.cyl);
+      if (branchId) {
+        stockQuery = stockQuery.eq('branch_id', branchId);
+      }
       // Filter by add_power: match exact value or null for single-vision
       if (parsed.add_power !== undefined) {
         stockQuery = stockQuery.eq('add_power', parsed.add_power);
@@ -807,23 +877,28 @@ async function processLensInventory(
     let gongErr: any = null;
 
     if (fields.gong_kinh_id) {
-      const result = await db
+      let gongByIdQuery = db
         .from('GongKinh')
         .select('id, ton_kho')
         .eq('id', fields.gong_kinh_id)
-        .eq('tenant_id', tenantId)
-        .single();
+        .eq('tenant_id', tenantId);
+      if (branchId) {
+        gongByIdQuery = gongByIdQuery.eq('branch_id', branchId);
+      }
+      const result = await gongByIdQuery.single();
       gong = result.data;
       gongErr = result.error;
     } else {
       // Fallback: tìm bằng tên (backward compat khi chưa có FK)
-      const result = await db
+      let gongByNameQuery = db
         .from('GongKinh')
         .select('id, ton_kho')
         .eq('tenant_id', tenantId)
-        .eq('ten_gong', fields.ten_gong)
-        .limit(1)
-        .maybeSingle();
+        .eq('ten_gong', fields.ten_gong);
+      if (branchId) {
+        gongByNameQuery = gongByNameQuery.eq('branch_id', branchId);
+      }
+      const result = await gongByNameQuery.limit(1).maybeSingle();
       gong = result.data;
       gongErr = result.error;
     }

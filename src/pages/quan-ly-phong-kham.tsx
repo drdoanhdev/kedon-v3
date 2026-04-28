@@ -308,11 +308,12 @@ export default function QuanLyPhongKham() {
                     <p className="font-medium text-gray-700 mb-2">Gói dịch vụ</p>
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`px-2.5 py-1 rounded-full text-sm font-semibold ${
+                        planInfo.plan === 'enterprise' ? 'bg-amber-100 text-amber-700' :
                         planInfo.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
                         planInfo.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
                         'bg-gray-100 text-gray-600'
                       }`}>
-                        {planInfo.plan === 'pro' ? '💎 Chuyên nghiệp' : planInfo.plan === 'basic' ? '🔵 Cơ bản' : '🎁 Dùng thử'}
+                        {planInfo.plan === 'enterprise' ? '🏪 Doanh nghiệp' : planInfo.plan === 'pro' ? '💎 Chuyên nghiệp' : planInfo.plan === 'basic' ? '🔵 Cơ bản' : '🎁 Dùng thử'}
                       </span>
                     </div>
 

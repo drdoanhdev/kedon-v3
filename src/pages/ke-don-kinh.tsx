@@ -498,13 +498,13 @@ export default function KeDonKinh() {
         const random = Math.random().toString(36).substring(7);
         
         // Fetch lens brands
-        const hangTrongRes = await axios.get(`/api/hang-trong?_t=${timestamp}&_r=${random}`, {
+        const hangTrongRes = await axios.get(`/api/hang-trong?effective_price=1&_t=${timestamp}&_r=${random}`, {
           headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
         });
         setHangTrongs(hangTrongRes.data || []);
 
         // Fetch frame types
-        const gongKinhRes = await axios.get(`/api/gong-kinh?_t=${timestamp}&_r=${random}`, {
+        const gongKinhRes = await axios.get(`/api/gong-kinh?scope=shared&effective_price=1&_t=${timestamp}&_r=${random}`, {
           headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
         });
         setGongKinhs(gongKinhRes.data || []);

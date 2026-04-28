@@ -1,6 +1,6 @@
 // API endpoint cho hãng tròng kính
 import { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../lib/tenantApi';
+import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../lib/tenantApi';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -9,6 +9,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   const { tenantId } = ctx;
+  const includeEffectivePrice = req.query.effective_price === '1' || req.query.effective_price === 'true';
+
+  let effectiveBranchId: string | null = null;
+  if (includeEffectivePrice) {
+    const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+    if (!branchAccess) return;
+    effectiveBranchId = branchAccess.branchId;
+  }
 
   try {
     if (req.method === 'GET') {
@@ -26,6 +34,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data, error } = await query;
       if (error) throw error;
+
+      if (includeEffectivePrice) {
+        const rows = Array.isArray(data) ? data : [];
+        const itemIds = rows.map((item: any) => Number(item.id)).filter((id: number) => Number.isFinite(id));
+
+        const overrideByItemId = new Map<number, any>();
+        if (effectiveBranchId && itemIds.length > 0) {
+          const { data: overrideRows, error: overrideErr } = await supabase
+            .from('branch_price_overrides')
+            .select('id, item_id, gia_ban_override, gia_von_override')
+            .eq('tenant_id', tenantId)
+            .eq('branch_id', effectiveBranchId)
+            .eq('item_type', 'hang_trong')
+            .in('item_id', itemIds)
+            .is('deleted_at', null)
+            .is('effective_to', null);
+
+          if (overrideErr && overrideErr.code !== '42P01') {
+            console.warn('hang-trong effective price query warning:', overrideErr.message);
+          } else {
+            for (const row of (overrideRows || [])) {
+              overrideByItemId.set(Number((row as any).item_id), row);
+            }
+          }
+        }
+
+        const effectiveRows = rows.map((item: any) => {
+          const baseSell = Math.max(0, Math.round(Number(item.gia_ban) || 0));
+          const baseCost = Math.max(0, Math.round(Number(item.gia_nhap) || 0));
+          const override = overrideByItemId.get(Number(item.id));
+          return {
+            ...item,
+            gia_ban: override ? Math.max(0, Math.round(Number(override.gia_ban_override ?? baseSell) || 0)) : baseSell,
+            gia_nhap: override ? Math.max(0, Math.round(Number(override.gia_von_override ?? baseCost) || 0)) : baseCost,
+            gia_ban_goc: baseSell,
+            gia_nhap_goc: baseCost,
+            gia_nguon: override ? 'branch_override' : 'catalog_default',
+            gia_override_id: override ? Number(override.id) : null,
+          };
+        });
+
+        return res.status(200).json(effectiveRows);
+      }
+
       return res.status(200).json(data);
     }
 

@@ -151,7 +151,7 @@ function TenantsTab() {
       });
 
       if (res.ok) {
-        toast.success(`Đã ${planForm.plan === 'trial' ? 'chuyển về dùng thử' : `kích hoạt gói ${planForm.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'} (${planForm.months} tháng)`}`);
+        toast.success(`Đã ${planForm.plan === 'trial' ? 'chuyển về dùng thử' : `kích hoạt gói ${planForm.plan === 'enterprise' ? 'Doanh nghiệp' : planForm.plan === 'pro' ? 'Chuyên nghiệp' : 'Cơ bản'} (${planForm.months} tháng)`}`);
         setPlanModal(null);
         fetchTenants();
       } else {
@@ -195,11 +195,12 @@ function TenantsTab() {
                 <td className="px-2 py-2 text-center whitespace-nowrap">
                   <div className="flex flex-col items-center gap-0.5">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      t.plan === 'enterprise' ? 'bg-amber-100 text-amber-700' :
                       t.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
                       t.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
                       'bg-gray-100 text-gray-600'
                     }`}>
-                      {t.plan === 'pro' ? 'Chuyên nghiệp' : t.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}
+                      {t.plan === 'enterprise' ? 'Doanh nghiệp' : t.plan === 'pro' ? 'Chuyên nghiệp' : t.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}
                     </span>
                     <span className={`text-[10px] ${
                       t.plan_source === 'admin' ? 'text-orange-500' :
@@ -269,7 +270,7 @@ function TenantsTab() {
           <div className="bg-white rounded-2xl p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-gray-900 mb-1">Kích hoạt / đổi gói dịch vụ</h3>
             <p className="text-sm text-gray-500 mb-4">
-              {planModal.tenant.name} — Gói hiện tại: <span className="font-medium">{planModal.tenant.plan === 'pro' ? 'Chuyên nghiệp' : planModal.tenant.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}</span>
+              {planModal.tenant.name} — Gói hiện tại: <span className="font-medium">{planModal.tenant.plan === 'enterprise' ? 'Doanh nghiệp' : planModal.tenant.plan === 'pro' ? 'Chuyên nghiệp' : planModal.tenant.plan === 'basic' ? 'Cơ bản' : 'Dùng thử'}</span>
               {planModal.tenant.plan_source === 'payment' && <span className="text-green-600 ml-1">(Khách mua)</span>}
               {planModal.tenant.plan_source === 'admin' && <span className="text-orange-500 ml-1">(Admin cấp)</span>}
             </p>
@@ -293,6 +294,7 @@ function TenantsTab() {
                   <option value="trial">🎁 Dùng thử</option>
                   <option value="basic">🔵 Cơ bản</option>
                   <option value="pro">💎 Chuyên nghiệp</option>
+                  <option value="enterprise">🏪 Doanh nghiệp</option>
                 </select>
               </div>
 
@@ -430,7 +432,7 @@ function PaymentsTab() {
                     <td className="px-4 py-3 text-gray-700">{(p as any).tenants?.name || p.tenant_id?.slice(0, 8)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                        {p.plan === 'pro' ? 'Chuyên nghiệp' : p.plan === 'basic' ? 'Cơ bản' : p.plan === 'trial' ? 'Dùng thử' : p.plan} · {p.months} tháng
+                        {p.plan === 'enterprise' ? 'Doanh nghiệp' : p.plan === 'pro' ? 'Chuyên nghiệp' : p.plan === 'basic' ? 'Cơ bản' : p.plan === 'trial' ? 'Dùng thử' : p.plan} · {p.months} tháng
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{formatVND(p.amount)}</td>

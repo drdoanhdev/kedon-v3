@@ -3,6 +3,18 @@
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@supabase/supabase-js'
+import toast from 'react-hot-toast'
+import { getDeviceLabel, getOrCreateDeviceId } from '../lib/deviceIdentity'
+
+const HARD_LOGIN_DENY_CODES = new Set([
+  'DEVICE_ID_REQUIRED',
+  'DEVICE_LOCKED',
+  'IP_NOT_ALLOWED',
+  'OUT_OF_WORKING_HOURS',
+])
+
+const TRANSIENT_ACCESS_CHECK_STATUSES = new Set([408, 429, 500, 502, 503, 504])
+const ACCESS_CHECK_RETRY_TOAST_ID = 'auth-access-check-retry'
 
 // Tạo client riêng cho auth với anon key
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -86,6 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Auto-logout timer
   const sessionTimeout = Number(process.env.NEXT_PUBLIC_SESSION_TIMEOUT) || 1800000 // default 30min
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const accessCheckTenantRef = useRef<string | null>(null)
   const userRef = useRef<User | null>(null)
   const signOutRef = useRef<() => Promise<void>>(() => Promise.resolve())
 
@@ -311,12 +324,99 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       refreshTenancyInternal(user.id)
       fetchUserRole(user.id)
     } else {
+      accessCheckTenantRef.current = null
       setTenants([])
       setMemberships([])
       setCurrentTenantId(null)
       setUserRole(null)
     }
   }, [user?.id, refreshTenancyInternal, fetchUserRole])
+
+  // Post-login access check: enforce device/network/time rules as soon as tenant context is known.
+  useEffect(() => {
+    if (!user?.id || !currentTenantId) {
+      accessCheckTenantRef.current = null
+      return
+    }
+    if (accessCheckTenantRef.current === currentTenantId) return
+
+    let cancelled = false
+    let retryToastShown = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabaseAuth.auth.getSession()
+        if (!session?.access_token) return
+
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${session.access_token}`,
+          'x-tenant-id': currentTenantId,
+        }
+
+        try {
+          const branchId = localStorage.getItem(`currentBranchId_${currentTenantId}`)
+          if (branchId) headers['x-branch-id'] = branchId
+        } catch {}
+
+        const deviceId = getOrCreateDeviceId()
+        if (deviceId) headers['x-device-id'] = deviceId
+        const deviceLabel = getDeviceLabel()
+        if (deviceLabel) headers['x-device-label'] = deviceLabel
+
+        const maxAttempts = 3
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const res = await fetch('/api/auth/login-access-check', { method: 'GET', headers })
+          if (cancelled) {
+            if (retryToastShown) toast.dismiss(ACCESS_CHECK_RETRY_TOAST_ID)
+            return
+          }
+
+          if (res.ok) {
+            if (retryToastShown) toast.dismiss(ACCESS_CHECK_RETRY_TOAST_ID)
+            accessCheckTenantRef.current = currentTenantId
+            return
+          }
+
+          const payload = await res.json().catch(() => null)
+          const code = typeof payload?.code === 'string' ? payload.code : null
+          const message = typeof payload?.message === 'string'
+            ? payload.message
+            : 'Khong the xac minh quyen dang nhap cho tenant hien tai.'
+
+          const isHardDenied = (code ? HARD_LOGIN_DENY_CODES.has(code) : false) || res.status === 401
+          if (isHardDenied) {
+            if (retryToastShown) toast.dismiss(ACCESS_CHECK_RETRY_TOAST_ID)
+            toast.error(message)
+            await signOut()
+            return
+          }
+
+          const isRetryable = TRANSIENT_ACCESS_CHECK_STATUSES.has(res.status)
+          if (isRetryable && attempt < maxAttempts) {
+            if (!retryToastShown) {
+              toast.loading('Dang xac minh quyen dang nhap, dang thu lai...', { id: ACCESS_CHECK_RETRY_TOAST_ID })
+              retryToastShown = true
+            }
+            const delayMs = attempt * 400
+            await new Promise((resolve) => setTimeout(resolve, delayMs))
+            continue
+          }
+
+          // Keep current session for non-critical failures.
+          if (retryToastShown) toast.dismiss(ACCESS_CHECK_RETRY_TOAST_ID)
+          toast.error(message)
+          return
+        }
+      } catch {
+        if (retryToastShown) toast.dismiss(ACCESS_CHECK_RETRY_TOAST_ID)
+        // Keep session on transient network errors; API-level guards still enforce on requests.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (retryToastShown) toast.dismiss(ACCESS_CHECK_RETRY_TOAST_ID)
+    }
+  }, [user?.id, currentTenantId, signOut])
 
   const currentTenant = tenants.find(t => t.id === currentTenantId) || null
   const currentRole = memberships.find(m => m.tenant_id === currentTenantId)?.role || null
