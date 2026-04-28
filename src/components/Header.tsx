@@ -35,7 +35,6 @@ export default function Header() {
     { href: '/bao-cao', label: 'Báo cáo', icon: BarChart, feature: 'basic_reports' },
     { href: '/bao-cao-super', label: 'Báo cáo Pro', icon: BarChart, feature: 'advanced_reports' },
     { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
-    { href: '/quan-ly-chuoi', label: 'Chuỗi cửa hàng', icon: Building2, feature: 'multi_branch' },
     { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
     { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
     { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },

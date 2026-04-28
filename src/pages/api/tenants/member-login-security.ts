@@ -67,7 +67,7 @@ function sanitizePolicy(input: any): LoginSecurityPolicy {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
-  const ctx = await requireTenant(req, res, { ownerOnly: true });
+  const ctx = await requireTenant(req, res, { allowedRoles: ['owner', 'admin'] });
   if (!ctx) return;
 
   const { tenantId } = ctx;

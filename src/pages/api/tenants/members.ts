@@ -11,8 +11,8 @@ import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/te
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
-  // Xác thực tenant - chỉ owner/admin mới quản lý thành viên
-  const ctx = await requireTenant(req, res, { ownerOnly: true });
+  // Xác thực tenant - owner/admin mới quản lý thành viên
+  const ctx = await requireTenant(req, res, { allowedRoles: ['owner', 'admin'] });
   if (!ctx) return;
   const { tenantId, userId } = ctx;
 

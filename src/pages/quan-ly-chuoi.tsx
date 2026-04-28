@@ -60,9 +60,23 @@ interface LoginSecurityPolicy {
   timezone: string;
 }
 
-export default function QuanLyChuoi() {
+interface QuanLyChuoiSectionProps {
+  embedded?: boolean;
+  initialTab?: 'branches' | 'staff';
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Chủ phòng khám',
+  admin: 'Quản trị viên',
+  doctor: 'Bác sĩ',
+  staff: 'Nhân viên',
+};
+
+const getRoleLabel = (role?: string) => ROLE_LABELS[role || ''] || role || 'Nhân viên';
+
+export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }: QuanLyChuoiSectionProps) {
   const { currentTenantId, currentTenant, currentRole, tenancyLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'branches' | 'staff'>('branches');
+  const [activeTab, setActiveTab] = useState<'branches' | 'staff'>(initialTab);
 
   const defaultLoginPolicy: LoginSecurityPolicy = {
     enabled: false,
@@ -148,6 +162,10 @@ export default function QuanLyChuoi() {
   useEffect(() => {
     if (activeTab === 'staff' && currentTenantId) loadStaff();
   }, [activeTab, currentTenantId, loadStaff]);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   // Branch CRUD
   const handleSaveBranch = async () => {
@@ -405,19 +423,19 @@ export default function QuanLyChuoi() {
   }
 
   return (
-    <ProtectedRoute>
-      <FeatureGate feature="multi_branch" permission="manage_clinic">
-        <div className="max-w-6xl mx-auto px-4 py-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Building2 className="w-7 h-7 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Quản lý chuỗi cửa hàng</h1>
-                <p className="text-sm text-gray-500">{currentTenant?.name}</p>
-              </div>
+    <div className={embedded ? 'space-y-6' : 'max-w-6xl mx-auto px-4 py-6'}>
+      {/* Header */}
+      {!embedded && (
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Building2 className="w-7 h-7 text-blue-600" />
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Quản lý chuỗi cửa hàng</h1>
+              <p className="text-sm text-gray-500">{currentTenant?.name}</p>
             </div>
           </div>
+        </div>
+      )}
 
           {/* Tabs */}
           <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
@@ -629,7 +647,7 @@ export default function QuanLyChuoi() {
                             <p className="text-sm font-medium text-gray-900 truncate">
                               {member.full_name || member.email || member.user_id}
                             </p>
-                            <p className="text-xs text-gray-500">{member.email || member.user_id} ({member.role})</p>
+                            <p className="text-xs text-gray-500">{member.email || member.user_id} ({getRoleLabel(member.role)})</p>
                             <div className="flex flex-wrap gap-1.5 mt-1.5">
                               <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${p.enabled ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
                                 {p.enabled ? 'Bảo mật: Bật' : 'Bảo mật: Tắt'}
@@ -848,7 +866,7 @@ export default function QuanLyChuoi() {
                           return !assigned;
                         }).map(m => (
                           <option key={m.user_id} value={m.user_id}>
-                            {m.full_name || m.email || m.user_id} ({m.role})
+                            {m.full_name || m.email || m.user_id} ({getRoleLabel(m.role)})
                           </option>
                         ))}
                       </select>
@@ -908,7 +926,7 @@ export default function QuanLyChuoi() {
                           {unassigned.map(m => (
                             <span key={m.user_id} className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-amber-200 rounded-full text-xs text-amber-800">
                               {m.full_name || m.email || m.user_id}
-                              <span className="text-amber-400">({m.role})</span>
+                              <span className="text-amber-400">({getRoleLabel(m.role)})</span>
                             </span>
                           ))}
                         </div>
@@ -951,7 +969,7 @@ export default function QuanLyChuoi() {
                                       {sa.profile?.full_name || sa.user_id}
                                     </p>
                                     <p className="text-xs text-gray-400">
-                                      {sa.membership?.role || 'staff'}
+                                      {getRoleLabel(sa.membership?.role)}
                                     </p>
                                   </div>
                                 </div>
@@ -973,7 +991,15 @@ export default function QuanLyChuoi() {
               )}
             </div>
           )}
-        </div>
+    </div>
+  );
+}
+
+export default function QuanLyChuoi() {
+  return (
+    <ProtectedRoute>
+      <FeatureGate feature="multi_branch" permission="manage_clinic">
+        <QuanLyChuoiSection />
       </FeatureGate>
     </ProtectedRoute>
   );
