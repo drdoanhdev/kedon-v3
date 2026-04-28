@@ -102,6 +102,9 @@ interface NhomGiaGong {
 
 function DanhMucPage() {
   const { confirm } = useConfirm();
+  const { user, signIn, userRole } = useAuth();
+  const isSuperAdmin = userRole === 'superadmin';
+  const restrictedTabs = ['so-kinh', 'thi-luc'];
   // Define tab options
   const tabs = [
     { value: 'thuoc', label: 'Thuốc', icon: Pill },
@@ -213,12 +216,17 @@ function DanhMucPage() {
   const [nhapNhomGiaForm, setNhapNhomGiaForm] = useState({ nhom_gia_gong_id: 0, so_luong: 1, don_gia: 0, ghi_chu: '' });
 
   // Xác thực lại bằng mật khẩu tài khoản Supabase
-  const { user, signIn } = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin && restrictedTabs.includes(activeTab)) {
+      setActiveTab('thuoc');
+    }
+  }, [activeTab, isSuperAdmin]);
 
   // Fetch data functions
   const fetchThuocs = async () => {
@@ -1598,9 +1606,9 @@ function DanhMucPage() {
       case 'nhom-gia-gong':
         return renderNhomGiaGongTab();
       case 'so-kinh':
-        return renderSoKinhTab();
+        return isSuperAdmin ? renderSoKinhTab() : renderThuocTab();
       case 'thi-luc':
-        return renderThiLucTab();
+        return isSuperAdmin ? renderThiLucTab() : renderThuocTab();
       case 'nha-cung-cap':
         return renderNhaCungCapTab();
       default:
@@ -1722,7 +1730,7 @@ function DanhMucPage() {
         <div className="space-y-6">
           {/* Tab Navigation */}
           <div className="flex space-x-1 rounded-lg bg-gray-100 p-1 overflow-x-auto">
-            {tabs.map((tab) => {
+            {tabs.filter((tab) => isSuperAdmin || !restrictedTabs.includes(tab.value)).map((tab) => {
               const IconComponent = tab.icon;
               return (
                 <button

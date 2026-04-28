@@ -9,6 +9,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!tenant) return;
   const supabase = supabaseAdmin;
 
+  const isWriteMethod = req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE';
+  if (isWriteMethod) {
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', tenant.userId)
+      .maybeSingle();
+
+    if (roleError) {
+      return res.status(500).json({ message: 'Lỗi kiểm tra quyền superadmin' });
+    }
+
+    if ((roleData?.role || '').toLowerCase() !== 'superadmin') {
+      return res.status(403).json({ message: 'Chỉ superadmin mới được chỉnh sửa mẫu số kính/thị lực' });
+    }
+  }
+
   try {
     if (req.method === 'GET') {
       const { type } = req.query;
