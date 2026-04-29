@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { enqueueWorkflowJobs, cancelJobsForAppointment } from '../../../lib/messaging/queue';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -68,6 +69,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .single();
 
       if (error) throw error;
+
+      // Tự động enqueue job nhắn tin theo workflow đã bật (best-effort, không chặn API)
+      try {
+        await enqueueWorkflowJobs(
+          supabase,
+          {
+            id: data.id,
+            tenant_id: tenantId,
+            branch_id: branchId,
+            benhnhanid: data.benhnhanid,
+            ten_benhnhan: data.ten_benhnhan,
+            dienthoai: data.dienthoai,
+            ngay_hen: data.ngay_hen,
+            gio_hen: data.gio_hen,
+          },
+          ['appointment_confirm', 'appointment_reminder']
+        );
+      } catch (e) {
+        console.warn('[messaging] enqueue lỗi:', e);
+      }
+
       res.status(200).json({ data });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -97,6 +119,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .single();
 
       if (error) throw error;
+
+      // Nếu bị hủy → cancel mọi job pending của lịch này
+      if (trang_thai === 'huy') {
+        try { await cancelJobsForAppointment(supabase, Number(id), tenantId); } catch {}
+      }
+
       res.status(200).json({ data });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -117,6 +145,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId);
 
       if (error) throw error;
+
+      // Hủy job pending liên quan
+      try { await cancelJobsForAppointment(supabase, Number(id), tenantId); } catch {}
+
       res.status(200).json({ message: 'Đã xóa lịch hẹn' });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

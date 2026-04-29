@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, Send } from 'lucide-react';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import type { FeatureKey } from '../lib/featureConfig';
@@ -223,6 +223,20 @@ export default function Header() {
                   <Printer className="w-4 h-4" />
                   <span>Cấu hình in</span>
                 </Link>
+
+                {/* Nhắn tin tự động (Zalo OA) */}
+                {(currentRole === 'owner' || currentRole === 'admin') && (
+                  <Link
+                    href="/cai-dat-nhan-tin"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/cai-dat-nhan-tin') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Nhắn tin tự động</span>
+                  </Link>
+                )}
 
                 {/* Settings - only for owner/admin */}
                 {(currentRole === 'owner' || currentRole === 'admin') && (

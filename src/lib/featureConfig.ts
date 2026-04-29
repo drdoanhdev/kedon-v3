@@ -26,7 +26,8 @@ export type FeatureKey =
   | 'branch_transfer'
   | 'chain_reports'
   | 'staff_attendance'
-  | 'staff_transfer';
+  | 'staff_transfer'
+  | 'messaging_automation';
 
 // ===== Plan Types =====
 export type PlanKey = 'trial' | 'basic' | 'pro' | 'enterprise';
@@ -73,6 +74,7 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'crm',
     'multi_staff',
     'clinic_settings',
+    'messaging_automation',
   ],
   enterprise: [
     'patient_management',
@@ -96,6 +98,7 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'chain_reports',
     'staff_attendance',
     'staff_transfer',
+    'messaging_automation',
   ],
 };
 
@@ -117,7 +120,8 @@ export type Permission =
   | 'manage_waiting_room'   // Quản lý phòng chờ
   | 'manage_categories'     // Quản lý danh mục
   | 'manage_appointments'   // Quản lý lịch hẹn
-  | 'manage_print_config';  // Cấu hình in
+  | 'manage_print_config'   // Cấu hình in
+  | 'manage_messaging';     // Cấu hình kết nối Zalo/SMS & kịch bản
 
 const ROLE_PERMISSIONS: Record<TenantRole, Permission[]> = {
   owner: [
@@ -137,6 +141,7 @@ const ROLE_PERMISSIONS: Record<TenantRole, Permission[]> = {
     'manage_categories',
     'manage_appointments',
     'manage_print_config',
+    'manage_messaging',
   ],
   admin: [
     'manage_clinic',
@@ -154,6 +159,7 @@ const ROLE_PERMISSIONS: Record<TenantRole, Permission[]> = {
     'manage_categories',
     'manage_appointments',
     'manage_print_config',
+    'manage_messaging',
   ],
   doctor: [
     'write_prescription',
@@ -194,6 +200,7 @@ const FEATURE_MIN_PLAN: Record<FeatureKey, PlanKey> = {
   chain_reports: 'enterprise',
   staff_attendance: 'enterprise',
   staff_transfer: 'enterprise',
+  messaging_automation: 'pro',
 };
 
 // ===== Feature display names (cho UI) =====
@@ -219,6 +226,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   chain_reports: 'Báo cáo chuỗi',
   staff_attendance: 'Chấm công',
   staff_transfer: 'Điều chuyển nhân viên',
+  messaging_automation: 'Nhắn tin tự động (Zalo/SMS)',
 };
 
 // ===== Plan display names =====

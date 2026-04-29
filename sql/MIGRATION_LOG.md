@@ -103,6 +103,12 @@ Theo dõi trạng thái migration trên từng database.
 |------|------|-------|:------:|:--------:|
 | V051 | V051_fix_lens_stock_unique_per_branch.sql | Sửa unique lens_stock theo tenant + chi nhánh để tránh lỗi duplicate khi điều chuyển tròng | ✅ | ❌ |
 
+## Phase 12: Messaging automation (Zalo OA)
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V052 | V052_create_messaging_automation.sql | Tạo `clinic_messaging_channels`, `message_workflows`, `message_jobs`, `message_logs` + RLS + cleanup func | ❌ | ❌ |
+
 ---
 
 ## Files không phải migration (không đánh số)
