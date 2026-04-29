@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/messaging/cron?secret=DÁN_GIÁ_TRỊ_MESSAGING_CRON_SECRET_VÀO_ĐÂY", "schedule": "* * * * *" }
+  ]
+}
