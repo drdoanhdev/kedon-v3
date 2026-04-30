@@ -1,12 +1,13 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../lib/tenantApi';
+import { requirePermission } from '../../lib/permissions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
-  const { tenantId, userId, isOwner, role } = ctx;
+  const { tenantId, userId } = ctx;
 
   try {
     // GET — tất cả thành viên đều xem được
@@ -35,11 +36,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(data);
     }
 
-    // PUT — chỉ owner/admin được sửa
+    // PUT — chỉ user có quyền manage_clinic mới được sửa
     if (req.method === 'PUT') {
-      if (!isOwner && role !== 'admin') {
-        return res.status(403).json({ message: 'Chỉ chủ phòng khám hoặc quản trị viên mới được sửa ghi chú' });
-      }
+      if (!(await requirePermission(ctx, res, 'manage_clinic'))) return;
 
       const { slug = 'huong-dan', title, content } = req.body;
 

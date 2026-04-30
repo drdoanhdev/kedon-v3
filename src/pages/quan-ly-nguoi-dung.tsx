@@ -227,6 +227,12 @@ export default function QuanLyNguoiDung() {
             >
               🔄 Làm mới
             </button>
+            <Link
+              href="/quan-ly-vai-tro"
+              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 inline-flex items-center"
+            >
+              🛡️ Quản lý vai trò & quyền
+            </Link>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
               className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"

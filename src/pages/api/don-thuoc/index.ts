@@ -1,6 +1,7 @@
 //src/pages/api/don-thuoc/index.ts L1
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission } from '../../../lib/permissions';
 import { withDebtFields, calcDebt } from '../../../lib/debt';
 
 // === INVENTORY HELPERS ===
@@ -163,7 +164,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .order("ngay_kham", { ascending: false });
 
       // Branch filter (enterprise multi-branch)
-      if (branchId) {
+      // Khi xem lịch sử của 1 bệnh nhân cụ thể -> bỏ filter branch để hiện lịch sử khám CROSS-BRANCH
+      // (bệnh nhân có thể từng khám ở nhiều chi nhánh khác nhau).
+      // Trường hợp list chung (không có benhnhanid) vẫn áp branch filter cho NV.
+      if (branchId && !benhnhanid) {
         query = query.eq("branch_id", branchId);
       }
 
@@ -268,6 +272,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "POST") {
+    // RBAC: chỉ user có write_prescription mới được tạo đơn (V054).
+    if (!(await requirePermission(ctx, res, 'write_prescription'))) return;
     // Kiểm tra giới hạn trial trước khi tạo đơn mới
     if (!(await checkTrialLimit(ctx, res))) return;
     try {
@@ -432,6 +438,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "PUT") {
+    if (!(await requirePermission(ctx, res, 'write_prescription'))) return;
     try {
       const { id, benhnhanid, chandoan, ngay_kham, thuocs, sotien_da_thanh_toan } = req.body;
 
@@ -627,6 +634,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "DELETE") {
+    if (!(await requirePermission(ctx, res, 'write_prescription'))) return;
     try {
       const id = req.query.id;
 

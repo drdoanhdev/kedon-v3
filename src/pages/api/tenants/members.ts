@@ -7,6 +7,7 @@
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { invalidateUserPermissionCache } from '../../../lib/permissions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -211,17 +212,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  // PUT: Cập nhật role thành viên
+  // PUT: Cập nhật role thành viên (hỗ trợ cả system role text và custom role_id qua RBAC V054)
   if (req.method === 'PUT') {
     try {
-      const { membershipId, role } = req.body;
+      const { membershipId, role, role_id } = req.body;
 
-      if (!membershipId || !role) {
-        return res.status(400).json({ message: 'Thiếu membershipId hoặc role' });
+      if (!membershipId || (!role && !role_id)) {
+        return res.status(400).json({ message: 'Thiếu membershipId và role/role_id' });
       }
 
-      if (!['admin', 'doctor', 'staff'].includes(role)) {
-        return res.status(400).json({ message: 'Role không hợp lệ' });
+      if (role && !['admin', 'doctor', 'staff'].includes(role)) {
+        return res.status(400).json({ message: 'Role hệ thống không hợp lệ. Dùng role_id cho custom role.' });
       }
 
       // Không cho phép tự thay đổi role owner
@@ -240,9 +241,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ message: 'Không thể thay đổi role của chủ phòng khám' });
       }
 
+      // Nếu role_id được truyền: validate thuộc tenant này
+      let updatePayload: Record<string, unknown> = {};
+      if (role_id) {
+        const { data: targetRole, error: roleErr } = await supabaseAdmin
+          .from('tenant_roles')
+          .select('id, code, is_protected')
+          .eq('id', role_id)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+        if (roleErr || !targetRole) {
+          return res.status(400).json({ message: 'role_id không tồn tại trong phòng khám này' });
+        }
+        if (targetRole.is_protected) {
+          return res.status(403).json({ message: 'Không thể gán vai trò được bảo vệ (owner) cho thành viên khác' });
+        }
+        updatePayload.role_id = role_id;
+        // Trigger sync_membership_role sẽ tự cập nhật cột role TEXT nếu code là system.
+      } else {
+        updatePayload.role = role;
+      }
+
       const { error } = await supabaseAdmin
         .from('tenantmembership')
-        .update({ role })
+        .update(updatePayload)
         .eq('id', membershipId)
         .eq('tenant_id', tenantId);
 
@@ -250,7 +272,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi cập nhật role', error: error.message });
       }
 
-      return res.status(200).json({ message: 'Đã cập nhật role thành viên' });
+      // Invalidate permission cache của user bị đổi vai trò.
+      invalidateUserPermissionCache(mem.user_id, tenantId);
+
+      return res.status(200).json({ message: 'Đã cập nhật vai trò thành viên' });
     } catch (err: any) {
       return res.status(500).json({ message: 'Lỗi server', error: err.message });
     }
@@ -291,6 +316,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error) {
         return res.status(400).json({ message: 'Lỗi xóa thành viên', error: error.message });
       }
+
+      invalidateUserPermissionCache(mem.user_id, tenantId);
 
       return res.status(200).json({ message: 'Đã xóa thành viên khỏi phòng khám' });
     } catch (err: any) {

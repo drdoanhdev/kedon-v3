@@ -1,6 +1,7 @@
 //src/pages/api/benh-nhan/index.ts giới, năm sinh
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission } from '../../../lib/permissions';
 
 // Định nghĩa interface cho dữ liệu bệnh nhân
 interface BenhNhan {
@@ -153,6 +154,7 @@ export default async function handler(
 
   // Handle POST requests
   if (req.method === "POST") {
+    if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
       const { ten, namsinh, dienthoai, diachi } = req.body as BenhNhan;
 
@@ -235,6 +237,7 @@ export default async function handler(
 
   // Handle PUT requests
   if (req.method === "PUT") {
+    if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
       const { id, ten, namsinh, dienthoai, diachi } = req.body as BenhNhan;
 
@@ -275,6 +278,7 @@ export default async function handler(
 
   // Handle DELETE requests
   if (req.method === "DELETE") {
+    if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
       const id = req.query.id as string;
 

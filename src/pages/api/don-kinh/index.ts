@@ -1,6 +1,7 @@
 //src/pages/api/don-kinh/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission } from '../../../lib/permissions';
 import { withDebtFields, calcDebt, calcKinhProfit } from '../../../lib/debt';
 
 // Cache: whether FK columns exist in DonKinh table
@@ -44,7 +45,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId);
 
       // Branch filter (enterprise multi-branch)
-      if (branchId) {
+      // Bỏ filter khi xem lịch sử 1 bệnh nhân cụ thể -> hiện lịch sử cross-branch
+      if (branchId && !benhnhanid) {
         query = query.eq('branch_id', branchId);
       }
       
@@ -137,6 +139,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.status(500).json({ message: 'Lỗi khi lấy dữ liệu đơn kính', details: message });
     }
   } else if (req.method === 'POST') {
+    if (!(await requirePermission(ctx, res, 'write_prescription'))) return;
     // Kiểm tra giới hạn trial trước khi tạo đơn mới
     if (!(await checkTrialLimit(ctx, res))) return;
     try {
@@ -296,6 +299,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.status(500).json({ message: 'Lỗi khi tạo đơn kính', details: message });
     }
   } else if (req.method === 'PUT') {
+    if (!(await requirePermission(ctx, res, 'write_prescription'))) return;
     try {
       const {
         id,
@@ -505,6 +509,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.status(500).json({ message: 'Lỗi khi cập nhật thanh toán đơn kính', details: message });
     }
   } else if (req.method === 'DELETE') {
+    if (!(await requirePermission(ctx, res, 'write_prescription'))) return;
     try {
       const { id } = req.query;
 

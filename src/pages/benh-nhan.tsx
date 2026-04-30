@@ -45,6 +45,7 @@ interface DonThuoc {
   tongtien: number;
   trangthai_thanh_toan: string;
   sotien_da_thanh_toan: number;
+  branch?: { id: string; ten_chi_nhanh: string } | null;
 }
 
 interface DonKinh {
@@ -62,6 +63,7 @@ interface DonKinh {
   no: boolean;
   sotien_da_thanh_toan: number;
   trangthai_thanh_toan: string;
+  branch?: { id: string; ten_chi_nhanh: string } | null;
 }
 
 interface ChiTietDonThuoc {
@@ -830,9 +832,16 @@ export default function BenhNhanPage() {
                                 {filteredDonThuocs.map((don) => (
                                   <div key={don.id} className="bg-white border rounded-lg p-2.5 shadow-sm">
                                     <div className="flex items-center justify-between mb-1.5">
-                                      <span className="text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                                        {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
-                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                          {new Date(don.ngay_kham).toLocaleDateString('vi-VN')}
+                                        </span>
+                                        {isMultiBranch && don.branch?.ten_chi_nhanh && (
+                                          <span className="text-[10px] text-purple-700 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded font-medium">
+                                            🏬 {don.branch.ten_chi_nhanh}
+                                          </span>
+                                        )}
+                                      </div>
                                       <span className="text-xs font-bold text-blue-600">
                                         {(don.tongtien / 1000).toFixed(0)}k
                                       </span>
@@ -867,8 +876,15 @@ export default function BenhNhanPage() {
                               <div className="space-y-2">
                                 {donKinhs.map((don) => (
                                   <div key={don.id} className="bg-blue-50 border rounded p-2">
-                                    <div className="text-xs text-gray-600 mb-1">
-                                      {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
+                                    <div className="flex items-center justify-between mb-1">
+                                      <div className="text-xs text-gray-600">
+                                        {new Date(don.ngaykham).toLocaleDateString('vi-VN')}
+                                      </div>
+                                      {isMultiBranch && (don as any).branch?.ten_chi_nhanh && (
+                                        <span className="text-[10px] text-purple-700 bg-white border border-purple-100 px-1.5 py-0.5 rounded font-medium">
+                                          🏬 {(don as any).branch.ten_chi_nhanh}
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                                       <div>

@@ -1,6 +1,7 @@
 // API endpoint cho gọng kính
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../lib/tenantApi';
+import { requirePermission } from '../../lib/permissions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -16,8 +17,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const isSharedScope = scope === 'shared';
   const includeEffectivePrice = req.query.effective_price === '1' || req.query.effective_price === 'true';
 
-  if (isSharedScope && req.method !== 'GET' && ctx.role !== 'owner' && ctx.role !== 'admin') {
-    return res.status(403).json({ message: 'Chỉ owner/admin mới được chỉnh sửa danh mục dùng chung' });
+  if (req.method && req.method !== 'GET') {
+    if (!(await requirePermission(ctx, res, 'manage_categories'))) return;
   }
 
   // Safety fallback: nếu thiếu x-branch-id nhưng tenant đã có chi nhánh,

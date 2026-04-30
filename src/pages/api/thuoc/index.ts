@@ -1,6 +1,7 @@
 //src/pages/api/thuoc/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission } from '../../../lib/permissions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -18,8 +19,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const method = req.method;
 
-  if (isSharedScope && method !== 'GET' && ctx.role !== 'owner' && ctx.role !== 'admin') {
-    return res.status(403).json({ error: 'Chỉ owner/admin mới được chỉnh sửa danh mục dùng chung' });
+  // RBAC: viết danh mục (mọi scope) cần manage_categories.
+  // Scope shared cho phép ai có manage_categories ở level tenant chỉnh sửa.
+  if (method && method !== 'GET') {
+    if (!(await requirePermission(ctx, res, 'manage_categories'))) return;
   }
 
   try {

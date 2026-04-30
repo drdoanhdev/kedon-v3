@@ -344,14 +344,21 @@ export default function QuanLyPhongKham() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Thành viên phòng khám ({members.filter(m => m.active !== false).length})</CardTitle>
-          <Dialog open={showAddMember} onOpenChange={setShowAddMember}>
-            <DialogTrigger asChild>
-              <Button>+ Thêm thành viên</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Thêm thành viên mới</DialogTitle>
-              </DialogHeader>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/quan-ly-vai-tro"
+              className="inline-flex items-center px-3 py-2 text-sm border border-purple-300 text-purple-700 rounded-md hover:bg-purple-50"
+            >
+              🛡️ Quản lý vai trò & quyền
+            </Link>
+            <Dialog open={showAddMember} onOpenChange={setShowAddMember}>
+              <DialogTrigger asChild>
+                <Button>+ Thêm thành viên</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Thêm thành viên mới</DialogTitle>
+                </DialogHeader>
               <div className="space-y-4 pt-2">
                 <div>
                   <Label>Email</Label>
@@ -392,6 +399,7 @@ export default function QuanLyPhongKham() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
