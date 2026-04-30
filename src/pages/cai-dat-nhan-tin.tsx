@@ -75,6 +75,14 @@ export default function CaiDatNhanTinPage() {
   );
 }
 
+export function CaiDatNhanTinSection() {
+  return (
+    <FeatureGate feature="messaging_automation" permission="manage_messaging">
+      <Content />
+    </FeatureGate>
+  );
+}
+
 function Content() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);

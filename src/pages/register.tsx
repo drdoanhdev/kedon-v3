@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 
 export default function Register() {
   const [clinicName, setClinicName] = useState('')
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -29,7 +30,7 @@ export default function Register() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clinicName, email, password, phone }),
+        body: JSON.stringify({ clinicName, fullName, email, password, phone }),
       })
 
       const data = await res.json()
@@ -91,6 +92,21 @@ export default function Register() {
               value={clinicName}
               onChange={(e) => setClinicName(e.target.value)}
               placeholder="VD: Phòng khám Ánh Sáng"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Họ và tên <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="VD: Nguyễn Văn A"
               className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               disabled={loading}
             />

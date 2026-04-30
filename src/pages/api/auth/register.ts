@@ -12,11 +12,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { clinicName, email, password, phone } = req.body;
+  const { clinicName, fullName, email, password, phone } = req.body;
 
   // Validation
-  if (!clinicName || !email || !password) {
-    return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên phòng khám, email và mật khẩu' });
+  if (!clinicName || !email || !password || !fullName) {
+    return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên phòng khám, họ và tên, email và mật khẩu' });
+  }
+  if (typeof fullName !== 'string' || fullName.trim().length < 2) {
+    return res.status(400).json({ error: 'Họ và tên quá ngắn' });
   }
   if (typeof clinicName !== 'string' || clinicName.trim().length < 2) {
     return res.status(400).json({ error: 'Tên phòng khám quá ngắn' });
@@ -84,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 4. Tạo user_profile
     await supabaseAdmin.from('user_profiles').insert({
       id: userId,
-      full_name: clinicName.trim(),
+      full_name: fullName.trim(),
       phone: phone?.trim() || null,
       default_tenant_id: tenant.id,
     });

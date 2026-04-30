@@ -73,6 +73,14 @@ const defaultConfig: PrintConfig = {
 };
 
 export default function CauHinhIn() {
+  return <CauHinhInInner />;
+}
+
+export function CauHinhInSection() {
+  return <CauHinhInInner embedded />;
+}
+
+function CauHinhInInner({ embedded = false }: { embedded?: boolean } = {}) {
   const [form, setForm] = useState<PrintConfig>(defaultConfig);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -120,19 +128,20 @@ export default function CauHinhIn() {
   ];
 
   if (loading) {
-    return (
-      <ProtectedRoute>
-        <div className="flex items-center justify-center h-[calc(100vh-72px)]">
-          <p className="text-gray-400 text-sm">Đang tải...</p>
-        </div>
-      </ProtectedRoute>
+    const loadingNode = (
+      <div className="flex items-center justify-center h-[calc(100vh-72px)]">
+        <p className="text-gray-400 text-sm">Đang tải...</p>
+      </div>
     );
+    return embedded ? loadingNode : <ProtectedRoute>{loadingNode}</ProtectedRoute>;
   }
 
-  return (
-    <ProtectedRoute>
-      <FeatureGate feature="print_config">
-      <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6" style={{ minHeight: 'calc(100vh - 72px)' }}>
+  const body = (
+    <FeatureGate feature="print_config">
+      <div
+        className={embedded ? 'space-y-6' : 'max-w-2xl mx-auto p-4 sm:p-6 space-y-6'}
+        style={embedded ? undefined : { minHeight: 'calc(100vh - 72px)' }}
+      >
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
             <Printer className="w-5 h-5 text-blue-600" />
@@ -338,6 +347,7 @@ export default function CauHinhIn() {
         </button>
       </div>
       </FeatureGate>
-    </ProtectedRoute>
   );
+
+  return embedded ? body : <ProtectedRoute>{body}</ProtectedRoute>;
 }

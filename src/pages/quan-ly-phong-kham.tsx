@@ -6,19 +6,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { FeatureGate } from '../components/FeatureGate';
 import toast from 'react-hot-toast';
-import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 import { fetchWithAuth, getAuthHeaders } from '../lib/fetchWithAuth';
 import { QuanLyChuoiSection } from './quan-ly-chuoi';
+import { QuanLyVaiTroSection } from './quan-ly-vai-tro';
+import { CauHinhInSection } from './cau-hinh-in';
+import { CaiDatNhanTinSection } from './cai-dat-nhan-tin';
+import LoginSecurityCard from '../components/LoginSecurityCard';
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Chủ phòng khám',
@@ -34,17 +31,6 @@ const ROLE_COLORS: Record<string, string> = {
   staff: 'bg-gray-100 text-gray-800',
 };
 
-interface Member {
-  id: string;
-  user_id: string;
-  role: string;
-  active: boolean;
-  email: string;
-  full_name: string | null;
-  last_login_at: string | null;
-  created_at: string;
-}
-
 interface TenantInfo {
   id: string;
   name: string;
@@ -55,49 +41,22 @@ interface TenantInfo {
 }
 
 export default function QuanLyPhongKham() {
-  const { confirm } = useConfirm();
   const { currentTenant, currentRole, user, currentTenantId, tenancyLoading } = useAuth();
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(false);
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
   const [planInfo, setPlanInfo] = useState<any>(null);
-  
+
   // Form state
   const [editTenant, setEditTenant] = useState(false);
   const [tenantName, setTenantName] = useState('');
   const [tenantCode, setTenantCode] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
-  // Add member 
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'admin' | 'doctor' | 'staff'>('staff');
-  const [activeTab, setActiveTab] = useState<'clinic' | 'chain'>('clinic');
-  const [chainInitialTab, setChainInitialTab] = useState<'branches' | 'staff'>('branches');
+  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging'>('info');
 
   const isOwnerOrAdmin = currentRole === 'owner' || currentRole === 'admin';
 
-  const fetchMembers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchWithAuth('/api/tenants/members');
-      const data = await res.json();
-      if (res.ok) {
-        setMembers(data.data || []);
-      } else {
-        toast.error(data.message || 'Lỗi tải danh sách thành viên');
-      }
-    } catch (err: any) {
-      toast.error('Lỗi: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (tenancyLoading || !isOwnerOrAdmin) return;
-    fetchMembers();
     // Fetch plan info
     if (currentTenantId) {
       (async () => {
@@ -120,7 +79,7 @@ export default function QuanLyPhongKham() {
       setTenantName(currentTenant.name || '');
       setTenantCode(currentTenant.code || '');
     }
-  }, [fetchMembers, currentTenant, currentTenantId, isOwnerOrAdmin, tenancyLoading]);
+  }, [currentTenant, currentTenantId, isOwnerOrAdmin, tenancyLoading]);
 
   useEffect(() => {
     if (!currentTenantId) return;
@@ -176,300 +135,282 @@ export default function QuanLyPhongKham() {
     }
   };
 
-  const handleAddMember = async () => {
-    if (!newEmail) {
-      toast.error('Vui lòng nhập email');
-      return;
-    }
-    try {
-      const res = await fetchWithAuth('/api/tenants/members', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: newEmail,
-          role: newRole,
-          password: newPassword || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message || 'Đã thêm thành viên');
-        setShowAddMember(false);
-        setNewEmail('');
-        setNewPassword('');
-        setNewRole('staff');
-        fetchMembers();
-        if (currentTenant?.plan === 'enterprise') {
-          setChainInitialTab('staff');
-          setActiveTab('chain');
-        }
-      } else {
-        toast.error(data.message || 'Lỗi thêm thành viên');
-      }
-    } catch (err: any) {
-      toast.error('Lỗi: ' + err.message);
-    }
-  };
-
-  const handleUpdateRole = async (membershipId: string, role: string) => {
-    try {
-      const res = await fetchWithAuth('/api/tenants/members', {
-        method: 'PUT',
-        body: JSON.stringify({ membershipId, role }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success('Đã cập nhật role');
-        fetchMembers();
-      } else {
-        toast.error(data.message || 'Lỗi cập nhật');
-      }
-    } catch (err: any) {
-      toast.error('Lỗi: ' + err.message);
-    }
-  };
-
-  const handleRemoveMember = async (membershipId: string, email: string) => {
-    if (!await confirm(`Bạn có chắc chắn muốn xóa ${email} khỏi phòng khám?`)) return;
-    try {
-      const res = await fetchWithAuth(`/api/tenants/members?membershipId=${membershipId}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success('Đã xóa thành viên');
-        fetchMembers();
-      } else {
-        toast.error(data.message || 'Lỗi xóa');
-      }
-    } catch (err: any) {
-      toast.error('Lỗi: ' + err.message);
-    }
-  };
-
-  const clinicManagementContent = (
-    <>
-      {/* Thông tin phòng khám */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Thông tin phòng khám</CardTitle>
-          {!editTenant && (
-            <Button variant="outline" size="sm" onClick={() => setEditTenant(true)}>
-              Chỉnh sửa
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {editTenant ? (
-            <div className="space-y-4">
-              <div>
-                <Label>Tên phòng khám</Label>
-                <Input value={tenantName} onChange={e => setTenantName(e.target.value)} />
-              </div>
-              <div>
-                <Label>Mã phòng khám</Label>
-                <Input value={tenantCode} onChange={e => setTenantCode(e.target.value)} placeholder="VD: PK001" />
-              </div>
-              <div>
-                <Label>Số điện thoại</Label>
-                <Input value={tenantPhone} onChange={e => setTenantPhone(e.target.value)} />
-              </div>
-              <div>
-                <Label>Địa chỉ</Label>
-                <Input value={tenantAddress} onChange={e => setTenantAddress(e.target.value)} />
-              </div>
+  // ========================================================================
+  // Section: Thông tin phòng khám
+  // ========================================================================
+  const infoSection = (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
+          <span className="text-base">🏥</span>
+          <h3 className="text-sm font-semibold text-gray-800">Thông tin phòng khám</h3>
+          <div className="ml-auto">
+            {!editTenant ? (
+              <button
+                onClick={() => setEditTenant(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Chỉnh sửa
+              </button>
+            ) : (
               <div className="flex gap-2">
-                <Button onClick={handleUpdateTenant}>Lưu</Button>
-                <Button variant="outline" onClick={() => setEditTenant(false)}>Hủy</Button>
+                <button
+                  onClick={handleUpdateTenant}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                >
+                  Lưu
+                </button>
+                <button
+                  onClick={() => setEditTenant(false)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  Hủy
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {editTenant ? (
+          <div className="px-5 py-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Tên phòng khám</label>
+                <input
+                  value={tenantName}
+                  onChange={e => setTenantName(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                  placeholder="Tên phòng khám"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Mã phòng khám</label>
+                <input
+                  value={tenantCode}
+                  onChange={e => setTenantCode(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                  placeholder="VD: PK001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Số điện thoại</label>
+                <input
+                  value={tenantPhone}
+                  onChange={e => setTenantPhone(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                  placeholder="0912 345 678"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Địa chỉ</label>
+                <input
+                  value={tenantAddress}
+                  onChange={e => setTenantAddress(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                  placeholder="Địa chỉ phòng khám"
+                />
               </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <p><span className="font-medium">Tên:</span> {currentTenant?.name || '—'}</p>
-              <p><span className="font-medium">Mã:</span> {currentTenant?.code || '—'}</p>
-              <p><span className="font-medium">Trạng thái:</span>{' '}
-                <Badge variant="outline" className="text-green-700">Hoạt động</Badge>
-              </p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {[
+              { label: 'Tên phòng khám', value: currentTenant?.name },
+              { label: 'Mã phòng khám', value: currentTenant?.code },
+              { label: 'Số điện thoại', value: tenantInfo?.phone },
+              { label: 'Địa chỉ', value: tenantInfo?.address },
+            ].map(({ label, value }) => (
+              <div key={label} className="px-5 py-3 flex items-center justify-between gap-4">
+                <span className="text-xs text-gray-500 w-40 shrink-0">{label}</span>
+                <span className="text-sm font-medium text-gray-900 text-right">{value || '—'}</span>
+              </div>
+            ))}
+            <div className="px-5 py-3 flex items-center justify-between gap-4">
+              <span className="text-xs text-gray-500 w-40 shrink-0">Trạng thái</span>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Hoạt động</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
-              {/* Thông tin gói dịch vụ */}
-              {planInfo && (
-                <div className="mt-4 pt-4 border-t">
-                  <p className="font-medium text-gray-700 mb-2">Gói dịch vụ</p>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`px-2.5 py-1 rounded-full text-sm font-semibold ${
-                      planInfo.plan === 'enterprise' ? 'bg-amber-100 text-amber-700' :
-                      planInfo.plan === 'pro' ? 'bg-purple-100 text-purple-700' :
-                      planInfo.plan === 'basic' ? 'bg-blue-100 text-blue-700' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {planInfo.plan === 'enterprise' ? '🏪 Doanh nghiệp' : planInfo.plan === 'pro' ? '💎 Chuyên nghiệp' : planInfo.plan === 'basic' ? '🔵 Cơ bản' : '🎁 Dùng thử'}
+  // ========================================================================
+  // Section: Gói dịch vụ
+  // ========================================================================
+  const PLAN_META: Record<string, { icon: string; label: string; color: string; bg: string }> = {
+    enterprise: { icon: '🏪', label: 'Doanh nghiệp', color: 'text-amber-700', bg: 'bg-amber-100' },
+    pro:        { icon: '💎', label: 'Chuyên nghiệp', color: 'text-purple-700', bg: 'bg-purple-100' },
+    basic:      { icon: '🔵', label: 'Cơ bản', color: 'text-blue-700', bg: 'bg-blue-100' },
+    trial:      { icon: '🎁', label: 'Dùng thử', color: 'text-gray-700', bg: 'bg-gray-100' },
+  };
+  const planSection = (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
+          <span className="text-base">💳</span>
+          <h3 className="text-sm font-semibold text-gray-800">Gói dịch vụ</h3>
+          {planInfo && (() => {
+            const meta = PLAN_META[planInfo.plan] || PLAN_META.trial;
+            return (
+              <span className={`ml-1 text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${meta.bg} ${meta.color}`}>
+                {meta.icon} {meta.label}
+              </span>
+            );
+          })()}
+        </div>
+
+        {!planInfo ? (
+          <div className="px-5 py-4 text-sm text-gray-400">Đang tải thông tin gói...</div>
+        ) : (
+          <div className="divide-y">
+            <div className="px-5 py-3 flex items-center justify-between gap-4">
+              <span className="text-xs text-gray-500 w-44 shrink-0">Gói hiện tại</span>
+              <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${(PLAN_META[planInfo.plan] || PLAN_META.trial).bg} ${(PLAN_META[planInfo.plan] || PLAN_META.trial).color}`}>
+                {(PLAN_META[planInfo.plan] || PLAN_META.trial).icon} {(PLAN_META[planInfo.plan] || PLAN_META.trial).label}
+              </span>
+            </div>
+
+            {planInfo.plan === 'trial' && planInfo.trial && (
+              <>
+                <div className="px-5 py-3 flex items-center justify-between gap-4">
+                  <span className="text-xs text-gray-500 w-44 shrink-0">Ngày còn lại</span>
+                  <span className={`text-sm font-semibold ${planInfo.trial.daysRemaining <= 7 ? 'text-red-600' : planInfo.trial.daysRemaining <= 30 ? 'text-amber-600' : 'text-green-600'}`}>
+                    {planInfo.trial.daysRemaining} / {planInfo.trial.totalDays} ngày
+                  </span>
+                </div>
+                <div className="px-5 py-3 flex items-center justify-between gap-4">
+                  <span className="text-xs text-gray-500 w-44 shrink-0">Đơn đã dùng</span>
+                  <span className="text-sm font-semibold text-gray-800">
+                    {planInfo.trial.usedPrescriptions} / {planInfo.trial.maxPrescriptions}
+                  </span>
+                </div>
+                {planInfo.trial.isExpired && (
+                  <div className="px-5 py-3">
+                    <span className="text-[11px] px-2.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700">
+                      ⚠️ Gói dùng thử đã hết hạn!
                     </span>
                   </div>
-
-                  {planInfo.plan === 'trial' && planInfo.trial && (
-                    <div className="space-y-1 text-sm text-gray-600">
-                      <p>Ngày còn lại: <span className={`font-semibold ${planInfo.trial.daysRemaining <= 7 ? 'text-red-600' : planInfo.trial.daysRemaining <= 30 ? 'text-yellow-600' : 'text-green-600'}`}>{planInfo.trial.daysRemaining}</span> / {planInfo.trial.totalDays} ngày</p>
-                      <p>Đơn đã dùng: <span className="font-semibold">{planInfo.trial.usedPrescriptions}</span> / {planInfo.trial.maxPrescriptions}</p>
-                      {planInfo.trial.isExpired && (
-                        <p className="text-red-600 font-semibold">⚠️ Gói dùng thử đã hết hạn!</p>
-                      )}
-                    </div>
-                  )}
-
-                  {planInfo.plan !== 'trial' && planInfo.planExpiresAt && (
-                    <p className="text-sm text-gray-600">
-                      Hạn sử dụng:{' '}
-                      <span className={`font-semibold ${new Date(planInfo.planExpiresAt) < new Date() ? 'text-red-600' : 'text-green-600'}`}>
-                        {new Date(planInfo.planExpiresAt).toLocaleDateString('vi-VN')}
-                      </span>
-                      {new Date(planInfo.planExpiresAt) < new Date() && ' (Đã hết hạn)'}
-                    </p>
-                  )}
-
-                  <Link
-                    href="/billing"
-                    className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
-                  >
-                    {planInfo.plan === 'trial' || (planInfo.planExpiresAt && new Date(planInfo.planExpiresAt) < new Date())
-                      ? '🚀 Nâng cấp gói'
-                      : '💳 Quản lý gói dịch vụ'}
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Danh sách thành viên */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Thành viên phòng khám ({members.filter(m => m.active !== false).length})</CardTitle>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/quan-ly-vai-tro"
-              className="inline-flex items-center px-3 py-2 text-sm border border-purple-300 text-purple-700 rounded-md hover:bg-purple-50"
-            >
-              🛡️ Quản lý vai trò & quyền
-            </Link>
-            <Dialog open={showAddMember} onOpenChange={setShowAddMember}>
-              <DialogTrigger asChild>
-                <Button>+ Thêm thành viên</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Thêm thành viên mới</DialogTitle>
-                </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div>
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
-                    placeholder="email@example.com"
-                  />
-                </div>
-                <div>
-                  <Label>Mật khẩu (nếu tạo tài khoản mới)</Label>
-                  <Input
-                    type="password"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    placeholder="Tối thiểu 6 ký tự"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Bỏ trống nếu người dùng đã có tài khoản
-                  </p>
-                </div>
-                <div>
-                  <Label>Vai trò</Label>
-                  <select
-                    className="w-full h-10 border rounded-md px-3"
-                    value={newRole}
-                    onChange={e => setNewRole(e.target.value as any)}
-                  >
-                    <option value="staff">Nhân viên</option>
-                    <option value="doctor">Bác sĩ</option>
-                    <option value="admin">Quản trị viên</option>
-                  </select>
-                </div>
-                <Button onClick={handleAddMember} className="w-full">
-                  Thêm thành viên
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-center text-gray-500 py-4">Đang tải...</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Họ tên</TableHead>
-                  <TableHead>Vai trò</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead>Đăng nhập gần nhất</TableHead>
-                  <TableHead className="text-right">Thao tác</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.filter(m => m.active !== false).map(member => (
-                  <TableRow key={member.id}>
-                    <TableCell className="font-medium">{member.email}</TableCell>
-                    <TableCell>{member.full_name || '—'}</TableCell>
-                    <TableCell>
-                      {member.role === 'owner' ? (
-                        <Badge className={ROLE_COLORS.owner}>{ROLE_LABELS.owner}</Badge>
-                      ) : (
-                        <select
-                          className="h-8 border rounded px-2 text-sm"
-                          value={member.role}
-                          onChange={e => handleUpdateRole(member.id, e.target.value)}
-                        >
-                          <option value="admin">Quản trị viên</option>
-                          <option value="doctor">Bác sĩ</option>
-                          <option value="staff">Nhân viên</option>
-                        </select>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-green-700">Hoạt động</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-500">
-                      {member.last_login_at
-                        ? new Date(member.last_login_at).toLocaleString('vi-VN')
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {member.role !== 'owner' && member.user_id !== user?.id && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleRemoveMember(member.id, member.email)}
-                        >
-                          Xóa
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {members.filter(m => m.active !== false).length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-gray-500 py-8">
-                      Chưa có thành viên nào
-                    </TableCell>
-                  </TableRow>
                 )}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </>
+              </>
+            )}
+
+            {planInfo.plan !== 'trial' && planInfo.planExpiresAt && (
+              <div className="px-5 py-3 flex items-center justify-between gap-4">
+                <span className="text-xs text-gray-500 w-44 shrink-0">Hạn sử dụng</span>
+                <span className={`text-sm font-semibold ${new Date(planInfo.planExpiresAt) < new Date() ? 'text-red-600' : 'text-green-600'}`}>
+                  {new Date(planInfo.planExpiresAt).toLocaleDateString('vi-VN')}
+                  {new Date(planInfo.planExpiresAt) < new Date() && ' (Đã hết hạn)'}
+                </span>
+              </div>
+            )}
+
+            <div className="px-5 py-4">
+              <Link
+                href="/billing"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                {planInfo.plan === 'trial' || (planInfo.planExpiresAt && new Date(planInfo.planExpiresAt) < new Date())
+                  ? '🚀 Nâng cấp gói'
+                  : '💳 Quản lý gói dịch vụ'}
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ========================================================================
+  // Section: Tài khoản người dùng
+  // ========================================================================
+  const membersSection = <LoginSecurityCard />;
+
+  // ========================================================================
+  // Sidebar (KiotViet-style settings layout)
+  // ========================================================================
+  type Section = {
+    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging';
+    label: string;
+    icon: string;
+    group: string;
+  };
+  const sections: Section[] = [
+    { id: 'info', label: 'Thông tin phòng khám', icon: '🏥', group: 'Phòng khám' },
+    { id: 'members', label: 'Tài khoản người dùng', icon: '👥', group: 'Phòng khám' },
+    { id: 'plan', label: 'Gói dịch vụ', icon: '💳', group: 'Phòng khám' },
+  ];
+  if (currentTenant?.plan === 'enterprise') {
+    sections.push(
+      { id: 'branches', label: 'Quản lý chi nhánh', icon: '📍', group: 'Chuỗi cửa hàng' },
+      { id: 'chain',    label: 'Phân công nhân viên', icon: '🧑‍💼', group: 'Chuỗi cửa hàng' },
+    );
+  }
+  sections.push(
+    { id: 'roles',     label: 'Quản lý vai trò & quyền',  icon: '🛡️', group: 'Cấu hình' },
+    { id: 'print',     label: 'Cấu hình mẫu in',          icon: '🖨️', group: 'Cấu hình' },
+    { id: 'messaging', label: 'Cài đặt nhắn tin tự động', icon: '💬', group: 'Cấu hình' },
+  );
+
+  // Map: id -> content
+  const sectionContent: Record<string, React.ReactNode> = {
+    info: infoSection,
+    members: membersSection,
+    plan: planSection,
+    branches: (
+      <FeatureGate feature="multi_branch" permission="manage_clinic">
+        <QuanLyChuoiSection embedded initialTab="branches" />
+      </FeatureGate>
+    ),
+    chain: (
+      <FeatureGate feature="multi_branch" permission="manage_clinic">
+        <QuanLyChuoiSection embedded initialTab="staff" />
+      </FeatureGate>
+    ),
+    roles:     <QuanLyVaiTroSection />,
+    print:     <CauHinhInSection />,
+    messaging: <CaiDatNhanTinSection />,
+  };
+
+  // Group sections by `group`
+  const groupedSections = sections.reduce<Record<string, Section[]>>((acc, s) => {
+    (acc[s.group] = acc[s.group] || []).push(s);
+    return acc;
+  }, {});
+
+  const sidebar = (
+    <aside className="w-full md:w-64 shrink-0">
+      <div className="bg-white rounded-xl border border-gray-200 sticky top-4">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h2 className="text-lg font-bold">Thiết lập</h2>
+        </div>
+        <nav className="py-2">
+          {Object.entries(groupedSections).map(([groupName, items]) => (
+            <div key={groupName} className="mb-2">
+              <p className="px-4 pt-2 pb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">{groupName}</p>
+              {items.map(s => {
+                const active = activeSection === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setActiveSection(s.id as any)}
+                    className={`w-full text-left flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
+                      active
+                        ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600 font-medium'
+                        : 'text-gray-700 hover:bg-gray-50 border-l-2 border-transparent'
+                    }`}
+                  >
+                    <span>{s.icon}</span>
+                    <span>{s.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </div>
+    </aside>
   );
 
   const pageContent = tenancyLoading ? (
@@ -483,48 +424,26 @@ export default function QuanLyPhongKham() {
       </div>
     </div>
   ) : (
-    <>
-      <div className="flex items-center justify-between">
+    <div>
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Quản lý Phòng khám</h1>
         <Badge className={ROLE_COLORS[currentRole || 'staff']}>
           {ROLE_LABELS[currentRole || 'staff']}
         </Badge>
       </div>
 
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        <button
-          onClick={() => setActiveTab('clinic')}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === 'clinic' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
-          }`}
-        >
-          Cài đặt phòng khám
-        </button>
-        {currentTenant?.plan === 'enterprise' && (
-          <button
-            onClick={() => setActiveTab('chain')}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'chain' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Chuỗi cửa hàng
-          </button>
-        )}
+      <div className="flex flex-col md:flex-row gap-6">
+        {sidebar}
+        <main className="flex-1 min-w-0 space-y-4">
+          {sectionContent[activeSection] || sectionContent.info}
+        </main>
       </div>
-
-      {activeTab === 'chain' ? (
-        <FeatureGate feature="multi_branch" permission="manage_clinic">
-          <QuanLyChuoiSection embedded initialTab={chainInitialTab} />
-        </FeatureGate>
-      ) : (
-        clinicManagementContent
-      )}
-    </>
+    </div>
   );
 
   return (
     <ProtectedRoute>
-      <div className="max-w-6xl mx-auto p-4 space-y-6">{pageContent}</div>
+      <div className="max-w-7xl mx-auto p-4">{pageContent}</div>
     </ProtectedRoute>
   );
 }

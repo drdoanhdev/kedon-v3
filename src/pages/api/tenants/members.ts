@@ -25,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const fullRes = await supabaseAdmin
         .from('tenantmembership')
-        .select('id, user_id, role, active, last_login_at, created_at, login_security, locked_device_id, locked_device_label, locked_device_at')
+        .select('id, user_id, role, role_id, active, last_login_at, created_at, login_security, locked_device_id, locked_device_label, locked_device_at')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: true });
 
@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error && /login_security|locked_device_id|locked_device_label|locked_device_at/i.test(error.message || '')) {
         const fallbackRes = await supabaseAdmin
           .from('tenantmembership')
-          .select('id, user_id, role, active, last_login_at, created_at')
+          .select('id, user_id, role, role_id, active, last_login_at, created_at')
           .eq('tenant_id', tenantId)
           .order('created_at', { ascending: true });
 
@@ -88,6 +88,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         full_name: usersMap.get(m.user_id)?.full_name || null,
       }));
 
+      // Enrich với thông tin role từ tenant_roles (hỗ trợ RBAC V054 custom role)
+      const roleIds = Array.from(new Set(result.map(r => r.role_id).filter(Boolean)));
+      if (roleIds.length > 0) {
+        const { data: roles } = await supabaseAdmin
+          .from('tenant_roles')
+          .select('id, code, name, is_system, is_protected')
+          .in('id', roleIds);
+        const rmap = new Map((roles || []).map((r: any) => [r.id, r]));
+        for (const r of result) {
+          const tr: any = r.role_id ? rmap.get(r.role_id) : null;
+          (r as any).role_name = tr?.name || null;
+          (r as any).role_code = tr?.code || r.role;
+          (r as any).role_is_system = tr?.is_system ?? null;
+        }
+      }
+
       return res.status(200).json({ data: result });
     } catch (err: any) {
       return res.status(500).json({ message: 'Lỗi server', error: err.message });
@@ -97,14 +113,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // POST: Thêm thành viên mới bằng email
   if (req.method === 'POST') {
     try {
-      const { email, role, password } = req.body;
+      const { email, role, role_id, password, full_name } = req.body;
 
-      if (!email || !role) {
-        return res.status(400).json({ message: 'Thiếu email hoặc role' });
+      if (!email || (!role && !role_id)) {
+        return res.status(400).json({ message: 'Thiếu email hoặc role/role_id' });
       }
 
-      if (!['admin', 'doctor', 'staff'].includes(role)) {
-        return res.status(400).json({ message: 'Role không hợp lệ. Phải là admin, doctor hoặc staff' });
+      // Xác định role_id và role TEXT (để thỏa CHECK constraint owner/admin/doctor/staff)
+      let resolvedRoleId: string | null = null;
+      let resolvedRoleText: 'admin' | 'doctor' | 'staff' = 'staff';
+
+      if (role_id) {
+        const { data: targetRole } = await supabaseAdmin
+          .from('tenant_roles')
+          .select('id, code, is_protected')
+          .eq('id', role_id)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+        if (!targetRole) {
+          return res.status(400).json({ message: 'role_id không tồn tại trong phòng khám này' });
+        }
+        if (targetRole.is_protected) {
+          return res.status(403).json({ message: 'Không thể gán vai trò chủ phòng khám cho thành viên mới' });
+        }
+        resolvedRoleId = targetRole.id;
+        // Nếu code là system (admin/doctor/staff) thì dùng trực tiếp; nếu custom thì fallback 'staff'.
+        resolvedRoleText = (['admin', 'doctor', 'staff'].includes(targetRole.code))
+          ? (targetRole.code as 'admin' | 'doctor' | 'staff')
+          : 'staff';
+      } else {
+        if (!['admin', 'doctor', 'staff'].includes(role)) {
+          return res.status(400).json({ message: 'Role không hợp lệ. Dùng role_id cho vai trò tùy biến.' });
+        }
+        resolvedRoleText = role;
+        // Tra role_id tương ứng để ghi vào membership.role_id (RBAC V054)
+        const { data: sysRole } = await supabaseAdmin
+          .from('tenant_roles')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('code', role)
+          .maybeSingle();
+        resolvedRoleId = sysRole?.id || null;
       }
 
       // Kiểm tra giới hạn số thành viên theo gói
@@ -166,6 +215,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Tạo user_profiles
         await supabaseAdmin.from('user_profiles').upsert({
           id: targetUserId,
+          full_name: full_name?.trim() || null,
           default_tenant_id: tenantId,
         }, { onConflict: 'id' });
       }
@@ -185,9 +235,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Tái kích hoạt membership cũ
         await supabaseAdmin
           .from('tenantmembership')
-          .update({ active: true, role })
+          .update({ active: true, role: resolvedRoleText, role_id: resolvedRoleId })
           .eq('id', existing.id);
 
+        invalidateUserPermissionCache(targetUserId, tenantId);
         return res.status(200).json({ message: 'Đã tái kích hoạt thành viên' });
       }
 
@@ -197,7 +248,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .insert({
           tenant_id: tenantId,
           user_id: targetUserId,
-          role,
+          role: resolvedRoleText,
+          role_id: resolvedRoleId,
           active: true,
           invited_by: userId,
         });
@@ -206,7 +258,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi thêm thành viên', error: memErr.message });
       }
 
-      return res.status(200).json({ message: `Đã thêm ${email} vào phòng khám với vai trò ${role}` });
+      invalidateUserPermissionCache(targetUserId, tenantId);
+      return res.status(200).json({ message: `Đã thêm ${email} vào phòng khám` });
     } catch (err: any) {
       return res.status(500).json({ message: 'Lỗi server', error: err.message });
     }

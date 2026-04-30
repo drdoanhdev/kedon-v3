@@ -50,7 +50,11 @@ export default function QuanLyVaiTro() {
   )
 }
 
-function QuanLyVaiTroInner() {
+export function QuanLyVaiTroSection() {
+  return <QuanLyVaiTroInner embedded />
+}
+
+function QuanLyVaiTroInner({ embedded = false }: { embedded?: boolean } = {}) {
   const { currentRole } = useAuth()
   const { confirm } = useConfirm()
 
@@ -125,8 +129,8 @@ function QuanLyVaiTroInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className={embedded ? '' : 'min-h-screen bg-gray-50 p-6'}>
+      <div className={embedded ? '' : 'max-w-6xl mx-auto'}>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Quản lý vai trò</h1>
@@ -135,9 +139,11 @@ function QuanLyVaiTroInner() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/quan-ly-nguoi-dung" className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100">
-              ← Quản lý người dùng
-            </Link>
+            {!embedded && (
+              <Link href="/quan-ly-nguoi-dung" className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100">
+                ← Quản lý người dùng
+              </Link>
+            )}
             <button
               onClick={() => setShowCreate(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
