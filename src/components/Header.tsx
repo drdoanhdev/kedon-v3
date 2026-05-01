@@ -285,44 +285,18 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile Header */}
-        <div className="md:hidden flex items-center justify-between h-10">
-          <div className="flex items-center space-x-3">
-            <span className="text-base font-extrabold text-blue-900 tracking-tight">OptiGo</span>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <Link href="/thong-bao" className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100">
-              <Bell className="w-5 h-5" />
-              {counts.thongBao > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                  {counts.thongBao > 9 ? '9+' : counts.thongBao}
-                </span>
-              )}
-            </Link>
-            <Link href="/tin-nhan" className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100">
-              <MessageCircle className="w-5 h-5" />
-              {(counts.tinNhan + counts.tinNhanPlatform) > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
-                  {(counts.tinNhan + counts.tinNhanPlatform) > 9 ? '9+' : (counts.tinNhan + counts.tinNhanPlatform)}
-                </span>
-              )}
-            </Link>
-            <button
-              onClick={toggleMobileMenu}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-600"
-            >
-              {isMobileMenuOpen ? (
-                <X className="w-6 h-6" />
-              ) : (
-                <Menu className="w-6 h-6" />
-              )}
-            </button>
+        {/* Mobile Header — chỉ thương hiệu + tên phòng khám. Mọi chức năng khác chuyển xuống MobileBottomNav. */}
+        <div className="md:hidden flex items-center justify-between h-10 px-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base font-extrabold text-blue-900 tracking-tight flex-shrink-0">OptiGo</span>
+            {currentTenant?.name && (
+              <span className="text-xs text-gray-400 truncate">• {currentTenant.name}</span>
+            )}
           </div>
         </div>
 
-        {/* Mobile Menu Dropdown */}
-        {isMobileMenuOpen && (
+        {/* Mobile Menu Dropdown (đã ngừng dùng — thay bằng MobileBottomNav) */}
+        {false && isMobileMenuOpen && (
           <div className="md:hidden absolute top-full left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-100 shadow-lg z-50">
             <nav className="px-4 py-2 space-y-1">
               {[...mainMenuItems, ...avatarMenuItems].map(({ href, label, icon: Icon, feature }) => {

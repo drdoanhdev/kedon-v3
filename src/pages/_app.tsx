@@ -7,6 +7,7 @@ import { BranchProvider } from '../contexts/BranchContext';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import MobileBottomNav from '../components/MobileBottomNav';
 import { FooterProvider } from '../contexts/FooterContext';
 import { initializeApiAuthHeaders } from '../lib/apiAuthHeaders';
 import { Toaster } from 'react-hot-toast';
@@ -39,6 +40,7 @@ export default function App({ Component, pageProps }: AppProps) {
           <Component {...pageProps} />
         </main>
         {showHeader && <Footer />}
+        {showHeader && <MobileBottomNav />}
         <Toaster
           position="top-center"
           toastOptions={{
