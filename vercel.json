@@ -1,6 +1,8 @@
 {
   "crons": [
-    { "path": "/api/messaging/cron?secret=DÁN_GIÁ_TRỊ_MESSAGING_CRON_SECRET_VÀO_ĐÂY", 
-    "schedule": "*/10 * * * *" }
+    {
+      "path": "/api/messaging/cron",
+      "schedule": "*/10 * * * *"
+    }
   ]
 }
