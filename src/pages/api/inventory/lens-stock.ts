@@ -21,8 +21,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Mặc định chỉ hiện hãng tròng đang kinh doanh (trang_thai=true)
       // Nếu show_inactive=1 thì hiện cả hãng đã ngưng
       const selectHangTrong = show_inactive === '1'
-        ? '*, HangTrong(id, ten_hang, loai_trong, kieu_quan_ly, gia_nhap, gia_ban, trang_thai)'
-        : '*, HangTrong!inner(id, ten_hang, loai_trong, kieu_quan_ly, gia_nhap, gia_ban, trang_thai)';
+        ? '*, HangTrong(id, ten_hang, hang, loai_trong, kieu_quan_ly, gia_nhap, gia_ban, trang_thai, nha_cung_cap_id, NhaCungCap:nha_cung_cap_id(id, ten, dien_thoai, zalo_phone))'
+        : '*, HangTrong!inner(id, ten_hang, hang, loai_trong, kieu_quan_ly, gia_nhap, gia_ban, trang_thai, nha_cung_cap_id, NhaCungCap:nha_cung_cap_id(id, ten, dien_thoai, zalo_phone))';
 
       let query = supabase
         .from('lens_stock')

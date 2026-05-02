@@ -27,7 +27,17 @@ interface LensStock {
   muc_ton_can_co: number;
   trang_thai_ton: string;
   can_nhap_them: number;
-  HangTrong?: { id: number; ten_hang: string; loai_trong: string; kieu_quan_ly: string; gia_nhap: number; gia_ban: number };
+  HangTrong?: {
+    id: number;
+    ten_hang: string;
+    hang?: string | null;
+    loai_trong: string;
+    kieu_quan_ly: string;
+    gia_nhap: number;
+    gia_ban: number;
+    nha_cung_cap_id?: number | null;
+    NhaCungCap?: { id: number; ten: string; dien_thoai?: string | null; zalo_phone?: string | null } | null;
+  };
 }
 
 interface LensOrder {
@@ -109,6 +119,7 @@ export default function QuanLyKho() {
   // Filter
   const [stockFilter, setStockFilter] = useState<string>('all'); // all, HET, SAP_HET, DU
   const [hangTrongFilter, setHangTrongFilter] = useState<string>('all'); // all or hang_trong_id
+  const [brandFilter, setBrandFilter] = useState<string>('all'); // all or brand string
 
   // Edit stock dialog
   const [showEditStock, setShowEditStock] = useState(false);
@@ -654,13 +665,12 @@ export default function QuanLyKho() {
     return s;
   };
 
-  const buildStockNeedText = () => {
-    const need = lensStocks.filter(s => s.can_nhap_them > 0);
-    if (need.length === 0) return '';
-    // Group by ten_hang
+  const buildStockNeedTextForStocks = (stocks: LensStock[]): string => {
+    if (stocks.length === 0) return '';
     const grouped = new Map<string, { do: string; sl: number; mat: string | null; isProgressive: boolean }[]>();
-    for (const s of need) {
-      const name = s.HangTrong?.ten_hang || 'Không rõ';
+    for (const s of stocks) {
+      const brand = s.HangTrong?.hang ? `[${s.HangTrong.hang}] ` : '';
+      const name = brand + (s.HangTrong?.ten_hang || 'Không rõ');
       if (!grouped.has(name)) grouped.set(name, []);
       grouped.get(name)!.push({ do: formatDoText(s.sph, s.cyl, s.add_power), sl: s.can_nhap_them, mat: s.mat, isProgressive: s.add_power != null });
     }
@@ -686,6 +696,36 @@ export default function QuanLyKho() {
       }
     }
     return lines.join('\n');
+  };
+
+  const buildStockNeedText = () => {
+    const need = lensStocks.filter(s => s.can_nhap_them > 0);
+    return buildStockNeedTextForStocks(need);
+  };
+
+  // Group lens stock "cần nhập" by supplier (HangTrong.NhaCungCap)
+  const getStocksGroupedByNCC = (): Array<{
+    nccId: number | null;
+    nccTen: string;
+    nccPhone: string | null;
+    stocks: LensStock[];
+  }> => {
+    const need = lensStocks.filter(s => s.can_nhap_them > 0);
+    const map = new Map<string, { nccId: number | null; nccTen: string; nccPhone: string | null; stocks: LensStock[] }>();
+    for (const s of need) {
+      const ncc = s.HangTrong?.NhaCungCap || null;
+      const nccId = ncc?.id ?? null;
+      const nccTen = ncc?.ten || 'Chưa có NCC';
+      const nccPhone = ncc?.zalo_phone || ncc?.dien_thoai || null;
+      const key = nccId != null ? `id:${nccId}` : `name:${nccTen}`;
+      if (!map.has(key)) map.set(key, { nccId, nccTen, nccPhone, stocks: [] });
+      map.get(key)!.stocks.push(s);
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.nccId == null && b.nccId != null) return 1;
+      if (b.nccId == null && a.nccId != null) return -1;
+      return a.nccTen.localeCompare(b.nccTen);
+    });
   };
 
   const buildOrderNeedTextForOrders = (orders: LensOrder[]): string => {
@@ -996,9 +1036,23 @@ export default function QuanLyKho() {
                         value={hangTrongFilter}
                         onChange={e => setHangTrongFilter(e.target.value)}
                       >
-                        <option value="all">-- Tất cả tròng --</option>
+                        <option value="all">-- Loại tròng --</option>
                         {hangTrongs.map(h => (
                           <option key={h.id} value={h.id}>{h.ten_hang}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="border rounded-lg px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white min-w-0"
+                        value={brandFilter}
+                        onChange={e => setBrandFilter(e.target.value)}
+                      >
+                        <option value="all">-- Hãng --</option>
+                        {Array.from(new Set(
+                          hangTrongs
+                            .map(h => (h as any).hang as string | null | undefined)
+                            .filter((b): b is string => !!b && b.trim() !== '')
+                        )).sort().map(b => (
+                          <option key={b} value={b}>{b}</option>
                         ))}
                       </select>
                     </div>
@@ -1031,13 +1085,74 @@ export default function QuanLyKho() {
                     </div>
                   </div>
 
+                  {/* Đặt theo nhà cung cấp (cho các dòng cần nhập) */}
+                  {(() => {
+                    const groups = getStocksGroupedByNCC();
+                    if (groups.length === 0) return null;
+                    return (
+                      <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                        <div className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                          <Truck className="w-4 h-4" />
+                          Đặt theo nhà cung cấp
+                          <span className="text-xs font-normal text-gray-500">
+                            (nhóm các dòng cần nhập theo NCC để gửi Zalo)
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {groups.map(g => {
+                            const text = buildStockNeedTextForStocks(g.stocks);
+                            const totalMieng = g.stocks.reduce((s, x) => s + (x.can_nhap_them || 0), 0);
+                            return (
+                              <div
+                                key={g.nccId ?? `noid-${g.nccTen}`}
+                                className="flex items-center justify-between gap-2 rounded-md bg-white border border-blue-100 px-3 py-2"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-medium text-sm truncate">{g.nccTen}</div>
+                                  <div className="text-xs text-gray-500">
+                                    {g.stocks.length} dòng · {totalMieng} miếng
+                                    {g.nccPhone ? ` · ${g.nccPhone}` : ' · chưa có SĐT'}
+                                  </div>
+                                </div>
+                                <div className="flex gap-1 shrink-0">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openCopyPopup(text, `Cần nhập từ ${g.nccTen}`)}
+                                    title="Xem & copy nội dung"
+                                  >
+                                    <ClipboardCopy className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => sendZaloToNCC(g.nccPhone, text, g.nccTen)}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                                    title="Mở Zalo & copy nội dung"
+                                    disabled={!g.nccPhone}
+                                  >
+                                    💬 Gửi Zalo
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-2">
+                          Mẹo: Chưa có NCC → vào <b>Danh mục → Loại tròng</b> chọn NCC cho từng loại tròng.
+                          NCC chưa có SĐT Zalo → vào <b>Danh mục → Nhà cung cấp</b>.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <Card>
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs sm:text-sm">
                           <thead>
                             <tr className="border-b bg-gray-50 text-left text-gray-500">
-                              <th className="p-2 sm:p-3 font-medium"><span className="sm:hidden">Hãng</span><span className="hidden sm:inline">Hãng tròng</span></th>
+                              <th className="p-2 sm:p-3 font-medium">Hãng</th>
+                              <th className="p-2 sm:p-3 font-medium">Loại tròng</th>
                               <th className="p-2 sm:p-3 font-medium font-mono">SPH</th>
                               <th className="p-2 sm:p-3 font-medium font-mono">CYL</th>
                               <th className="p-2 sm:p-3 font-medium font-mono">ADD</th>
@@ -1051,15 +1166,27 @@ export default function QuanLyKho() {
                             </tr>
                           </thead>
                           <tbody>
-                            {lensStocks.length === 0 ? (
-                              <tr><td colSpan={11} className="p-8 text-center text-gray-400">
-                                Chưa có dữ liệu kho tròng. Bấm "Thêm độ mới" để bắt đầu.
-                              </td></tr>
-                            ) : lensStocks.map(stock => {
+                            {(() => {
+                              const filteredStocks = brandFilter === 'all'
+                                ? lensStocks
+                                : lensStocks.filter(s => (s.HangTrong?.hang || '') === brandFilter);
+                              if (filteredStocks.length === 0) {
+                                return (
+                                  <tr><td colSpan={12} className="p-8 text-center text-gray-400">
+                                    {lensStocks.length === 0
+                                      ? 'Chưa có dữ liệu kho tròng. Bấm "Thêm độ mới" để bắt đầu.'
+                                      : 'Không có dổ hiện trong bộ lọc hãng đã chọn.'}
+                                  </td></tr>
+                                );
+                              }
+                              return filteredStocks.map(stock => {
                               const isInactive = (stock.HangTrong as any)?.trang_thai === false;
                               return (
                               <tr key={stock.id} className={`border-b hover:bg-gray-50 ${isInactive ? 'opacity-50 bg-gray-50' : ''}`}>
-                                <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm max-w-[80px] sm:max-w-none truncate">
+                                <td className="p-2 sm:p-3 text-xs sm:text-sm text-gray-700">
+                                  {stock.HangTrong?.hang || <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm max-w-[120px] sm:max-w-none truncate">
                                   {stock.HangTrong?.ten_hang}
                                   {isInactive && <><span className="ml-1 text-[10px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded sm:hidden">Ngưng</span><span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded hidden sm:inline">Ngưng KD</span></>}
                                 </td>
@@ -1130,7 +1257,8 @@ export default function QuanLyKho() {
                                 </td>
                               </tr>
                               );
-                            })}
+                            });
+                            })()}
                           </tbody>
                         </table>
                       </div>

@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const showInactive = req.query.show_inactive === '1';
       let query = supabase
         .from('HangTrong')
-        .select('*')
+        .select('*, NhaCungCap:nha_cung_cap_id(id, ten)')
         .eq('tenant_id', tenantId)
         .eq('trang_thai', true)
         .order('ten_hang');

@@ -15,11 +15,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const includeInactive = req.query.include_inactive === 'true';
       let query = supabase.from('NhaCungCap').select('*').eq('tenant_id', tenantId).order('ten');
       if (!includeInactive) {
-        // Attempt soft-delete filter; fall back if column doesn't exist
-        const { data, error } = await query.eq('trang_thai', true);
+        // trang_thai is TEXT 'active'/'inactive' (V034) — exclude only explicit 'inactive'
+        // (NULL or 'active' → visible). Fallback if column missing.
+        const { data, error } = await query.or('trang_thai.is.null,trang_thai.neq.inactive');
         if (error) {
           if (error.message?.toLowerCase().includes('trang_thai')) {
-            // Fallback without filter
             const { data: fallbackData, error: fbError } = await supabase
               .from('NhaCungCap')
               .select('*')
@@ -67,21 +67,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === 'DELETE') {
       const { id } = req.query; // delete?id=123
       if (!id) return res.status(400).json({ message: 'Thiếu id' });
-      // Try soft delete first
+      // Soft delete: trang_thai TEXT 'inactive' (V034 schema)
       const { error: softErr } = await supabase
         .from('NhaCungCap')
-        .update({ trang_thai: false })
+        .update({ trang_thai: 'inactive' })
         .eq('id', id)
         .eq('tenant_id', tenantId);
       if (softErr) {
         if (softErr.message?.toLowerCase().includes('trang_thai')) {
-          // Hard delete fallback when column missing
-            const { error: hardErr } = await supabase
-              .from('NhaCungCap')
-              .delete()
-              .eq('id', id);
-            if (hardErr) throw hardErr;
-            return res.status(200).json({ message: 'Đã xóa (hard delete vì thiếu cột trang_thai)' });
+          const { error: hardErr } = await supabase
+            .from('NhaCungCap')
+            .delete()
+            .eq('id', id);
+          if (hardErr) throw hardErr;
+          return res.status(200).json({ message: 'Đã xóa (hard delete vì thiếu cột trang_thai)' });
         }
         throw softErr;
       }

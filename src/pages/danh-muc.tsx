@@ -1189,8 +1189,11 @@ function DanhMucPage() {
   );
 
   const renderHangTrongTab = () => {
+    const s = searchHangTrong.toLowerCase();
     const filtered = dsHangTrong.filter((hang) =>
-      hang.ten_hang.toLowerCase().includes(searchHangTrong.toLowerCase())
+      hang.ten_hang.toLowerCase().includes(s) ||
+      (hang.hang || '').toLowerCase().includes(s) ||
+      (hang.NhaCungCap?.ten || '').toLowerCase().includes(s)
     );
 
     const toggleNgungKD = async (hang: HangTrong) => {
@@ -1207,16 +1210,16 @@ function DanhMucPage() {
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <h2 className="text-xl md:text-2xl font-bold">Hãng tròng kính</h2>
+          <h2 className="text-xl md:text-2xl font-bold">Loại tròng kính</h2>
           <Button onClick={() => { resetHangTrongForm(); setOpenHangTrongDialog(true); }}>
             <Plus className="h-4 w-4 mr-2" />
-            Thêm hãng tròng
+            Thêm loại tròng
           </Button>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center">
           <Input
-            placeholder="Tìm kiếm hãng tròng..."
+            placeholder="Tìm theo loại tròng / hãng / NCC..."
             value={searchHangTrong}
             onChange={(e) => setSearchHangTrong(e.target.value)}
             className="w-full md:w-1/2"
@@ -1240,10 +1243,11 @@ function DanhMucPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-100 border-b">
                 <tr>
-                  <th className="px-4 py-2 text-left">Tên hãng</th>
+                  <th className="px-4 py-2 text-left">Hãng</th>
+                  <th className="px-4 py-2 text-left">Loại tròng</th>
+                  <th className="px-4 py-2 text-left">Nhà cung cấp</th>
                   <th className="px-4 py-2 text-left">Giá nhập</th>
                   <th className="px-4 py-2 text-left">Giá bán</th>
-                  <th className="px-4 py-2 text-left">Mô tả</th>
                   <th className="px-4 py-2 text-center">Trạng thái</th>
                   <th className="px-4 py-2 text-center">Thao tác</th>
                 </tr>
@@ -1251,13 +1255,18 @@ function DanhMucPage() {
               <tbody>
                 {filtered.map((hang) => (
                   <tr key={hang.id} className={`border-b hover:bg-gray-50 ${hang.ngung_kinh_doanh ? 'opacity-50 bg-gray-50' : ''}`}>
+                    <td className="px-4 py-2 text-gray-700">
+                      {hang.hang || <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-2 font-medium">
                       {hang.ten_hang}
                       {hang.ngung_kinh_doanh && <span className="ml-1.5 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Ngừng KD</span>}
                     </td>
+                    <td className="px-4 py-2 text-gray-600 text-xs">
+                      {hang.NhaCungCap?.ten || <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-2">{hang.gia_nhap.toLocaleString()}đ</td>
                     <td className="px-4 py-2 font-medium">{hang.gia_ban.toLocaleString()}đ</td>
-                    <td className="px-4 py-2">{hang.mo_ta || '-'}</td>
                     <td className="px-4 py-2 text-center">
                       <button
                         onClick={() => toggleNgungKD(hang)}
