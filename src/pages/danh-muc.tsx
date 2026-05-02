@@ -45,10 +45,13 @@ interface ThuocMau {
 interface HangTrong {
   id: number;
   ten_hang: string;
+  hang?: string | null;
+  nha_cung_cap_id?: number | null;
   gia_nhap: number;
   gia_ban: number;
   mo_ta?: string;
   ngung_kinh_doanh?: boolean;
+  NhaCungCap?: { id: number; ten: string } | null;
 }
 
 interface GongKinh {
@@ -84,6 +87,7 @@ interface NhaCungCap {
   ten: string;
   dia_chi?: string;
   dien_thoai?: string;
+  zalo_phone?: string;
   ghi_chu?: string;
   facebook?: string;
 }
@@ -165,6 +169,8 @@ function DanhMucPage() {
   const [hangTrongForm, setHangTrongForm] = useState<HangTrong>({
     id: 0,
     ten_hang: '',
+    hang: '',
+    nha_cung_cap_id: null,
     gia_nhap: 0,
     gia_ban: 0,
     mo_ta: '',
@@ -200,7 +206,7 @@ function DanhMucPage() {
   const [searchNCC, setSearchNCC] = useState('');
   const [openNCCDialog, setOpenNCCDialog] = useState(false);
   const [isEditingNCC, setIsEditingNCC] = useState(false);
-  const [nccForm, setNccForm] = useState<NhaCungCap>({ id: 0, ten: '', dia_chi: '', dien_thoai: '', ghi_chu: '', facebook: '' });
+  const [nccForm, setNccForm] = useState<NhaCungCap>({ id: 0, ten: '', dia_chi: '', dien_thoai: '', zalo_phone: '', ghi_chu: '', facebook: '' });
 
   // States cho Nhóm giá gọng
   const [dsNhomGiaGong, setDsNhomGiaGong] = useState<NhomGiaGong[]>([]);
@@ -508,6 +514,8 @@ function DanhMucPage() {
     setHangTrongForm({
       id: 0,
       ten_hang: '',
+      hang: '',
+      nha_cung_cap_id: null,
       gia_nhap: 0,
       gia_ban: 0,
       mo_ta: '',
@@ -523,7 +531,7 @@ function DanhMucPage() {
 
   const handleSubmitHangTrong = async () => {
     if (!hangTrongForm.ten_hang) {
-      toast.error('Vui lòng nhập tên hãng tròng.');
+      toast.error('Vui lòng nhập loại tròng.');
       return;
     }
     try {
@@ -813,7 +821,7 @@ function DanhMucPage() {
 
   const resetNccForm = () => {
     setIsEditingNCC(false);
-    setNccForm({ id: 0, ten: '', dia_chi: '', dien_thoai: '', ghi_chu: '', facebook: '' });
+    setNccForm({ id: 0, ten: '', dia_chi: '', dien_thoai: '', zalo_phone: '', ghi_chu: '', facebook: '' });
   };
 
   const handleEditNCC = (ncc: NhaCungCap) => {
@@ -1840,16 +1848,42 @@ function DanhMucPage() {
         <Dialog open={openHangTrongDialog} onOpenChange={setOpenHangTrongDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{isEditingHangTrong ? 'Sửa hãng tròng' : 'Thêm hãng tròng'}</DialogTitle>
+              <DialogTitle>{isEditingHangTrong ? 'Sửa loại tròng' : 'Thêm loại tròng'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>Tên hãng *</Label>
+                <Label>Loại tròng *</Label>
                 <Input
                   value={hangTrongForm.ten_hang}
                   onChange={(e) => setHangTrongForm({ ...hangTrongForm, ten_hang: e.target.value })}
-                  placeholder="Nhập tên hãng tròng"
+                  placeholder="VD: Crizal Sapphire UV, Stylis 1.67..."
                 />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Hãng tròng</Label>
+                  <Input
+                    value={hangTrongForm.hang || ''}
+                    onChange={(e) => setHangTrongForm({ ...hangTrongForm, hang: e.target.value })}
+                    placeholder="VD: Essilor, Hoya, Zeiss..."
+                  />
+                </div>
+                <div>
+                  <Label>Nhà cung cấp</Label>
+                  <select
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                    value={hangTrongForm.nha_cung_cap_id || ''}
+                    onChange={(e) => setHangTrongForm({
+                      ...hangTrongForm,
+                      nha_cung_cap_id: e.target.value ? parseInt(e.target.value) : null,
+                    })}
+                  >
+                    <option value="">-- Chọn NCC --</option>
+                    {dsNhaCungCap.map((ncc) => (
+                      <option key={ncc.id} value={ncc.id}>{ncc.ten}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -1876,7 +1910,7 @@ function DanhMucPage() {
                 <Textarea
                   value={hangTrongForm.mo_ta}
                   onChange={(e) => setHangTrongForm({ ...hangTrongForm, mo_ta: e.target.value })}
-                  placeholder="Mô tả hãng tròng (tùy chọn)"
+                  placeholder="Mô tả loại tròng (tùy chọn)"
                   rows={3}
                 />
               </div>
@@ -2260,6 +2294,14 @@ function DanhMucPage() {
               <div>
                 <Label>Điện thoại</Label>
                 <Input value={nccForm.dien_thoai} onChange={(e) => setNccForm({ ...nccForm, dien_thoai: e.target.value })} />
+              </div>
+              <div>
+                <Label>SĐT Zalo (cho đặt tròng)</Label>
+                <Input
+                  value={nccForm.zalo_phone || ''}
+                  onChange={(e) => setNccForm({ ...nccForm, zalo_phone: e.target.value })}
+                  placeholder="Ví dụ: 0901234567 (để trống → dùng điện thoại chính)"
+                />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

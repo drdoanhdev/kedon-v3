@@ -62,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Query chi tiết
       let query = supabase
         .from('lens_order')
-        .select('*, HangTrong(ten_hang, loai_trong), DonKinh(id, branch_id, BenhNhan(ten)), NhaCungCap(ten)')
+        .select('*, HangTrong(ten_hang, loai_trong, hang, nha_cung_cap_id, NhaCungCap:nha_cung_cap_id(id, ten, dien_thoai, zalo_phone)), DonKinh(id, branch_id, BenhNhan(ten)), NhaCungCap(id, ten, dien_thoai, zalo_phone)')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
 

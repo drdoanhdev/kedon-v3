@@ -1,0 +1,851 @@
+-- copy lúc 10:00 02/05/2026 từ schema public
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.BenhNhan (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ten text NOT NULL,
+  diachi text,
+  dienthoai text,
+  mabenhnhan text,
+  namsinh text,
+  avatar text,
+  tenant_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  branch_id uuid,
+  CONSTRAINT BenhNhan_pkey PRIMARY KEY (id),
+  CONSTRAINT BenhNhan_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT BenhNhan_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.ChiTietDonThuoc (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  donthuocid integer,
+  soluong integer,
+  thuocid integer,
+  CONSTRAINT ChiTietDonThuoc_pkey PRIMARY KEY (id),
+  CONSTRAINT chitietdonthuoc_donthuocid_fkey FOREIGN KEY (donthuocid) REFERENCES public.DonThuoc(id),
+  CONSTRAINT chitietdonthuoc_thuocid_fkey FOREIGN KEY (thuocid) REFERENCES public.Thuoc(id)
+);
+CREATE TABLE public.ChiTietDonThuocMau (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  donthuocmauid integer NOT NULL,
+  thuocid integer NOT NULL,
+  soluong integer NOT NULL DEFAULT 1,
+  ghi_chu text,
+  CONSTRAINT ChiTietDonThuocMau_pkey PRIMARY KEY (id),
+  CONSTRAINT chitietdonthuocmau_donthuocmauid_fkey FOREIGN KEY (donthuocmauid) REFERENCES public.DonThuocMau(id),
+  CONSTRAINT chitietdonthuocmau_thuocid_fkey FOREIGN KEY (thuocid) REFERENCES public.Thuoc(id)
+);
+CREATE TABLE public.ChiTietNhapKho (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  phieunhapkhoid integer,
+  thuocid integer,
+  soluong integer,
+  dongia double precision,
+  CONSTRAINT ChiTietNhapKho_pkey PRIMARY KEY (id),
+  CONSTRAINT chitietnhapkho_phieunhapkhoid_fkey FOREIGN KEY (phieunhapkhoid) REFERENCES public.PhieuNhapKho(id)
+);
+CREATE TABLE public.ChoKham (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  benhnhanid integer,
+  thoigian timestamp without time zone DEFAULT now(),
+  trangthai character varying DEFAULT 'chờ'::character varying,
+  avatar_url text,
+  tenant_id uuid,
+  branch_id uuid,
+  CONSTRAINT ChoKham_pkey PRIMARY KEY (id),
+  CONSTRAINT chokham_benhnhanid_fkey FOREIGN KEY (benhnhanid) REFERENCES public.BenhNhan(id),
+  CONSTRAINT ChoKham_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT ChoKham_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.DienTien (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  benhnhanid integer,
+  ngay timestamp without time zone,
+  noidung text,
+  tenant_id uuid,
+  CONSTRAINT DienTien_pkey PRIMARY KEY (id),
+  CONSTRAINT dientien_benhnhanid_fkey FOREIGN KEY (benhnhanid) REFERENCES public.BenhNhan(id),
+  CONSTRAINT DienTien_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.DonKinh (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  benhnhanid integer NOT NULL,
+  chandoan text,
+  ngaykham timestamp without time zone NOT NULL,
+  ghichu text,
+  thiluc_khongkinh_mp text,
+  thiluc_kinhcu_mp text,
+  thiluc_kinhmoi_mp text,
+  sokinh_cu_mp text,
+  sokinh_moi_mp text,
+  hangtrong_mp text,
+  thiluc_khongkinh_mt text,
+  thiluc_kinhcu_mt text,
+  thiluc_kinhmoi_mt text,
+  sokinh_cu_mt text,
+  sokinh_moi_mt text,
+  hangtrong_mt text,
+  gianhap_trong double precision,
+  gianhap_gong double precision,
+  no boolean DEFAULT false,
+  sotien_da_thanh_toan integer DEFAULT 0,
+  ten_gong text,
+  giatrong bigint NOT NULL DEFAULT 0,
+  giagong bigint NOT NULL DEFAULT 0,
+  lai bigint NOT NULL DEFAULT 0,
+  tenant_id uuid,
+  pd_mp text,
+  pd_mt text,
+  hang_trong_mp_id integer,
+  hang_trong_mt_id integer,
+  gong_kinh_id integer,
+  nhom_gia_gong_id integer,
+  gia_von_gong bigint DEFAULT 0,
+  branch_id uuid,
+  CONSTRAINT DonKinh_pkey PRIMARY KEY (id),
+  CONSTRAINT donkinh_benhnhanid_fkey FOREIGN KEY (benhnhanid) REFERENCES public.BenhNhan(id),
+  CONSTRAINT DonKinh_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT DonKinh_nhom_gia_gong_id_fkey FOREIGN KEY (nhom_gia_gong_id) REFERENCES public.nhom_gia_gong(id),
+  CONSTRAINT DonKinh_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.DonThuoc (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  benhnhanid integer,
+  chandoan text,
+  madonthuoc text,
+  ngay_kham timestamp without time zone,
+  chuyen_khoa character varying,
+  sotien_da_thanh_toan integer DEFAULT 0,
+  no boolean,
+  trangthai_thanh_toan text DEFAULT 'đã trả'::text CHECK (trangthai_thanh_toan = ANY (ARRAY['đã trả'::text, 'nợ'::text, 'miễn phí'::text])),
+  tongtien bigint NOT NULL DEFAULT 0,
+  lai bigint NOT NULL DEFAULT 0,
+  tenant_id uuid,
+  branch_id uuid,
+  CONSTRAINT DonThuoc_pkey PRIMARY KEY (id),
+  CONSTRAINT donthuoc_benhnhanid_fkey FOREIGN KEY (benhnhanid) REFERENCES public.BenhNhan(id),
+  CONSTRAINT DonThuoc_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT DonThuoc_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.DonThuocMau (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ten_mau character varying NOT NULL,
+  mo_ta text,
+  chuyen_khoa character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  tenant_id uuid,
+  CONSTRAINT DonThuocMau_pkey PRIMARY KEY (id),
+  CONSTRAINT DonThuocMau_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.GhiChuHeThong (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  slug text NOT NULL DEFAULT 'huong-dan'::text,
+  title text NOT NULL DEFAULT 'Hướng dẫn sử dụng'::text,
+  content text NOT NULL DEFAULT ''::text,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_by uuid,
+  CONSTRAINT GhiChuHeThong_pkey PRIMARY KEY (id),
+  CONSTRAINT GhiChuHeThong_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT GhiChuHeThong_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.GongKinh (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ten_gong text NOT NULL,
+  chat_lieu text,
+  gia_nhap integer DEFAULT 0,
+  gia_ban integer DEFAULT 0,
+  mo_ta text,
+  ngay_tao timestamp without time zone DEFAULT now(),
+  trang_thai boolean DEFAULT true,
+  tenant_id uuid,
+  ma_gong text,
+  mau_sac text,
+  kich_co text,
+  nha_cung_cap_id integer,
+  ton_kho integer DEFAULT 0,
+  muc_ton_can_co integer DEFAULT 2,
+  nhom_gia_gong_id integer,
+  branch_id uuid,
+  CONSTRAINT GongKinh_pkey PRIMARY KEY (id),
+  CONSTRAINT GongKinh_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT GongKinh_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id),
+  CONSTRAINT GongKinh_nhom_gia_gong_id_fkey FOREIGN KEY (nhom_gia_gong_id) REFERENCES public.nhom_gia_gong(id),
+  CONSTRAINT GongKinh_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.HangTrong (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ten_hang text NOT NULL,
+  gia_nhap integer DEFAULT 0,
+  gia_ban integer DEFAULT 0,
+  mo_ta text,
+  ngay_tao timestamp without time zone DEFAULT now(),
+  trang_thai boolean DEFAULT true,
+  tenant_id uuid,
+  loai_trong text DEFAULT 'don_trong'::text CHECK (loai_trong = ANY (ARRAY['don_trong'::text, 'loan'::text, 'da_trong'::text])),
+  kieu_quan_ly text DEFAULT 'SAN_KHO'::text CHECK (kieu_quan_ly = ANY (ARRAY['SAN_KHO'::text, 'DAT_KHI_CO_KHACH'::text])),
+  nha_cung_cap_id integer,
+  ngung_kinh_doanh boolean DEFAULT false,
+  CONSTRAINT HangTrong_pkey PRIMARY KEY (id),
+  CONSTRAINT HangTrong_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT HangTrong_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.MauSoKinh (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  so_kinh text NOT NULL UNIQUE,
+  thu_tu integer DEFAULT 0,
+  CONSTRAINT MauSoKinh_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.MauThiLuc (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  gia_tri text NOT NULL UNIQUE,
+  thu_tu integer DEFAULT 0,
+  CONSTRAINT MauThiLuc_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.NhaCungCap (
+  id bigint NOT NULL DEFAULT nextval('nhacungcap_id_seq'::regclass),
+  ten text NOT NULL,
+  dia_chi text,
+  dien_thoai text,
+  ghi_chu text,
+  facebook text,
+  tenant_id uuid,
+  email text,
+  ma_so_thue text,
+  nguoi_lien_he text,
+  loai_hang ARRAY DEFAULT '{}'::text[],
+  trang_thai text DEFAULT 'active'::text CHECK (trang_thai = ANY (ARRAY['active'::text, 'inactive'::text])),
+  CONSTRAINT NhaCungCap_pkey PRIMARY KEY (id),
+  CONSTRAINT NhaCungCap_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.NhomThuoc (
+  id integer NOT NULL DEFAULT nextval('"NhomThuoc_id_seq"'::regclass),
+  ten text NOT NULL,
+  tenant_id uuid,
+  CONSTRAINT NhomThuoc_pkey PRIMARY KEY (id),
+  CONSTRAINT NhomThuoc_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.NoBenhNhan (
+  id integer NOT NULL DEFAULT nextval('"NoBenhNhan_id_seq"'::regclass),
+  benhnhanid integer,
+  donthuocid integer,
+  donkinhid integer,
+  sotienno bigint DEFAULT 0,
+  sotientra bigint DEFAULT 0,
+  ngayno timestamp with time zone DEFAULT now(),
+  trangthai text DEFAULT 'chưa trả'::text CHECK (trangthai = ANY (ARRAY['chưa trả'::text, 'đã trả'::text, 'trả một phần'::text])),
+  ghichu text,
+  CONSTRAINT NoBenhNhan_pkey PRIMARY KEY (id),
+  CONSTRAINT NoBenhNhan_benhnhanid_fkey FOREIGN KEY (benhnhanid) REFERENCES public.BenhNhan(id),
+  CONSTRAINT NoBenhNhan_donthuocid_fkey FOREIGN KEY (donthuocid) REFERENCES public.DonThuoc(id),
+  CONSTRAINT NoBenhNhan_donkinhid_fkey FOREIGN KEY (donkinhid) REFERENCES public.DonKinh(id)
+);
+CREATE TABLE public.PhieuNhapKho (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ngaylap timestamp without time zone,
+  nhacungcap text,
+  tongtien double precision,
+  tenant_id uuid,
+  CONSTRAINT PhieuNhapKho_pkey PRIMARY KEY (id),
+  CONSTRAINT PhieuNhapKho_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.Thuoc (
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  mathuoc text,
+  tenthuoc text,
+  donvitinh text,
+  cachdung text,
+  nhomthuoc text,
+  hoatchat text,
+  tonkho integer,
+  soluongmacdinh integer,
+  la_thu_thuat boolean DEFAULT false,
+  giaban bigint NOT NULL DEFAULT 0,
+  gianhap bigint NOT NULL DEFAULT 0,
+  tenant_id uuid,
+  ngung_kinh_doanh boolean DEFAULT false,
+  muc_ton_can_co integer DEFAULT 10,
+  nha_cung_cap_id integer,
+  branch_id uuid,
+  CONSTRAINT Thuoc_pkey PRIMARY KEY (id),
+  CONSTRAINT Thuoc_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT Thuoc_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id),
+  CONSTRAINT Thuoc_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.branch_transfers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  from_branch_id uuid NOT NULL,
+  to_branch_id uuid NOT NULL,
+  loai text NOT NULL CHECK (loai = ANY (ARRAY['lens'::text, 'gong'::text, 'thuoc'::text, 'vat_tu'::text])),
+  item_id text NOT NULL,
+  ten_san_pham text,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia bigint DEFAULT 0,
+  ghi_chu text,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'completed'::text, 'rejected'::text, 'cancelled'::text])),
+  nguoi_tao uuid NOT NULL,
+  nguoi_duyet uuid,
+  completed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT branch_transfers_pkey PRIMARY KEY (id),
+  CONSTRAINT branch_transfers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT branch_transfers_from_branch_id_fkey FOREIGN KEY (from_branch_id) REFERENCES public.branches(id),
+  CONSTRAINT branch_transfers_to_branch_id_fkey FOREIGN KEY (to_branch_id) REFERENCES public.branches(id),
+  CONSTRAINT branch_transfers_nguoi_tao_fkey FOREIGN KEY (nguoi_tao) REFERENCES auth.users(id),
+  CONSTRAINT branch_transfers_nguoi_duyet_fkey FOREIGN KEY (nguoi_duyet) REFERENCES auth.users(id)
+);
+CREATE TABLE public.branches (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  ten_chi_nhanh text NOT NULL,
+  dia_chi text,
+  dien_thoai text,
+  is_main boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT branches_pkey PRIMARY KEY (id),
+  CONSTRAINT branches_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.cau_hinh_mau_in (
+  id integer NOT NULL DEFAULT nextval('cau_hinh_mau_in_id_seq'::regclass),
+  tenant_id uuid NOT NULL UNIQUE,
+  ten_cua_hang text DEFAULT ''::text,
+  dia_chi text DEFAULT ''::text,
+  dien_thoai text DEFAULT ''::text,
+  logo_url text DEFAULT ''::text,
+  hien_thi_logo boolean DEFAULT true,
+  hien_thi_chan_doan boolean DEFAULT true,
+  hien_thi_sokinh_cu boolean DEFAULT false,
+  hien_thi_thiluc boolean DEFAULT true,
+  hien_thi_pd boolean DEFAULT true,
+  hien_thi_gong boolean DEFAULT true,
+  hien_thi_trong boolean DEFAULT true,
+  hien_thi_gia boolean DEFAULT false,
+  hien_thi_ghi_chu boolean DEFAULT true,
+  ghi_chu_cuoi text DEFAULT ''::text,
+  hien_thi_logo_thuoc boolean DEFAULT true,
+  hien_thi_chan_doan_thuoc boolean DEFAULT true,
+  hien_thi_gia_thuoc boolean DEFAULT false,
+  hien_thi_ghi_chu_thuoc boolean DEFAULT true,
+  ghi_chu_cuoi_thuoc text DEFAULT ''::text,
+  chuc_danh_nguoi_ky text DEFAULT ''::text,
+  ho_ten_nguoi_ky text DEFAULT ''::text,
+  chu_ky_url text DEFAULT ''::text,
+  hien_thi_nguoi_ky boolean DEFAULT true,
+  hien_thi_nguoi_ky_thuoc boolean DEFAULT true,
+  hien_thi_ngay_kham boolean DEFAULT true,
+  hien_thi_ngay_kham_thuoc boolean DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT cau_hinh_mau_in_pkey PRIMARY KEY (id),
+  CONSTRAINT cau_hinh_mau_in_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.crm_care_status (
+  id integer NOT NULL DEFAULT nextval('crm_care_status_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  benhnhan_id integer NOT NULL,
+  status text NOT NULL DEFAULT 'chua_lien_he'::text CHECK (status = ANY (ARRAY['chua_lien_he'::text, 'da_goi'::text, 'hen_goi_lai'::text, 'da_chot_lich'::text])),
+  note text,
+  next_call_at timestamp with time zone,
+  updated_by uuid,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT crm_care_status_pkey PRIMARY KEY (id),
+  CONSTRAINT crm_care_status_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT crm_care_status_benhnhan_id_fkey FOREIGN KEY (benhnhan_id) REFERENCES public.BenhNhan(id)
+);
+CREATE TABLE public.frame_export (
+  id integer NOT NULL DEFAULT nextval('frame_export_id_seq'::regclass),
+  tenant_id uuid,
+  gong_kinh_id integer NOT NULL,
+  don_kinh_id integer,
+  so_luong integer NOT NULL DEFAULT 1 CHECK (so_luong > 0),
+  ngay_xuat timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT frame_export_pkey PRIMARY KEY (id),
+  CONSTRAINT frame_export_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT frame_export_gong_kinh_id_fkey FOREIGN KEY (gong_kinh_id) REFERENCES public.GongKinh(id),
+  CONSTRAINT frame_export_don_kinh_id_fkey FOREIGN KEY (don_kinh_id) REFERENCES public.DonKinh(id)
+);
+CREATE TABLE public.frame_import (
+  id integer NOT NULL DEFAULT nextval('frame_import_id_seq'::regclass),
+  tenant_id uuid,
+  gong_kinh_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia bigint DEFAULT 0,
+  nha_cung_cap_id integer,
+  ghi_chu text,
+  ngay_nhap timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT frame_import_pkey PRIMARY KEY (id),
+  CONSTRAINT frame_import_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT frame_import_gong_kinh_id_fkey FOREIGN KEY (gong_kinh_id) REFERENCES public.GongKinh(id),
+  CONSTRAINT frame_import_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.hen_kham_lai (
+  id bigint NOT NULL DEFAULT nextval('hen_kham_lai_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  benhnhanid integer,
+  donkinhid integer,
+  ten_benhnhan text,
+  dienthoai text,
+  ngay_hen date NOT NULL,
+  gio_hen time without time zone,
+  ly_do text,
+  trang_thai text DEFAULT 'cho'::text,
+  ghichu text,
+  created_at timestamp with time zone DEFAULT now(),
+  branch_id uuid,
+  CONSTRAINT hen_kham_lai_pkey PRIMARY KEY (id),
+  CONSTRAINT hen_kham_lai_benhnhanid_fkey FOREIGN KEY (benhnhanid) REFERENCES public.BenhNhan(id),
+  CONSTRAINT hen_kham_lai_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.import_receipt (
+  id integer NOT NULL DEFAULT nextval('import_receipt_id_seq'::regclass),
+  tenant_id uuid,
+  ma_phieu text,
+  nha_cung_cap_id integer,
+  tong_tien bigint DEFAULT 0,
+  ghi_chu text,
+  ngay_nhap timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT import_receipt_pkey PRIMARY KEY (id),
+  CONSTRAINT import_receipt_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT import_receipt_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.import_receipt_detail (
+  id integer NOT NULL DEFAULT nextval('import_receipt_detail_id_seq'::regclass),
+  import_receipt_id integer NOT NULL,
+  loai_hang text NOT NULL CHECK (loai_hang = ANY (ARRAY['thuoc'::text, 'trong_kinh'::text, 'gong_kinh'::text, 'vat_tu'::text])),
+  thuoc_id integer,
+  lens_stock_id integer,
+  gong_kinh_id integer,
+  medical_supply_id integer,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia bigint DEFAULT 0,
+  thanh_tien bigint DEFAULT (so_luong * don_gia),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT import_receipt_detail_pkey PRIMARY KEY (id),
+  CONSTRAINT import_receipt_detail_import_receipt_id_fkey FOREIGN KEY (import_receipt_id) REFERENCES public.import_receipt(id),
+  CONSTRAINT import_receipt_detail_thuoc_id_fkey FOREIGN KEY (thuoc_id) REFERENCES public.Thuoc(id),
+  CONSTRAINT import_receipt_detail_lens_stock_id_fkey FOREIGN KEY (lens_stock_id) REFERENCES public.lens_stock(id),
+  CONSTRAINT import_receipt_detail_gong_kinh_id_fkey FOREIGN KEY (gong_kinh_id) REFERENCES public.GongKinh(id),
+  CONSTRAINT import_receipt_detail_medical_supply_id_fkey FOREIGN KEY (medical_supply_id) REFERENCES public.medical_supply(id)
+);
+CREATE TABLE public.lens_export_damaged (
+  id integer NOT NULL DEFAULT nextval('lens_export_damaged_id_seq'::regclass),
+  tenant_id uuid,
+  lens_stock_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  ly_do text NOT NULL,
+  ghi_chu text,
+  ngay_hong timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT lens_export_damaged_pkey PRIMARY KEY (id),
+  CONSTRAINT lens_export_damaged_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT lens_export_damaged_lens_stock_id_fkey FOREIGN KEY (lens_stock_id) REFERENCES public.lens_stock(id)
+);
+CREATE TABLE public.lens_export_sale (
+  id integer NOT NULL DEFAULT nextval('lens_export_sale_id_seq'::regclass),
+  tenant_id uuid,
+  lens_stock_id integer NOT NULL,
+  don_kinh_id integer,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  mat text CHECK (mat = ANY (ARRAY['trai'::text, 'phai'::text])),
+  ngay_xuat timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT lens_export_sale_pkey PRIMARY KEY (id),
+  CONSTRAINT lens_export_sale_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT lens_export_sale_lens_stock_id_fkey FOREIGN KEY (lens_stock_id) REFERENCES public.lens_stock(id),
+  CONSTRAINT lens_export_sale_don_kinh_id_fkey FOREIGN KEY (don_kinh_id) REFERENCES public.DonKinh(id)
+);
+CREATE TABLE public.lens_import (
+  id integer NOT NULL DEFAULT nextval('lens_import_id_seq'::regclass),
+  tenant_id uuid,
+  lens_stock_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia bigint DEFAULT 0,
+  nha_cung_cap_id integer,
+  ghi_chu text,
+  ngay_nhap timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT lens_import_pkey PRIMARY KEY (id),
+  CONSTRAINT lens_import_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT lens_import_lens_stock_id_fkey FOREIGN KEY (lens_stock_id) REFERENCES public.lens_stock(id),
+  CONSTRAINT lens_import_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.lens_order (
+  id integer NOT NULL DEFAULT nextval('lens_order_id_seq'::regclass),
+  tenant_id uuid,
+  don_kinh_id integer NOT NULL,
+  hang_trong_id integer NOT NULL,
+  so_luong_mieng integer NOT NULL DEFAULT 1,
+  sph numeric NOT NULL,
+  cyl numeric NOT NULL DEFAULT 0,
+  add_power numeric,
+  mat text CHECK (mat = ANY (ARRAY['trai'::text, 'phai'::text])),
+  nha_cung_cap_id integer,
+  trang_thai text NOT NULL DEFAULT 'cho_dat'::text CHECK (trang_thai = ANY (ARRAY['cho_dat'::text, 'da_dat'::text, 'da_nhan'::text, 'huy'::text])),
+  ngay_dat timestamp with time zone,
+  ngay_nhan timestamp with time zone,
+  ghi_chu text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT lens_order_pkey PRIMARY KEY (id),
+  CONSTRAINT lens_order_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT lens_order_don_kinh_id_fkey FOREIGN KEY (don_kinh_id) REFERENCES public.DonKinh(id),
+  CONSTRAINT lens_order_hang_trong_id_fkey FOREIGN KEY (hang_trong_id) REFERENCES public.HangTrong(id),
+  CONSTRAINT lens_order_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.lens_stock (
+  id integer NOT NULL DEFAULT nextval('lens_stock_id_seq'::regclass),
+  tenant_id uuid,
+  hang_trong_id integer NOT NULL,
+  sph numeric NOT NULL,
+  cyl numeric NOT NULL DEFAULT 0,
+  add_power numeric,
+  mat text CHECK (mat = ANY (ARRAY['trai'::text, 'phai'::text])),
+  ton_dau_ky integer NOT NULL DEFAULT 0,
+  ton_hien_tai integer NOT NULL DEFAULT 0,
+  muc_ton_can_co integer NOT NULL DEFAULT 10,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  trang_thai_ton text DEFAULT 
+CASE
+    WHEN (ton_hien_tai <= 0) THEN 'HET'::text
+    WHEN (ton_hien_tai < muc_ton_can_co) THEN 'SAP_HET'::text
+    ELSE 'DU'::text
+END,
+  branch_id uuid,
+  CONSTRAINT lens_stock_pkey PRIMARY KEY (id),
+  CONSTRAINT lens_stock_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT lens_stock_hang_trong_id_fkey FOREIGN KEY (hang_trong_id) REFERENCES public.HangTrong(id),
+  CONSTRAINT lens_stock_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id)
+);
+CREATE TABLE public.medical_supply (
+  id integer NOT NULL DEFAULT nextval('medical_supply_id_seq'::regclass),
+  tenant_id uuid,
+  ma_vat_tu text,
+  ten_vat_tu text NOT NULL,
+  don_vi_tinh text DEFAULT 'cái'::text,
+  gia_nhap bigint DEFAULT 0,
+  gia_ban bigint DEFAULT 0,
+  ton_kho integer NOT NULL DEFAULT 0,
+  muc_ton_can_co integer DEFAULT 5,
+  nha_cung_cap_id integer,
+  mo_ta text,
+  trang_thai text DEFAULT 'active'::text CHECK (trang_thai = ANY (ARRAY['active'::text, 'inactive'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT medical_supply_pkey PRIMARY KEY (id),
+  CONSTRAINT medical_supply_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT medical_supply_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.nhom_gia_gong (
+  id integer NOT NULL DEFAULT nextval('nhom_gia_gong_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  ten_nhom text NOT NULL,
+  gia_ban_tu bigint DEFAULT 0,
+  gia_ban_den bigint DEFAULT 0,
+  gia_ban_mac_dinh bigint DEFAULT 0,
+  gia_nhap_trung_binh bigint DEFAULT 0,
+  so_luong_ton integer DEFAULT 0,
+  mo_ta text,
+  trang_thai text DEFAULT 'active'::text CHECK (trang_thai = ANY (ARRAY['active'::text, 'inactive'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT nhom_gia_gong_pkey PRIMARY KEY (id),
+  CONSTRAINT nhom_gia_gong_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.nhom_gia_gong_nhap (
+  id integer NOT NULL DEFAULT nextval('nhom_gia_gong_nhap_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  nhom_gia_gong_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia bigint DEFAULT 0,
+  ghi_chu text,
+  ngay_nhap timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT nhom_gia_gong_nhap_pkey PRIMARY KEY (id),
+  CONSTRAINT nhom_gia_gong_nhap_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT nhom_gia_gong_nhap_nhom_gia_gong_id_fkey FOREIGN KEY (nhom_gia_gong_id) REFERENCES public.nhom_gia_gong(id)
+);
+CREATE TABLE public.patient_transfers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  benhnhan_id integer NOT NULL,
+  from_branch_id uuid NOT NULL,
+  to_branch_id uuid NOT NULL,
+  ly_do text,
+  nguoi_chuyen uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT patient_transfers_pkey PRIMARY KEY (id),
+  CONSTRAINT patient_transfers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT patient_transfers_from_branch_id_fkey FOREIGN KEY (from_branch_id) REFERENCES public.branches(id),
+  CONSTRAINT patient_transfers_to_branch_id_fkey FOREIGN KEY (to_branch_id) REFERENCES public.branches(id),
+  CONSTRAINT patient_transfers_nguoi_chuyen_fkey FOREIGN KEY (nguoi_chuyen) REFERENCES auth.users(id)
+);
+CREATE TABLE public.payment_orders (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  plan text NOT NULL CHECK (plan = ANY (ARRAY['basic'::text, 'pro'::text, 'enterprise'::text])),
+  amount bigint NOT NULL,
+  months integer NOT NULL DEFAULT 1,
+  transfer_code text NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'paid'::text, 'expired'::text, 'cancelled'::text])),
+  paid_at timestamp with time zone,
+  bank_ref text,
+  validated_at timestamp with time zone,
+  sepay_order_id text,
+  expires_at timestamp with time zone NOT NULL DEFAULT (now() + '24:00:00'::interval),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT payment_orders_pkey PRIMARY KEY (id),
+  CONSTRAINT payment_orders_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT payment_orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.staff_assignments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  branch_id uuid NOT NULL,
+  is_primary boolean NOT NULL DEFAULT true,
+  from_date date NOT NULL DEFAULT CURRENT_DATE,
+  to_date date,
+  ghi_chu text,
+  created_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT staff_assignments_pkey PRIMARY KEY (id),
+  CONSTRAINT staff_assignments_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT staff_assignments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT staff_assignments_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES public.branches(id),
+  CONSTRAINT staff_assignments_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.subscription_plans (
+  id integer NOT NULL DEFAULT nextval('subscription_plans_id_seq'::regclass),
+  plan_key text NOT NULL UNIQUE,
+  name text NOT NULL,
+  price bigint NOT NULL DEFAULT 0,
+  period_label text DEFAULT '/tháng'::text,
+  features ARRAY DEFAULT '{}'::text[],
+  is_popular boolean DEFAULT false,
+  is_active boolean DEFAULT true,
+  sort_order integer DEFAULT 0,
+  trial_days integer,
+  trial_max_prescriptions integer,
+  max_users integer,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  allowed_features ARRAY DEFAULT '{}'::text[],
+  max_branches integer DEFAULT 1,
+  branch_addon_price bigint DEFAULT 0,
+  CONSTRAINT subscription_plans_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.supply_export (
+  id integer NOT NULL DEFAULT nextval('supply_export_id_seq'::regclass),
+  tenant_id uuid,
+  medical_supply_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  ly_do text DEFAULT 'su_dung'::text,
+  ghi_chu text,
+  ngay_xuat timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT supply_export_pkey PRIMARY KEY (id),
+  CONSTRAINT supply_export_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT supply_export_medical_supply_id_fkey FOREIGN KEY (medical_supply_id) REFERENCES public.medical_supply(id)
+);
+CREATE TABLE public.supply_import (
+  id integer NOT NULL DEFAULT nextval('supply_import_id_seq'::regclass),
+  tenant_id uuid,
+  medical_supply_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia bigint DEFAULT 0,
+  nha_cung_cap_id integer,
+  ghi_chu text,
+  ngay_nhap timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT supply_import_pkey PRIMARY KEY (id),
+  CONSTRAINT supply_import_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT supply_import_medical_supply_id_fkey FOREIGN KEY (medical_supply_id) REFERENCES public.medical_supply(id),
+  CONSTRAINT supply_import_nha_cung_cap_id_fkey FOREIGN KEY (nha_cung_cap_id) REFERENCES public.NhaCungCap(id)
+);
+CREATE TABLE public.tenant_invitations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  email text NOT NULL,
+  role text NOT NULL DEFAULT 'staff'::text CHECK (role = ANY (ARRAY['admin'::text, 'doctor'::text, 'staff'::text])),
+  invited_by uuid NOT NULL,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'expired'::text, 'cancelled'::text])),
+  expires_at timestamp with time zone NOT NULL DEFAULT (now() + '7 days'::interval),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_invitations_pkey PRIMARY KEY (id),
+  CONSTRAINT tenant_invitations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT tenant_invitations_invited_by_fkey FOREIGN KEY (invited_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.tenantmembership (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  role text NOT NULL DEFAULT 'staff'::text CHECK (role = ANY (ARRAY['owner'::text, 'admin'::text, 'doctor'::text, 'staff'::text])),
+  active boolean NOT NULL DEFAULT true,
+  invited_by uuid,
+  last_login_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tenantmembership_pkey PRIMARY KEY (id),
+  CONSTRAINT tenantmembership_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT tenantmembership_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT tenantmembership_invited_by_fkey FOREIGN KEY (invited_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.tenants (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  code text UNIQUE,
+  phone text,
+  address text,
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'suspended'::text, 'inactive'::text])),
+  owner_id uuid,
+  settings jsonb DEFAULT '{}'::jsonb,
+  plan text NOT NULL DEFAULT 'trial'::text CHECK (plan = ANY (ARRAY['trial'::text, 'basic'::text, 'pro'::text, 'enterprise'::text])),
+  plan_expires_at timestamp with time zone,
+  plan_source text NOT NULL DEFAULT 'trial'::text CHECK (plan_source = ANY (ARRAY['trial'::text, 'admin'::text, 'payment'::text])),
+  trial_start timestamp with time zone DEFAULT now(),
+  trial_days integer DEFAULT 90,
+  trial_max_prescriptions integer DEFAULT 1000,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tenants_pkey PRIMARY KEY (id),
+  CONSTRAINT tenants_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.thong_bao (
+  id bigint NOT NULL DEFAULT nextval('thong_bao_id_seq'::regclass),
+  tenant_id uuid,
+  user_id uuid,
+  tieu_de text NOT NULL,
+  noi_dung text NOT NULL,
+  loai text NOT NULL DEFAULT 'system'::text CHECK (loai = ANY (ARRAY['system'::text, 'admin'::text, 'reminder'::text, 'warning'::text])),
+  da_doc boolean NOT NULL DEFAULT false,
+  created_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT thong_bao_pkey PRIMARY KEY (id),
+  CONSTRAINT thong_bao_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT thong_bao_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT thong_bao_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.thuoc_huy (
+  id integer NOT NULL DEFAULT nextval('thuoc_huy_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  thuoc_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  ly_do text NOT NULL DEFAULT 'het_han'::text,
+  ghi_chu text,
+  nguoi_huy uuid,
+  ngay_huy timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT thuoc_huy_pkey PRIMARY KEY (id),
+  CONSTRAINT thuoc_huy_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT thuoc_huy_thuoc_id_fkey FOREIGN KEY (thuoc_id) REFERENCES public.Thuoc(id)
+);
+CREATE TABLE public.thuoc_nhap_kho (
+  id integer NOT NULL DEFAULT nextval('thuoc_nhap_kho_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  thuoc_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  don_gia numeric DEFAULT 0,
+  thanh_tien numeric DEFAULT 0,
+  nha_cung_cap text,
+  so_lo text,
+  han_su_dung date,
+  ghi_chu text,
+  nguoi_nhap uuid,
+  ngay_nhap timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT thuoc_nhap_kho_pkey PRIMARY KEY (id),
+  CONSTRAINT thuoc_nhap_kho_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT thuoc_nhap_kho_thuoc_id_fkey FOREIGN KEY (thuoc_id) REFERENCES public.Thuoc(id)
+);
+CREATE TABLE public.thuoc_xuat_don (
+  id integer NOT NULL DEFAULT nextval('thuoc_xuat_don_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  don_thuoc_id integer NOT NULL,
+  thuoc_id integer NOT NULL,
+  so_luong integer NOT NULL CHECK (so_luong > 0),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT thuoc_xuat_don_pkey PRIMARY KEY (id),
+  CONSTRAINT thuoc_xuat_don_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT thuoc_xuat_don_don_thuoc_id_fkey FOREIGN KEY (don_thuoc_id) REFERENCES public.DonThuoc(id),
+  CONSTRAINT thuoc_xuat_don_thuoc_id_fkey FOREIGN KEY (thuoc_id) REFERENCES public.Thuoc(id)
+);
+CREATE TABLE public.tin_nhan (
+  id bigint NOT NULL DEFAULT nextval('tin_nhan_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  sender_id uuid NOT NULL,
+  noi_dung text NOT NULL,
+  is_from_admin boolean NOT NULL DEFAULT false,
+  parent_id bigint,
+  da_doc boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tin_nhan_pkey PRIMARY KEY (id),
+  CONSTRAINT tin_nhan_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT tin_nhan_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES auth.users(id),
+  CONSTRAINT tin_nhan_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.tin_nhan(id)
+);
+CREATE TABLE public.tin_nhan_platform (
+  id bigint NOT NULL DEFAULT nextval('tin_nhan_platform_id_seq'::regclass),
+  tenant_id uuid NOT NULL,
+  sender_id uuid NOT NULL,
+  noi_dung text NOT NULL,
+  sender_role text NOT NULL DEFAULT 'tenant'::text,
+  da_doc_tenant boolean NOT NULL DEFAULT false,
+  da_doc_admin boolean NOT NULL DEFAULT false,
+  deleted_by_tenant boolean NOT NULL DEFAULT false,
+  deleted_by_admin boolean NOT NULL DEFAULT false,
+  topic text,
+  attachments jsonb DEFAULT '[]'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tin_nhan_platform_pkey PRIMARY KEY (id),
+  CONSTRAINT tin_nhan_platform_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+  CONSTRAINT tin_nhan_platform_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.user_profiles (
+  id uuid NOT NULL,
+  full_name text,
+  phone text,
+  avatar_url text,
+  default_tenant_id uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT user_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT user_profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id),
+  CONSTRAINT user_profiles_default_tenant_id_fkey FOREIGN KEY (default_tenant_id) REFERENCES public.tenants(id)
+);
+CREATE TABLE public.user_roles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  role text NOT NULL DEFAULT 'staff'::text CHECK (role = ANY (ARRAY['superadmin'::text, 'admin'::text, 'doctor'::text, 'staff'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT user_roles_pkey PRIMARY KEY (id),
+  CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.webhook_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  source text NOT NULL,
+  raw_payload jsonb NOT NULL,
+  transfer_code text,
+  amount bigint,
+  bank_ref text,
+  validation_status text NOT NULL DEFAULT 'pending'::text CHECK (validation_status = ANY (ARRAY['pending'::text, 'valid'::text, 'invalid'::text])),
+  validation_errors ARRAY,
+  payment_order_id uuid,
+  processed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT webhook_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT webhook_logs_payment_order_id_fkey FOREIGN KEY (payment_order_id) REFERENCES public.payment_orders(id)
+);

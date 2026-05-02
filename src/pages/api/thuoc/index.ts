@@ -127,13 +127,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (method === 'PUT') {
-      const { id, ...rest } = req.body;
+      const { id, price_change_reason, ...rest } = req.body;
+
+      // Đọc giá hiện tại để so sánh và ghi price_history
+      const { data: oldRow } = await supabase
+        .from('Thuoc')
+        .select('giaban, gianhap')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+
       let query = supabase.from('Thuoc').update(rest).eq('id', id).eq('tenant_id', tenantId);
       if (!isSharedScope && branchId) {
         query = query.eq('branch_id', branchId);
       }
       const { error } = await query;
       if (error) return res.status(400).json({ error: error.message });
+
+      // Ghi log thay đổi giá (best-effort, không chặn response)
+      try {
+        const logs: any[] = [];
+        const oldBan = Number(oldRow?.giaban ?? 0);
+        const oldVon = Number(oldRow?.gianhap ?? 0);
+        if (rest.giaban !== undefined) {
+          const newBan = Number(rest.giaban) || 0;
+          if (newBan !== oldBan) {
+            logs.push({
+              tenant_id: tenantId, item_type: 'thuoc', item_id: id,
+              kind: 'ban', old_price: oldBan, new_price: newBan,
+              source: 'manual', reason: price_change_reason || null,
+              changed_by: ctx.userId,
+            });
+          }
+        }
+        if (rest.gianhap !== undefined) {
+          const newVon = Number(rest.gianhap) || 0;
+          if (newVon !== oldVon) {
+            logs.push({
+              tenant_id: tenantId, item_type: 'thuoc', item_id: id,
+              kind: 'von', old_price: oldVon, new_price: newVon,
+              source: 'manual', reason: price_change_reason || null,
+              changed_by: ctx.userId,
+            });
+          }
+        }
+        if (logs.length > 0) {
+          await supabase.from('price_history').insert(logs);
+        }
+      } catch (logErr) {
+        console.warn('price_history log failed:', logErr);
+      }
 
       return res.status(200).json({ message: 'Đã cập nhật thuốc' });
     }

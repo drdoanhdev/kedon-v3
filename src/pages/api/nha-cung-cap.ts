@@ -39,22 +39,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      const { ten, dia_chi, dien_thoai, facebook, ghi_chu } = req.body;
+      const { ten, dia_chi, dien_thoai, facebook, ghi_chu, zalo_phone } = req.body;
       if (!ten) return res.status(400).json({ message: 'Thiếu tên' });
       const { data, error } = await supabase
         .from('NhaCungCap')
-        .insert({ ten, dia_chi, dien_thoai, facebook, ghi_chu, tenant_id: tenantId })
+        .insert({ ten, dia_chi, dien_thoai, facebook, ghi_chu, zalo_phone: zalo_phone || null, tenant_id: tenantId })
         .select();
       if (error) throw error;
       return res.status(200).json({ data: data?.[0] });
     }
 
     if (req.method === 'PUT') {
-      const { id, ten, dia_chi, dien_thoai, ghi_chu, facebook } = req.body;
+      const { id, ten, dia_chi, dien_thoai, ghi_chu, facebook, zalo_phone } = req.body;
       if (!id) return res.status(400).json({ message: 'Thiếu id' });
+      const updateData: any = { ten, dia_chi, dien_thoai, ghi_chu, facebook };
+      if (zalo_phone !== undefined) updateData.zalo_phone = zalo_phone || null;
       const { data, error } = await supabase
         .from('NhaCungCap')
-        .update({ ten, dia_chi, dien_thoai, ghi_chu, facebook })
+        .update(updateData)
         .eq('id', id)
         .eq('tenant_id', tenantId)
         .select();

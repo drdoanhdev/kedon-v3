@@ -6,9 +6,10 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Package, AlertTriangle, RefreshCw, Plus, ArrowDownToLine, Trash2, Search, History } from 'lucide-react';
+import { Package, AlertTriangle, RefreshCw, Plus, ArrowDownToLine, Trash2, Search, History, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
+import PricingTab from '../components/PricingTab';
 
 // ============================================
 // INTERFACES
@@ -61,7 +62,7 @@ interface HuyRecord {
 // COMPONENT
 // ============================================
 export default function QuanLyKhoThuoc() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'nhap' | 'huy'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'nhap' | 'huy' | 'gia'>('overview');
 
   // Data states
   const [thuocList, setThuocList] = useState<ThuocStock[]>([]);
@@ -245,6 +246,7 @@ export default function QuanLyKhoThuoc() {
               { key: 'stock', label: 'Tồn kho', icon: <Search className="w-4 h-4" /> },
               { key: 'nhap', label: 'Lịch sử nhập', icon: <ArrowDownToLine className="w-4 h-4" /> },
               { key: 'huy', label: 'Lịch sử hủy', icon: <Trash2 className="w-4 h-4" /> },
+              { key: 'gia', label: 'Giá', icon: <TrendingUp className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -557,6 +559,11 @@ export default function QuanLyKhoThuoc() {
                     )}
                   </CardContent>
                 </Card>
+              )}
+
+              {/* ======================== TAB: GIÁ ======================== */}
+              {activeTab === 'gia' && (
+                <PricingTab thuocList={thuocList.map(t => ({ id: t.id, tenthuoc: t.tenthuoc, donvitinh: t.donvitinh, giaban: t.giaban, gianhap: t.gianhap }))} />
               )}
             </>
           )}

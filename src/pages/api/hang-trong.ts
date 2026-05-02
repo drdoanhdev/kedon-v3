@@ -82,17 +82,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      const { ten_hang, gia_nhap, gia_ban, mo_ta } = req.body;
-      
+      const { ten_hang, hang, gia_nhap, gia_ban, mo_ta, nha_cung_cap_id } = req.body;
+
+      const insertData: any = {
+        ten_hang,
+        gia_nhap: parseInt(gia_nhap) || 0,
+        gia_ban: parseInt(gia_ban) || 0,
+        mo_ta,
+        tenant_id: tenantId,
+      };
+      if (hang !== undefined) insertData.hang = hang || null;
+      if (nha_cung_cap_id !== undefined) {
+        insertData.nha_cung_cap_id = nha_cung_cap_id ? parseInt(nha_cung_cap_id) : null;
+      }
+
       const { data, error } = await supabase
         .from('HangTrong')
-        .insert({
-          ten_hang,
-          gia_nhap: parseInt(gia_nhap) || 0,
-          gia_ban: parseInt(gia_ban) || 0,
-          mo_ta,
-          tenant_id: tenantId
-        })
+        .insert(insertData)
         .select();
 
       if (error) {
@@ -103,14 +109,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PUT') {
-      const { id, ten_hang, gia_nhap, gia_ban, mo_ta, ngung_kinh_doanh } = req.body;
-      
+      const { id, ten_hang, hang, gia_nhap, gia_ban, mo_ta, ngung_kinh_doanh, nha_cung_cap_id } = req.body;
+
       const updateData: any = {
         ten_hang,
         gia_nhap: parseInt(gia_nhap) || 0,
         gia_ban: parseInt(gia_ban) || 0,
         mo_ta
       };
+      if (hang !== undefined) updateData.hang = hang || null;
+      if (nha_cung_cap_id !== undefined) {
+        updateData.nha_cung_cap_id = nha_cung_cap_id ? parseInt(nha_cung_cap_id) : null;
+      }
       if (ngung_kinh_doanh !== undefined) {
         updateData.ngung_kinh_doanh = Boolean(ngung_kinh_doanh);
       }

@@ -44,9 +44,16 @@ interface LensOrder {
   ngay_nhan: string | null;
   ghi_chu: string | null;
   created_at: string;
-  HangTrong?: { ten_hang: string; loai_trong: string };
+  nha_cung_cap_id?: number | null;
+  HangTrong?: {
+    ten_hang: string;
+    loai_trong: string;
+    hang?: string | null;
+    nha_cung_cap_id?: number | null;
+    NhaCungCap?: { id: number; ten: string; dien_thoai?: string | null; zalo_phone?: string | null } | null;
+  };
   DonKinh?: { id: number; BenhNhan?: { ten: string } };
-  NhaCungCap?: { ten: string };
+  NhaCungCap?: { id?: number; ten: string; dien_thoai?: string | null; zalo_phone?: string | null };
 }
 
 interface HangTrong {
@@ -681,12 +688,12 @@ export default function QuanLyKho() {
     return lines.join('\n');
   };
 
-  const buildOrderNeedText = () => {
-    const pending = lensOrders.filter(o => o.trang_thai === 'cho_dat' || o.trang_thai === 'da_dat');
-    if (pending.length === 0) return '';
+  const buildOrderNeedTextForOrders = (orders: LensOrder[]): string => {
+    if (orders.length === 0) return '';
     const grouped = new Map<string, { do: string; sl: number; mat: string | null; isProgressive: boolean }[]>();
-    for (const o of pending) {
-      const name = o.HangTrong?.ten_hang || 'Không rõ';
+    for (const o of orders) {
+      const brand = o.HangTrong?.hang ? `[${o.HangTrong.hang}] ` : '';
+      const name = brand + (o.HangTrong?.ten_hang || 'Không rõ');
       if (!grouped.has(name)) grouped.set(name, []);
       grouped.get(name)!.push({
         do: formatDoText(o.sph, o.cyl, o.add_power),
@@ -698,7 +705,6 @@ export default function QuanLyKho() {
     const lines: string[] = [];
     for (const [name, items] of grouped) {
       lines.push(`- ${name}:`);
-      // Progressive: keep L/R per line, don't merge
       const progressive = items.filter(i => i.isProgressive);
       const single = items.filter(i => !i.isProgressive);
 
@@ -707,7 +713,6 @@ export default function QuanLyKho() {
         lines.push(`${i.sl} miếng ${eyeLabel ? eyeLabel + ' ' : ''}${i.do}`);
       }
 
-      // Single vision: merge same degree
       if (single.length > 0) {
         const merged = new Map<string, number>();
         for (const i of single) {
@@ -719,6 +724,71 @@ export default function QuanLyKho() {
       }
     }
     return lines.join('\n');
+  };
+
+  const buildOrderNeedText = () => {
+    const pending = lensOrders.filter(o => o.trang_thai === 'cho_dat' || o.trang_thai === 'da_dat');
+    return buildOrderNeedTextForOrders(pending);
+  };
+
+  // Group pending lens orders by supplier (NCC) using either
+  // lens_order.NhaCungCap (already-assigned) or HangTrong.NhaCungCap (default supplier)
+  const getOrdersGroupedByNCC = (): Array<{
+    nccId: number | null;
+    nccTen: string;
+    nccPhone: string | null;
+    orders: LensOrder[];
+  }> => {
+    const pending = lensOrders.filter(o => o.trang_thai === 'cho_dat' || o.trang_thai === 'da_dat');
+    const map = new Map<string, { nccId: number | null; nccTen: string; nccPhone: string | null; orders: LensOrder[] }>();
+    for (const o of pending) {
+      const ncc = o.NhaCungCap || o.HangTrong?.NhaCungCap || null;
+      const nccId = ncc?.id ?? null;
+      const nccTen = ncc?.ten || 'Chưa có NCC';
+      const nccPhone = ncc?.zalo_phone || ncc?.dien_thoai || null;
+      const key = nccId != null ? `id:${nccId}` : `name:${nccTen}`;
+      if (!map.has(key)) map.set(key, { nccId, nccTen, nccPhone, orders: [] });
+      map.get(key)!.orders.push(o);
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      // No-NCC group last
+      if (a.nccId == null && b.nccId != null) return 1;
+      if (b.nccId == null && a.nccId != null) return -1;
+      return a.nccTen.localeCompare(b.nccTen);
+    });
+  };
+
+  // Normalize phone for zalo.me deep link.
+  // zalo.me accepts both "84xxx" and "0xxx". Strip non-digits and convert
+  // leading "+84"/"0" to a canonical "84..." form.
+  const normalizeZaloPhone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('84')) return digits;
+    if (digits.startsWith('0')) return '84' + digits.slice(1);
+    return digits;
+  };
+
+  const sendZaloToNCC = (phone: string | null, text: string, nccTen: string) => {
+    if (!text) {
+      toast.error('Không có nội dung để gửi');
+      return;
+    }
+    // Always copy text to clipboard for paste-into-Zalo
+    navigator.clipboard.writeText(text).then(
+      () => toast.success('Đã copy nội dung — dán vào chat Zalo'),
+      () => toast.error('Không thể copy clipboard')
+    );
+    if (!phone) {
+      toast(`NCC "${nccTen}" chưa có số Zalo. Hãy mở Zalo thủ công và dán.`, { icon: '⚠️' });
+      return;
+    }
+    const normalized = normalizeZaloPhone(phone);
+    if (!normalized) {
+      toast.error('Số điện thoại không hợp lệ');
+      return;
+    }
+    window.open(`https://zalo.me/${normalized}`, '_blank', 'noopener');
   };
 
   const openCopyPopup = (text: string, title: string) => {
@@ -1251,12 +1321,71 @@ export default function QuanLyKho() {
                       Tròng cần đặt ({lensOrders.length})
                       {lensOrders.some(o => o.trang_thai === 'cho_dat' || o.trang_thai === 'da_dat') && (
                         <Button onClick={() => openCopyPopup(buildOrderNeedText(), 'Danh sách tròng cần đặt NCC')} size="sm" variant="outline" className="ml-auto">
-                          <ClipboardCopy className="w-4 h-4 mr-1" /> Gửi NCC
+                          <ClipboardCopy className="w-4 h-4 mr-1" /> Copy tất cả
                         </Button>
                       )}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-4">
+                    {/* Đặt hàng theo nhà cung cấp */}
+                    {(() => {
+                      const groups = getOrdersGroupedByNCC();
+                      if (groups.length === 0) return null;
+                      return (
+                        <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+                          <div className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                            <Truck className="w-4 h-4" />
+                            Đặt theo nhà cung cấp
+                            <span className="text-xs font-normal text-gray-500">
+                              (gửi tin nhắn Zalo cho từng NCC)
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {groups.map(g => {
+                              const text = buildOrderNeedTextForOrders(g.orders);
+                              const totalMieng = g.orders.reduce((s, o) => s + (o.so_luong_mieng || 0), 0);
+                              return (
+                                <div
+                                  key={g.nccId ?? `noid-${g.nccTen}`}
+                                  className="flex items-center justify-between gap-2 rounded-md bg-white border border-blue-100 px-3 py-2"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-medium text-sm truncate">{g.nccTen}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {g.orders.length} dòng · {totalMieng} miếng
+                                      {g.nccPhone ? ` · ${g.nccPhone}` : ' · chưa có SĐT'}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1 shrink-0">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => openCopyPopup(text, `Đặt cho ${g.nccTen}`)}
+                                      title="Xem & copy nội dung"
+                                    >
+                                      <ClipboardCopy className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => sendZaloToNCC(g.nccPhone, text, g.nccTen)}
+                                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                                      title="Mở Zalo & copy nội dung"
+                                      disabled={!g.nccPhone}
+                                    >
+                                      💬 Gửi Zalo
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="text-[11px] text-gray-500 mt-2">
+                            Mẹo: NCC chưa có SĐT Zalo → vào <b>Danh mục → Nhà cung cấp</b> để bổ sung.
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {lensOrders.length === 0 ? (
                       <div className="py-12 text-center text-gray-400">
                         Không có tròng nào cần đặt
@@ -1266,19 +1395,24 @@ export default function QuanLyKho() {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b bg-gray-50 text-left text-gray-500">
-                              <th className="p-3 font-medium">Hãng tròng</th>
+                              <th className="p-3 font-medium">Hãng</th>
+                              <th className="p-3 font-medium">Loại tròng</th>
                               <th className="p-3 font-medium font-mono">Độ</th>
                               <th className="p-3 font-medium text-center">Mắt</th>
                               <th className="p-3 font-medium text-center">Miếng</th>
                               <th className="p-3 font-medium">Bệnh nhân</th>
+                              <th className="p-3 font-medium">NCC</th>
                               <th className="p-3 font-medium text-center">Trạng thái</th>
                               <th className="p-3 font-medium">Ngày tạo</th>
                               <th className="p-3 font-medium text-center">Thao tác</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {lensOrders.map(order => (
+                            {lensOrders.map(order => {
+                              const ncc = order.NhaCungCap || order.HangTrong?.NhaCungCap;
+                              return (
                               <tr key={order.id} className="border-b hover:bg-gray-50">
+                                <td className="p-3 text-gray-700">{order.HangTrong?.hang || <span className="text-gray-300">—</span>}</td>
                                 <td className="p-3 font-medium">{order.HangTrong?.ten_hang}</td>
                                 <td className="p-3 font-mono text-xs">{formatDo(order.sph, order.cyl, order.add_power)}</td>
                                 <td className="p-3 text-center">
@@ -1286,6 +1420,7 @@ export default function QuanLyKho() {
                                 </td>
                                 <td className="p-3 text-center font-bold">{order.so_luong_mieng}</td>
                                 <td className="p-3">{order.DonKinh?.BenhNhan?.ten || '-'}</td>
+                                <td className="p-3 text-xs text-gray-600">{ncc?.ten || <span className="text-gray-300">—</span>}</td>
                                 <td className="p-3 text-center">
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${orderStatusColor(order.trang_thai)}`}>
                                     {orderStatusLabel(order.trang_thai)}
@@ -1315,7 +1450,8 @@ export default function QuanLyKho() {
                                   </div>
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
