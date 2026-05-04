@@ -104,12 +104,13 @@ interface DonKinh {
 
 interface HistoryProps { items: DonKinh[]; onSelect: (don: DonKinh) => void; highlightId?: number | null; }
 const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
-  <div className="max-h-100 lg:max-h-none lg:h-full flex flex-col bg-transparent lg:bg-[#f5f6f8]">
-    <h2 className="font-bold text-gray-900 text-sm tracking-tight px-1 pt-1 pb-2 lg:px-3 lg:pt-3 flex-shrink-0">Lịch sử đơn kính {items.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold ml-1">{items.length}</span>}</h2>
+  <div className="lg:max-h-none lg:h-full lg:flex lg:flex-col contents lg:bg-[#f5f6f8]">
+    {/* Header chỉ hiển thị trên desktop — mobile đã có nhãn "Đơn cũ" trong bottom nav */}
+    <h2 className="hidden lg:block font-bold text-gray-900 text-sm tracking-tight px-3 pt-3 pb-2 flex-shrink-0">Lịch sử đơn kính {items.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold ml-1">{items.length}</span>}</h2>
     {items.length === 0 ? (
       <p className="text-xs text-gray-500 px-1 lg:px-3">Chưa có đơn kính nào</p>
     ) : (
-      <div className="space-y-2 overflow-y-auto flex-1 min-h-0 px-0 lg:px-3 pb-3">
+      <div className="space-y-2 lg:overflow-y-auto lg:flex-1 lg:min-h-0 lg:px-3 lg:pb-3">
         {items.map((don) => (
           <div
             key={don.id}
@@ -268,6 +269,39 @@ export default function KeDonKinh() {
     mobileTab,
     (idx) => setMobileTab(idx as 0 | 1 | 2),
   );
+
+  // === Swipe ngang để chuyển tab trên mobile ===
+  const tabSwipeStart = useRef<{ x: number; y: number; locked: 'h' | 'v' | null }>({ x: 0, y: 0, locked: null });
+  const tabSwipeActive = useRef(false);
+  const onTabTouchStart = (e: React.TouchEvent) => {
+    const t = e.target as HTMLElement;
+    // Bỏ qua nếu touch bắt đầu trong vùng input/textarea/select/button/link/[data-no-tab-swipe]
+    if (t.closest('input,textarea,select,button,a,[data-no-tab-swipe]')) return;
+    tabSwipeActive.current = true;
+    tabSwipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
+  };
+  const onTabTouchMove = (e: React.TouchEvent) => {
+    if (!tabSwipeActive.current) return;
+    const dx = e.touches[0].clientX - tabSwipeStart.current.x;
+    const dy = e.touches[0].clientY - tabSwipeStart.current.y;
+    if (tabSwipeStart.current.locked === null) {
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        tabSwipeStart.current.locked = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+      }
+    }
+  };
+  const onTabTouchEnd = (e: React.TouchEvent) => {
+    if (!tabSwipeActive.current) return;
+    const locked = tabSwipeStart.current.locked;
+    tabSwipeActive.current = false;
+    if (locked !== 'h') { tabSwipeStart.current.locked = null; return; }
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - tabSwipeStart.current.x;
+    const threshold = 60;
+    if (dx < -threshold && mobileTab < 2) setMobileTab((mobileTab + 1) as 0 | 1 | 2);
+    else if (dx > threshold && mobileTab > 0) setMobileTab((mobileTab - 1) as 0 | 1 | 2);
+    tabSwipeStart.current.locked = null;
+  };
 
   const fetchHenKham = useCallback(async () => {
     if (!benhnhanid) return;
@@ -1021,6 +1055,8 @@ export default function KeDonKinh() {
 
   // Chọn đơn từ lịch sử
   const handleSelectDon = (don: DonKinh) => {
+    // Mobile: chuyển sang tab Đơn kính (form) để xem/sửa
+    setMobileTab(0);
     // Xử lý ngày giờ - chuyển đổi sang múi giờ local để hiển thị đúng
     const ngayKhamValue = don.ngaykham || don.ngay_kham;
     let ngayKhamFormatted = '';
@@ -1061,7 +1097,7 @@ export default function KeDonKinh() {
   return (
     <ProtectedRoute>
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
-      <div className="flex flex-col lg:flex-row" style={{ height: 'calc(100vh - 72px)' }}>
+      <div className="flex flex-col -mt-10 lg:mt-0 lg:flex-row" style={{ height: 'calc(100vh - 72px)' }}>
         
         {/* History sidebar - Hidden on mobile, shown on desktop */}
         <aside className="hidden lg:flex lg:flex-col w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
@@ -1186,7 +1222,13 @@ export default function KeDonKinh() {
             )}
 
             {/* Scrollable content area (chứa form, payment, history, lịch hẹn) */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">
+            <div
+              className="flex-1 min-h-0 overflow-y-auto px-2 py-2 lg:p-4 flex flex-col gap-2 lg:gap-4"
+              onTouchStart={onTabTouchStart}
+              onTouchMove={onTabTouchMove}
+              onTouchEnd={onTabTouchEnd}
+              onTouchCancel={onTabTouchEnd}
+            >
 
             {/* Patient info — Desktop card */}
             {benhNhan ? (
