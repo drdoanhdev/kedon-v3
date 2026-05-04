@@ -285,15 +285,17 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile Header — chỉ thương hiệu + tên phòng khám. Mọi chức năng khác chuyển xuống MobileBottomNav. */}
-        <div className="md:hidden flex items-center justify-between h-10 px-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-base font-extrabold text-blue-900 tracking-tight flex-shrink-0">OptiGo</span>
-            {currentTenant?.name && (
-              <span className="text-xs text-gray-400 truncate">• {currentTenant.name}</span>
-            )}
+        {/* Mobile Header — chỉ thương hiệu + tên phòng khám. Ẩn trên các trang nội dung dùng header tuỳ biến (vd. /ke-don). */}
+        {!router.pathname.startsWith('/ke-don') && (
+          <div className="md:hidden flex items-center justify-between h-10 px-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base font-extrabold text-blue-900 tracking-tight flex-shrink-0">OptiGo</span>
+              {currentTenant?.name && (
+                <span className="text-xs text-gray-400 truncate">• {currentTenant.name}</span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Mobile Menu Dropdown (đã ngừng dùng — thay bằng MobileBottomNav) */}
         {false && isMobileMenuOpen && (

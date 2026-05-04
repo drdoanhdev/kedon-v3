@@ -73,6 +73,118 @@ interface BenhNhan {
   tuoi?: number;
 }
 
+// Mobile swipeable row — vuốt sang trái để hiện nút − / + / 🗑 (giống KiotViet)
+interface MobileDrugRowProps {
+  item: ChiTietDonThuoc;
+  stock?: { tonkho: number; trang_thai: string };
+  onTap: () => void;
+  onDelete: () => void;
+  onIncrement: () => void;
+  onDecrement: () => void;
+}
+function MobileDrugRow({ item, stock, onTap, onDelete, onIncrement, onDecrement }: MobileDrugRowProps) {
+  const ACTION_WIDTH = 168; // 3 buttons × 56px
+  const [tx, setTx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startX = useRef(0);
+  const startTx = useRef(0);
+  const movedRef = useRef(false);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    startTx.current = tx;
+    movedRef.current = false;
+    setDragging(true);
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const dx = e.touches[0].clientX - startX.current;
+    if (Math.abs(dx) > 6) movedRef.current = true;
+    let next = startTx.current + dx;
+    if (next > 0) next = 0;
+    if (next < -ACTION_WIDTH - 24) next = -ACTION_WIDTH - 24;
+    setTx(next);
+  };
+  const onTouchEnd = () => {
+    setDragging(false);
+    if (tx < -ACTION_WIDTH / 2) setTx(-ACTION_WIDTH);
+    else setTx(0);
+  };
+
+  const handleRowClick = () => {
+    if (movedRef.current) return;
+    if (tx !== 0) { setTx(0); return; }
+    onTap();
+  };
+
+  const isLan = item.thuoc.donvitinh.toLowerCase().includes('lần');
+
+  return (
+    <div data-no-tab-swipe className="relative overflow-hidden select-none bg-white">
+      {/* Action panel behind */}
+      <div className="absolute inset-y-0 right-0 flex items-stretch">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDecrement(); }}
+          className="w-14 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-2xl flex items-center justify-center"
+          aria-label="Giảm số lượng"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onIncrement(); }}
+          className="w-14 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-2xl flex items-center justify-center"
+          aria-label="Tăng số lượng"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="w-14 bg-red-500 hover:bg-red-600 text-white flex items-center justify-center"
+          aria-label="Xoá"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
+      </div>
+      {/* Foreground row */}
+      <div
+        style={{
+          transform: `translateX(${tx}px)`,
+          transition: dragging ? 'none' : 'transform 0.22s cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onClick={handleRowClick}
+        className={`relative bg-white px-3 py-2.5 flex items-center gap-3 active:bg-gray-50 ${isLan ? 'border-l-2 border-l-amber-300' : ''}`}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="font-bold text-gray-900 text-[15px] leading-tight">{item.thuoc.tenthuoc}</p>
+            {!item.thuoc.la_thu_thuat && stock && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                stock.trang_thai === 'HET' ? 'bg-red-100 text-red-700'
+                : stock.trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
+                : 'bg-green-100 text-green-700'
+              }`}>
+                {stock.tonkho <= 0 ? 'Hết' : `Tồn: ${stock.tonkho}`}
+              </span>
+            )}
+          </div>
+          {item.cachdung && (
+            <p className="mt-0.5 text-xs text-gray-500 line-clamp-1">{item.cachdung}</p>
+          )}
+        </div>
+        <div className="flex items-baseline gap-1 flex-shrink-0 pl-2">
+          <span className="text-blue-600 font-extrabold text-lg tabular-nums">{item.soluong}</span>
+          <span className="text-blue-600 font-bold text-sm">{item.thuoc.donvitinh}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function KeDon() {
   const { confirm } = useConfirm();
   const searchParams = useSearchParams();
@@ -138,7 +250,62 @@ export default function KeDon() {
   const [showMauDialog, setShowMauDialog] = useState(false);
   const [dsMau, setDsMau] = useState<any[]>([]);
   const [loadingMau, setLoadingMau] = useState(false);
-
+  // Mobile-only UI state
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileDetailIdx, setMobileDetailIdx] = useState<number | null>(null);
+  const mobileSearchRef = useRef<HTMLInputElement | null>(null);
+  const mobileNgayKhamRef = useRef<HTMLInputElement | null>(null);
+  const openMobileSearch = useCallback(() => {
+    setMobileSearchOpen(true);
+    setTimeout(() => {
+      mobileSearchRef.current?.focus();
+      mobileSearchRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 60);
+  }, []);
+  // Mobile tabs: 0 = Đơn thuốc, 1 = Đơn cũ, 2 = Diễn tiến
+  const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
+  const [tabDragX, setTabDragX] = useState(0);
+  const [tabDragging, setTabDragging] = useState(false);
+  const tabStart = useRef<{ x: number; y: number; locked: 'h' | 'v' | null }>({ x: 0, y: 0, locked: null });
+  const tabActive = useRef(false);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const onTabTouchStart = (e: React.TouchEvent) => {
+    const t = e.target as HTMLElement;
+    // Bỏ qua nếu touch bắt đầu trong vùng không cho swipe-tab (dòng thuốc, input, textarea, button…)
+    if (t.closest('input,textarea,select,button,a,[data-no-tab-swipe]')) return;
+    tabActive.current = true;
+    tabStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
+  };
+  const onTabTouchMove = (e: React.TouchEvent) => {
+    if (!tabActive.current) return;
+    const dx = e.touches[0].clientX - tabStart.current.x;
+    const dy = e.touches[0].clientY - tabStart.current.y;
+    if (tabStart.current.locked === null) {
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        tabStart.current.locked = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+        if (tabStart.current.locked === 'h') setTabDragging(true);
+      }
+    }
+    if (tabStart.current.locked === 'h') {
+      let next = dx;
+      if (mobileTab === 0 && next > 0) next = next * 0.3;
+      if (mobileTab === 2 && next < 0) next = next * 0.3;
+      setTabDragX(next);
+    }
+  };
+  const onTabTouchEnd = () => {
+    if (!tabActive.current) return;
+    tabActive.current = false;
+    setTabDragging(false);
+    const w = viewportRef.current?.clientWidth || 360;
+    const threshold = w * 0.22;
+    let next = mobileTab;
+    if (tabDragX < -threshold && mobileTab < 2) next = (mobileTab + 1) as 0 | 1 | 2;
+    else if (tabDragX > threshold && mobileTab > 0) next = (mobileTab - 1) as 0 | 1 | 2;
+    setMobileTab(next);
+    setTabDragX(0);
+    tabStart.current.locked = null;
+  };
   // Print config
   const [printConfig, setPrintConfig] = useState<{
     ten_cua_hang: string; dia_chi: string; dien_thoai: string; logo_url: string;
@@ -369,6 +536,7 @@ export default function KeDon() {
           cachdung: thuoc.cachdung || (thuoc.donvitinh.toLowerCase().includes('lần') ? 'Thực hiện tại phòng khám' : ''),
         },
       ]);
+      setMobileSearchOpen(false);
       setTimThuocDonDangKe('');
       setHighlightedIndex(-1); // Reset highlighted index
     },
@@ -794,29 +962,82 @@ export default function KeDon() {
     }
   };
 
+  // Inline search box rendered tại vị trí nút "+ Thêm thuốc vào đơn" trên mobile
+  const renderMobileInlineSearch = (compact = false) => (
+    <div className={`${compact ? 'relative' : 'relative m-2 w-[calc(100%-1rem)]'}`}>
+      <div className={`${compact ? 'border' : 'border-2'} border-dashed border-blue-200 rounded-xl bg-blue-50/40`}>
+        <Input
+          ref={mobileSearchRef}
+          placeholder="Nhập tên thuốc, hoạt chất..."
+          value={timThuocDonDangKe}
+          onChange={(e) => {
+            setTimThuocDonDangKe(e.target.value);
+            setHighlightedIndex(-1);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setMobileSearchOpen(false);
+              setTimThuocDonDangKe('');
+              return;
+            }
+            handleKeyDown(e);
+          }}
+          className={`${compact ? 'h-10 text-sm px-3' : 'h-14 text-base px-4'} bg-transparent border-0 rounded-xl shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-gray-500`}
+        />
+      </div>
+      {timThuocDonDangKe && (
+        <ul className="absolute top-full left-0 right-0 mt-1 text-sm max-h-60 overflow-y-auto bg-white border rounded-xl shadow-lg z-50">
+          {danhSachThuocDonDangKe.map((t, index) => (
+            <li
+              key={t.id}
+              className={`cursor-pointer px-3 py-2 flex items-center justify-between ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
+              onClick={() => themThuoc(t)}
+            >
+              <span className="flex items-center gap-1.5">
+                <span>{dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}</span>
+              </span>
+              {!t.la_thu_thuat && t.tonkho !== undefined && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-2 ${
+                  (t.tonkho ?? 0) <= 0 ? 'bg-red-100 text-red-700'
+                  : (t.tonkho ?? 0) <= 10 ? 'bg-yellow-100 text-yellow-700'
+                  : 'bg-green-100 text-green-700'
+                }`}>
+                  {(t.tonkho ?? 0) <= 0 ? 'Hết' : `${t.tonkho}`}
+                </span>
+              )}
+            </li>
+          ))}
+          {danhSachThuocDonDangKe.length === 0 && (
+            <li className="px-3 py-2 text-gray-400">Không tìm thấy thuốc</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+
   return (
     <ProtectedRoute>
   {/* Mobile: Stack layout, Desktop: Keep current grid (lg and up) */}
   <div className="flex flex-col lg:block">
 
         {/* Mobile layout - Clinical blue theme */}
-  <div className="block lg:hidden p-2 space-y-2 bg-[#f5f6f8] min-h-screen">
+  <div className="block lg:hidden bg-[#f5f6f8] min-h-screen -mt-10">
 
-          {/* Patient Mini Card - Mobile */}
+          {/* Patient Mini Card - Mobile (sticky full-bleed header replacement) */}
           {benhNhan ? (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 flex items-center gap-3">
+            <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5 flex items-center gap-3 shadow-sm">
               <div className="flex-1 min-w-0">
-                <h1 className="font-extrabold text-lg text-gray-800 tracking-tight truncate">{benhNhan.ten}</h1>
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
-                  <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi} tuổi)` : ''}</span>
-                  <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span>{benhNhan.dienthoai}</span>
+                <h1 className="font-extrabold text-base text-gray-800 tracking-tight truncate">{benhNhan.ten}</h1>
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi}t)` : ''}</span>
+                  <Phone className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{benhNhan.dienthoai}</span>
                 </div>
                 {benhNhan.diachi && (
-                  <div className="flex items-center gap-2 mt-0.5 text-sm text-gray-500">
-                    <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    <span>{benhNhan.diachi}</span>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                    <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="truncate">{benhNhan.diachi}</span>
                   </div>
                 )}
               </div>
@@ -832,24 +1053,97 @@ export default function KeDon() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+            <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5">
               <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
             </div>
           )}
 
-          {/* Diagnosis & Date & Drug search - Mobile */}
-          <div className="space-y-4 px-1">
-            <div className="space-y-1.5">
-              <label className="text-base font-bold text-gray-700 ml-1">Chẩn đoán</label>
+          {/* Tab bar — sticky bên dưới patient card. Vuốt ngang viewport bên dưới để chuyển tab. */}
+          <div className="sticky top-[64px] z-30 bg-white/95 backdrop-blur border-b border-gray-200 flex">
+            {[
+              { label: 'Đơn thuốc', count: undefined as number | undefined },
+              { label: 'Đơn cũ', count: dsDonCu.length },
+              { label: 'Diễn tiến', count: dsDienTien.length },
+            ].map((t, i) => (
+              <button
+                key={t.label}
+                type="button"
+                onClick={() => setMobileTab(i as 0 | 1 | 2)}
+                className={`relative flex-1 py-3 text-base font-bold transition-colors ${mobileTab === i ? 'text-blue-600' : 'text-gray-500'}`}
+              >
+                {t.label}
+                {t.count !== undefined && t.count > 0 && (
+                  <span className={`ml-1 text-sm font-extrabold ${mobileTab === i ? 'text-blue-600' : 'text-gray-400'}`}>({t.count})</span>
+                )}
+                {mobileTab === i && (
+                  <span className="absolute bottom-0 left-6 right-6 h-0.5 bg-blue-600 rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Swipeable viewport (3 panels: Đơn thuốc | Đơn cũ | Diễn tiến) — mỗi panel cuộn dọc độc lập */}
+          <div
+            ref={viewportRef}
+            className="overflow-hidden"
+            style={{ height: 'calc(100dvh - 64px - 48px - 68px)' }}
+            onTouchStart={onTabTouchStart}
+            onTouchMove={onTabTouchMove}
+            onTouchEnd={onTabTouchEnd}
+            onTouchCancel={onTabTouchEnd}
+          >
+            <div
+              className="flex items-stretch h-full"
+              style={{
+                transform: `translate3d(calc(${-mobileTab * 100}vw + ${tabDragX}px), 0, 0)`,
+                transition: tabDragging ? 'none' : 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
+                willChange: 'transform',
+              }}
+            >
+
+          {/* === Panel 0: Đơn thuốc === */}
+          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-2">
+
+          {/* Diagnosis & Date - Mobile flat style */}
+          <div className="px-1">
+            <div className="bg-white rounded-xl px-2 py-1.5">
+              <div className="flex items-center gap-1 px-1.5 pb-1">
+                <p className="text-[15px] text-gray-700 leading-none">
+                  <span className="font-extrabold text-gray-900">Chẩn đoán:</span>
+                </p>
+                <div className="ml-auto flex items-center gap-0.5">
+                  <Input
+                    ref={mobileNgayKhamRef}
+                    type="datetime-local"
+                    value={ngayKham}
+                    onChange={(e) => setNgayKham(e.target.value)}
+                    className="h-9 w-[150px] bg-transparent border-0 rounded-none px-0 py-0 text-[14px] font-semibold text-gray-600 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-datetime-edit]:pr-0 [&::-webkit-datetime-edit-fields-wrapper]:p-0 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:pointer-events-none"
+                    style={{ colorScheme: 'light' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = mobileNgayKhamRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+                      input?.focus();
+                      input?.showPicker?.();
+                    }}
+                    className="h-8 w-8 rounded-md border border-gray-200 text-gray-600 flex items-center justify-center active:bg-gray-100"
+                    aria-label="Chọn ngày giờ khám"
+                  >
+                    <Calendar className="w-4.5 h-4.5" />
+                  </button>
+                </div>
+              </div>
               <div className="relative">
-                <Input
+                <Textarea
+                  rows={2}
                   placeholder="Nhập chẩn đoán bệnh lý..."
                   value={chandoan}
                   onChange={(e) => handleChandoanChange(e.target.value)}
                   onFocus={(e) => { e.target.select(); chandoanSuggestions.length > 0 && setShowChandoanSuggestions(true); }}
                   onBlur={() => { setTimeout(() => setShowChandoanSuggestions(false), 150); }}
                   onKeyDown={(e) => { if (e.key === 'Escape') { setShowChandoanSuggestions(false); } }}
-                  className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                  className="min-h-[56px] resize-none bg-transparent border-0 rounded-none px-1.5 py-2 text-[16px] leading-6 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-gray-400"
                 />
                 {showChandoanSuggestions && chandoanSuggestions.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto">
@@ -868,69 +1162,23 @@ export default function KeDon() {
                 )}
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-base font-bold text-gray-700 ml-1">Ngày giờ khám</label>
-              <Input
-                type="datetime-local"
-                value={ngayKham}
-                onChange={(e) => setNgayKham(e.target.value)}
-                className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
-                style={{ colorScheme: 'light' }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-base font-bold text-gray-700 ml-1">Thêm thuốc vào đơn</label>
-              <div className="relative">
-                <Input
-                  placeholder="Tìm tên thuốc, hoạt chất..."
-                  value={timThuocDonDangKe}
-                  onChange={(e) => {
-                    setTimThuocDonDangKe(e.target.value);
-                    setHighlightedIndex(-1);
-                  }}
-                  onKeyDown={handleKeyDown}
-                  className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
-                />
-                {timThuocDonDangKe && (
-                  <ul className="absolute top-full left-0 right-0 mt-1 text-sm max-h-48 overflow-y-auto bg-white border rounded-xl shadow-lg z-50">
-                    {danhSachThuocDonDangKe.map((t, index) => (
-                      <li
-                        key={t.id}
-                        className={`cursor-pointer px-3 py-2 flex items-center justify-between ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
-                        onClick={() => themThuoc(t)}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <span>{dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${getPriceSourceClass(t.gia_nguon)}`}>
-                            {getPriceSourceLabel(t.gia_nguon)}
-                          </span>
-                        </span>
-                        {!t.la_thu_thuat && t.tonkho !== undefined && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-2 ${
-                            (t.tonkho ?? 0) <= 0 ? 'bg-red-100 text-red-700'
-                            : (t.tonkho ?? 0) <= 10 ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-green-100 text-green-700'
-                          }`}>
-                            {(t.tonkho ?? 0) <= 0 ? 'Hết' : `${t.tonkho}`}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                    {danhSachThuocDonDangKe.length === 0 && (
-                      <li className="px-3 py-2 text-gray-400">Không tìm thấy thuốc</li>
-                    )}
-                  </ul>
-                )}
-              </div>
-            </div>
           </div>
 
           {/* Drug Prescription Card - Mobile */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-            <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="font-bold text-gray-900 text-sm tracking-tight">
-                📝 Đơn thuốc {editDonThuocId ? <span className="text-orange-500 text-xs font-medium ml-1">(Đang sửa)</span> : ''}
-              </h3>
+            <div className="p-3 border-b border-gray-200 flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <h3 className="font-bold text-gray-900 text-sm tracking-tight">
+                  📝 Đơn thuốc{' '}
+                  {dsChon.length > 0 && (
+                    <span className="text-blue-600 font-extrabold ml-0.5">({dsChon.length})</span>
+                  )}
+                  {editDonThuocId ? <span className="text-orange-500 text-xs font-medium ml-1">(Đang sửa)</span> : ''}
+                </h3>
+                {dsChon.length > 0 && (
+                  <p className="text-[11px] text-gray-400 italic mt-0.5">Vuốt sang trái để chỉnh số lượng hoặc xoá</p>
+                )}
+              </div>
               <Dialog open={showMauDialog} onOpenChange={setShowMauDialog}>
                 <DialogTrigger asChild>
                   <button
@@ -975,105 +1223,204 @@ export default function KeDon() {
             </div>
 
             {/* Selected drugs - Mobile cards */}
-            <div className="p-2">
+            <div className="p-0">
               {dsChon.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">Tìm và thêm thuốc vào đơn</p>
+                mobileSearchOpen ? (
+                  renderMobileInlineSearch()
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openMobileSearch}
+                    className="m-2 w-[calc(100%-1rem)] text-center py-4 text-sm font-semibold text-blue-600 hover:text-blue-700 border-2 border-dashed border-blue-200 rounded-xl bg-blue-50/40 hover:bg-blue-50 transition-colors"
+                  >
+                    + Thêm thuốc vào đơn
+                  </button>
+                )
               ) : (
                 <>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 px-1">Danh sách đã chọn ({dsChon.length})</p>
-                  <div className="space-y-2">
+                  <div className="divide-y divide-gray-100">
                     {dsChon.map((item, idx) => (
-                      <div key={item.thuoc.id} className={`bg-white rounded-xl border p-3 flex items-center gap-3 ${item.thuoc.donvitinh.toLowerCase().includes('lần') ? 'border-amber-200' : 'border-gray-200'}`}>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-bold text-gray-900 text-[15px] leading-tight">{item.thuoc.tenthuoc}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${getPriceSourceClass(item.thuoc.gia_nguon)}`}>
-                              {getPriceSourceLabel(item.thuoc.gia_nguon)}
-                            </span>
-                            {!item.thuoc.la_thu_thuat && thuocStockMap[item.thuoc.id] && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
-                                thuocStockMap[item.thuoc.id].trang_thai === 'HET' ? 'bg-red-100 text-red-700'
-                                : thuocStockMap[item.thuoc.id].trang_thai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700'
-                                : 'bg-green-100 text-green-700'
-                              }`}>
-                                {thuocStockMap[item.thuoc.id].tonkho <= 0 ? 'Hết' : `Tồn: ${thuocStockMap[item.thuoc.id].tonkho}`}
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-0.5">
-                            <Input
-                              className="bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 px-2 py-1 rounded-lg h-auto text-sm text-gray-900 w-full transition-shadow"
-                              placeholder="Nhập cách dùng..."
-                              onFocus={(e) => e.target.select()}
-                              value={item.cachdung}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setDsChon((prev) => {
-                                  const updated = [...prev];
-                                  updated[idx].cachdung = val;
-                                  return updated;
-                                });
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          <div className="text-right">
-                            <div className="flex items-baseline gap-1">
-                              <Input
-                                type="number"
-                                className="bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 p-0 h-auto w-10 text-right text-blue-600 font-bold text-lg rounded with-spinner"
-                                onFocus={(e) => e.target.select()}
-                                min={1}
-                                step={1}
-                                value={item.soluongInput !== undefined ? item.soluongInput : String(item.soluong)}
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  setDsChon((prev) => {
-                                    const updated = [...prev];
-                                    updated[idx].soluongInput = raw;
-                                    if (raw !== '') {
-                                      const parsed = parseInt(raw, 10);
-                                      if (!Number.isNaN(parsed)) {
-                                        updated[idx].soluong = parsed;
-                                      }
-                                    }
-                                    return updated;
-                                  });
-                                }}
-                                onBlur={() => {
-                                  setDsChon((prev) => {
-                                    const updated = [...prev];
-                                    const buf = updated[idx].soluongInput;
-                                    if (buf === undefined) return updated;
-                                    const parsed = buf !== '' ? parseInt(buf, 10) : NaN;
-                                    if (Number.isNaN(parsed) || parsed < 1) {
-                                      updated[idx].soluong = 1;
-                                    } else {
-                                      updated[idx].soluong = parsed;
-                                    }
-                                    delete updated[idx].soluongInput;
-                                    return updated;
-                                  });
-                                }}
-                              />
-                              <span className="text-blue-600 font-bold text-sm">{item.thuoc.donvitinh}</span>
-                            </div>
-                          </div>
-                          <button
-                            className="text-red-400 hover:text-red-600 p-1 transition-colors"
-                            onClick={() => xoaThuoc(item.thuoc.id)}
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </div>
+                      <MobileDrugRow
+                        key={item.thuoc.id}
+                        item={item}
+                        stock={thuocStockMap[item.thuoc.id]}
+                        onTap={() => setMobileDetailIdx(idx)}
+                        onDelete={() => xoaThuoc(item.thuoc.id)}
+                        onIncrement={() => setDsChon((prev) => {
+                          const updated = [...prev];
+                          updated[idx] = { ...updated[idx], soluong: (updated[idx].soluong || 0) + 1 };
+                          delete updated[idx].soluongInput;
+                          return updated;
+                        })}
+                        onDecrement={() => setDsChon((prev) => {
+                          const updated = [...prev];
+                          const next = (updated[idx].soluong || 0) - 1;
+                          updated[idx] = { ...updated[idx], soluong: next < 1 ? 1 : next };
+                          delete updated[idx].soluongInput;
+                          return updated;
+                        })}
+                      />
                     ))}
+                  </div>
+                  {/* Trigger to add more — biến thành ô tìm kiếm khi bấm */}
+                  <div className="p-2 border-t border-gray-100">
+                    {mobileSearchOpen ? (
+                      renderMobileInlineSearch(true)
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={openMobileSearch}
+                        className="w-full text-center py-2.5 text-sm font-semibold text-blue-600 hover:text-blue-700 border border-dashed border-blue-200 rounded-xl bg-blue-50/40 hover:bg-blue-50 transition-colors"
+                      >
+                        + Thêm thuốc vào đơn
+                      </button>
+                    )}
                   </div>
                 </>
               )}
             </div>
           </div>
+
+          {/* (Đã chuyển ô tìm kiếm vào ngay vị trí nút "+ Thêm thuốc vào đơn") */}
+          {false && mobileSearchOpen && (
+            <div className="bg-white rounded-xl shadow-sm border border-blue-200 p-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-gray-700">Tìm thuốc</label>
+                <button
+                  type="button"
+                  className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+                  onClick={() => { setMobileSearchOpen(false); setTimThuocDonDangKe(''); }}
+                >
+                  Đóng
+                </button>
+              </div>
+              <div className="relative">
+                <Input
+                  ref={mobileSearchRef}
+                  placeholder="Nhập tên thuốc, hoạt chất..."
+                  value={timThuocDonDangKe}
+                  onChange={(e) => {
+                    setTimThuocDonDangKe(e.target.value);
+                    setHighlightedIndex(-1);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  className="bg-white border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
+                />
+                {timThuocDonDangKe && (
+                  <ul className="absolute top-full left-0 right-0 mt-1 text-sm max-h-60 overflow-y-auto bg-white border rounded-xl shadow-lg z-50">
+                    {danhSachThuocDonDangKe.map((t, index) => (
+                      <li
+                        key={t.id}
+                        className={`cursor-pointer px-3 py-2 flex items-center justify-between ${index === highlightedIndex ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'} ${dsChon.some((item) => item.thuoc.id === t.id) ? 'text-blue-600' : ''}`}
+                        onClick={() => themThuoc(t)}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span>{dsChon.some((item) => item.thuoc.id === t.id) && '✓ '}{t.tenthuoc}</span>
+                        </span>
+                        {!t.la_thu_thuat && t.tonkho !== undefined && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-2 ${
+                            (t.tonkho ?? 0) <= 0 ? 'bg-red-100 text-red-700'
+                            : (t.tonkho ?? 0) <= 10 ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-green-100 text-green-700'
+                          }`}>
+                            {(t.tonkho ?? 0) <= 0 ? 'Hết' : `${t.tonkho}`}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                    {danhSachThuocDonDangKe.length === 0 && (
+                      <li className="px-3 py-2 text-gray-400">Không tìm thấy thuốc</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Mobile detail dialog for a selected medicine — show cách dùng & remove */}
+          <Dialog open={mobileDetailIdx !== null} onOpenChange={(o) => { if (!o) setMobileDetailIdx(null); }}>
+            <DialogContent className="max-w-[92vw]">
+              {mobileDetailIdx !== null && dsChon[mobileDetailIdx] && (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="text-base">{dsChon[mobileDetailIdx].thuoc.tenthuoc}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600">Cách dùng</Label>
+                      <Textarea
+                        autoFocus
+                        rows={3}
+                        placeholder="VD: Uống 1 viên sau ăn sáng, 1 viên sau ăn tối..."
+                        value={dsChon[mobileDetailIdx].cachdung}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDsChon((prev) => {
+                            const updated = [...prev];
+                            if (mobileDetailIdx !== null && updated[mobileDetailIdx]) {
+                              updated[mobileDetailIdx].cachdung = val;
+                            }
+                            return updated;
+                          });
+                        }}
+                        className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600">Số lượng ({dsChon[mobileDetailIdx].thuoc.donvitinh})</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={dsChon[mobileDetailIdx].soluongInput !== undefined ? dsChon[mobileDetailIdx].soluongInput : String(dsChon[mobileDetailIdx].soluong)}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setDsChon((prev) => {
+                            const updated = [...prev];
+                            if (mobileDetailIdx === null || !updated[mobileDetailIdx]) return updated;
+                            updated[mobileDetailIdx].soluongInput = raw;
+                            if (raw !== '') {
+                              const parsed = parseInt(raw, 10);
+                              if (!Number.isNaN(parsed)) updated[mobileDetailIdx].soluong = parsed;
+                            }
+                            return updated;
+                          });
+                        }}
+                        onBlur={() => {
+                          setDsChon((prev) => {
+                            const updated = [...prev];
+                            if (mobileDetailIdx === null || !updated[mobileDetailIdx]) return updated;
+                            const buf = updated[mobileDetailIdx].soluongInput;
+                            if (buf === undefined) return updated;
+                            const parsed = buf !== '' ? parseInt(buf, 10) : NaN;
+                            updated[mobileDetailIdx].soluong = (Number.isNaN(parsed) || parsed < 1) ? 1 : parsed;
+                            delete updated[mobileDetailIdx].soluongInput;
+                            return updated;
+                          });
+                        }}
+                        className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex justify-between gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                        onClick={() => {
+                          const id = dsChon[mobileDetailIdx!]?.thuoc.id;
+                          setMobileDetailIdx(null);
+                          if (id !== undefined) xoaThuoc(id);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" /> Xoá khỏi đơn
+                      </Button>
+                      <Button onClick={() => setMobileDetailIdx(null)}>Xong</Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* Payment & Actions - Mobile */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 space-y-3">
@@ -1262,15 +1609,84 @@ export default function KeDon() {
             </div>
           </div>
 
-          {/* Diễn tiến bệnh - Mobile */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-            <div className="px-3 pt-3 pb-1 flex justify-between items-center">
-              <h2 className="font-bold text-gray-900 text-sm tracking-tight">Diễn tiến bệnh</h2>
+          {/* === End Panel 0 === */}
+          </div>
+
+          {/* === Panel 1: Đơn cũ — mỗi đơn là 1 card độc lập === */}
+          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-2">
+            {dsDonCu.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">Chưa có đơn thuốc nào.</div>
+            ) : (
+              dsDonCu.map((don) => {
+                const items = dsChiTietDonCu[don.id] || [];
+                const isActive = don.id === highlightId || don.id === editDonThuocId;
+                return (
+                  <div
+                    key={don.id}
+                    className={`bg-white rounded-xl shadow-sm border-2 transition-all overflow-hidden ${isActive ? 'border-blue-500 ring-2 ring-blue-100' : 'border-gray-200'}`}
+                    onClick={() => { suaDon(don); setMobileTab(0); }}
+                  >
+                    {/* Header: ngày khám + tổng tiền */}
+                    <div className="px-3 py-2 bg-blue-50/60 border-b border-blue-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-blue-600" />
+                        <p className="text-sm font-bold text-gray-800">
+                          {new Date(don.ngay_kham).toLocaleString('vi-VN', {
+                            timeZone: 'Asia/Ho_Chi_Minh',
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false,
+                          })}
+                        </p>
+                      </div>
+                      <p className="text-sm font-extrabold text-blue-700 tabular-nums">{don.tongtien.toLocaleString()}đ</p>
+                    </div>
+                    {/* Chẩn đoán */}
+                    {don.chandoan && (
+                      <div className="px-3 pt-2">
+                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Chẩn đoán</p>
+                        <p className="text-sm font-semibold text-gray-800 leading-snug mt-0.5">{don.chandoan}</p>
+                      </div>
+                    )}
+                    {/* Danh sách thuốc */}
+                    <div className="px-3 py-2">
+                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-1">Thuốc ({items.length})</p>
+                      {items.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">Không có thuốc</p>
+                      ) : (
+                        <ul className="divide-y divide-gray-100">
+                          {items.map((item, i) => (
+                            <li key={i} className="py-1.5 flex items-start gap-2">
+                              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <p className="text-sm font-semibold text-gray-900 truncate">{item.thuoc.tenthuoc}</p>
+                                  <p className="text-sm font-bold text-gray-700 whitespace-nowrap tabular-nums">{item.soluong} {item.thuoc.donvitinh}</p>
+                                </div>
+                                {item.cachdung && (
+                                  <p className="text-xs text-gray-500 mt-0.5">{item.cachdung}</p>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* === Panel 2: Diễn tiến — mỗi ghi chú là 1 card độc lập === */}
+          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-2">
+            <div className="flex justify-end">
               <Dialog open={openDialog} onOpenChange={setOpenDialog}>
                 <DialogTrigger asChild>
-                  <button className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 transition-colors">
-                    + Thêm
-                  </button>
+                  <button className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors shadow-sm">+ Thêm diễn tiến</button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
@@ -1303,78 +1719,40 @@ export default function KeDon() {
                 </DialogContent>
               </Dialog>
             </div>
-            <div className="px-2 pb-2 space-y-2 max-h-48 overflow-y-auto">
-              {dsDienTien.length === 0 ? (
-                <p className="text-xs text-gray-400 px-1">Chưa có diễn tiến nào.</p>
-              ) : (
-                dsDienTien.map((d) => (
-                  <div key={d.id} className="bg-white px-2 py-1.5 rounded-lg border border-gray-200">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-bold text-gray-500">{format(new Date(d.ngay), 'dd/MM/yyyy')}</p>
-                        <p className="text-xs text-gray-700 mt-0.5 line-clamp-2">{d.noidung}</p>
-                      </div>
-                      <div className="flex gap-1 ml-1">
-                        <button
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                          onClick={() => {
-                            setEditDienTien(d);
-                            setOpenDialog(true);
-                          }}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                          onClick={() => xoaDienTien(d.id)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+            {dsDienTien.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">Chưa có diễn tiến nào.</div>
+            ) : (
+              dsDienTien.map((d) => (
+                <div key={d.id} className="bg-white rounded-xl shadow-sm border-2 border-gray-200 overflow-hidden">
+                  <div className="px-3 py-2 bg-emerald-50/60 border-b border-emerald-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-emerald-600" />
+                      <p className="text-sm font-bold text-gray-800">{format(new Date(d.ngay), 'dd/MM/yyyy')}</p>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                        onClick={() => { setEditDienTien(d); setOpenDialog(true); }}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                        onClick={() => xoaDienTien(d.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                  <p className="px-3 py-2.5 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{d.noidung}</p>
+                </div>
+              ))
+            )}
           </div>
 
-          {/* Quá trình điều trị - Mobile */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-            <div className="px-3 pt-3 pb-1">
-              <h2 className="font-bold text-gray-900 text-sm tracking-tight">Quá trình điều trị</h2>
+            {/* === End rail === */}
             </div>
-            <div className="px-2 pb-2 space-y-2 max-h-64 overflow-y-auto">
-              {dsDonCu.length === 0 ? (
-                <p className="text-xs text-gray-400 px-1">Chưa có đơn thuốc nào.</p>
-              ) : (
-                dsDonCu.map((don) => (
-                  <div
-                    key={don.id}
-                    className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
-                    onClick={() => suaDon(don)}
-                  >
-                    <div className="flex items-baseline justify-between gap-1">
-                      <p className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
-                        {new Date(don.ngay_kham).toLocaleString('vi-VN', {
-                          timeZone: 'Asia/Ho_Chi_Minh',
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false
-                        })}
-                      </p>
-                      <p className="text-xs font-semibold text-gray-800 truncate flex-1">{don.chandoan || '—'}</p>
-                      <p className="text-[11px] font-bold text-blue-700 whitespace-nowrap ml-1">{(don.tongtien / 1000).toFixed(0)}k</p>
-                    </div>
-                    <p className="text-[11px] text-gray-500 leading-tight">
-                      {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
+          {/* === End viewport === */}
           </div>
         </div>
 
