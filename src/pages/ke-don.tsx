@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin, Pill, History, Activity } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -19,6 +19,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 import { useFooter } from '../contexts/FooterContext';
+import { usePageTabs } from '../contexts/PageTabsContext';
 import { searchByStartsWith } from '@/lib/utils';
 import PrintDonThuoc from '../components/ke-don/PrintDonThuoc';
 
@@ -306,6 +307,17 @@ export default function KeDon() {
     setTabDragX(0);
     tabStart.current.locked = null;
   };
+
+  // Đăng ký page tabs vào MobileBottomNav
+  usePageTabs(
+    [
+      { key: 'don', label: 'Kê đơn', icon: Pill },
+      { key: 'cu', label: 'Đơn cũ', count: dsDonCu.length, icon: History },
+      { key: 'dt', label: 'Diễn tiến', count: dsDienTien.length, icon: Activity },
+    ],
+    mobileTab,
+    (idx) => setMobileTab(idx as 0 | 1 | 2),
+  );
   // Print config
   const [printConfig, setPrintConfig] = useState<{
     ten_cua_hang: string; dia_chi: string; dien_thoai: string; logo_url: string;
@@ -1058,35 +1070,13 @@ export default function KeDon() {
             </div>
           )}
 
-          {/* Tab bar — sticky bên dưới patient card. Vuốt ngang viewport bên dưới để chuyển tab. */}
-          <div className="sticky top-[64px] z-30 bg-white/95 backdrop-blur border-b border-gray-200 flex">
-            {[
-              { label: 'Đơn thuốc', count: undefined as number | undefined },
-              { label: 'Đơn cũ', count: dsDonCu.length },
-              { label: 'Diễn tiến', count: dsDienTien.length },
-            ].map((t, i) => (
-              <button
-                key={t.label}
-                type="button"
-                onClick={() => setMobileTab(i as 0 | 1 | 2)}
-                className={`relative flex-1 py-3 text-base font-bold transition-colors ${mobileTab === i ? 'text-blue-600' : 'text-gray-500'}`}
-              >
-                {t.label}
-                {t.count !== undefined && t.count > 0 && (
-                  <span className={`ml-1 text-sm font-extrabold ${mobileTab === i ? 'text-blue-600' : 'text-gray-400'}`}>({t.count})</span>
-                )}
-                {mobileTab === i && (
-                  <span className="absolute bottom-0 left-6 right-6 h-0.5 bg-blue-600 rounded-full" />
-                )}
-              </button>
-            ))}
-          </div>
+          {/* Tab bar đã chuyển vào MobileBottomNav (route-aware). Vuốt ngang viewport bên dưới để chuyển tab. */}
 
           {/* Swipeable viewport (3 panels: Đơn thuốc | Đơn cũ | Diễn tiến) — mỗi panel cuộn dọc độc lập */}
           <div
             ref={viewportRef}
             className="overflow-hidden"
-            style={{ height: 'calc(100dvh - 64px - 48px - 68px)' }}
+            style={{ height: 'calc(100dvh - 64px - 68px)' }}
             onTouchStart={onTabTouchStart}
             onTouchMove={onTabTouchMove}
             onTouchEnd={onTabTouchEnd}

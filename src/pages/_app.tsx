@@ -9,6 +9,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import MobileBottomNav from '../components/MobileBottomNav';
 import { FooterProvider } from '../contexts/FooterContext';
+import { PageTabsProvider } from '../contexts/PageTabsContext';
 import { initializeApiAuthHeaders } from '../lib/apiAuthHeaders';
 import { Toaster } from 'react-hot-toast';
 
@@ -24,6 +25,7 @@ export default function App({ Component, pageProps }: AppProps) {
     <AuthProvider>
       <BranchProvider>
       <FooterProvider>
+      <PageTabsProvider>
       <ConfirmProvider>
       <div className="min-h-screen bg-[#f6faf7]">
         <Head>
@@ -80,6 +82,7 @@ export default function App({ Component, pageProps }: AppProps) {
         />
       </div>
       </ConfirmProvider>
+      </PageTabsProvider>
       </FooterProvider>
       </BranchProvider>
     </AuthProvider>

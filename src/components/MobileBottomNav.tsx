@@ -45,6 +45,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
+import { usePageTabsContext } from '../contexts/PageTabsContext';
 import type { FeatureKey } from '../lib/featureConfig';
 
 const HIDDEN_ON_PATHS = new Set<string>([
@@ -164,6 +165,7 @@ export default function MobileBottomNav() {
   } = useAuth();
   const { branches, currentBranchId, switchBranch, isMultiBranch } = useBranch();
   const { canAccessFeature } = useFeatureGate();
+  const { pageTabs } = usePageTabsContext();
   const { counts } = useNotificationPolling();
 
   const [showSearch, setShowSearch] = useState(false);
@@ -275,6 +277,9 @@ export default function MobileBottomNav() {
   const moreItems: MoreItem[] = useMemo(() => {
     const isOwnerAdmin = currentRole === 'owner' || currentRole === 'admin';
     return [
+      { href: '/', label: 'Trang chủ', icon: Home },
+      { href: '/benh-nhan', label: 'Bệnh nhân', icon: Users, feature: 'patient_management' },
+      { href: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays, feature: 'appointments' },
       { href: '/don-kinh', label: 'Đơn kính', icon: Glasses, feature: 'prescription_glasses' },
       { href: '/don-thuoc', label: 'Đơn thuốc', icon: FileText, feature: 'prescription_medicine' },
       { href: '/quan-ly-kho', label: 'Kho kính', icon: Warehouse, feature: 'inventory_lens' },
@@ -349,14 +354,29 @@ export default function MobileBottomNav() {
         style={{ bottom: 0, paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="relative grid grid-cols-5 h-[60px] items-stretch">
-          {tabs.slice(0, 2).map((tab) => (
-            <NavTabItem
-              key={tab.href}
-              tab={tab}
-              active={isActive(tab)}
-              resolveHref={resolveHref}
+          {pageTabs ? (
+            <PageTabBtn
+              item={pageTabs.items[0]}
+              active={pageTabs.activeIdx === 0}
+              onClick={() => pageTabs.onChange(0)}
             />
-          ))}
+          ) : (
+            tabs.slice(0, 2).map((tab) => (
+              <NavTabItem
+                key={tab.href}
+                tab={tab}
+                active={isActive(tab)}
+                resolveHref={resolveHref}
+              />
+            ))
+          )}
+          {pageTabs && (
+            <PageTabBtn
+              item={pageTabs.items[1]}
+              active={pageTabs.activeIdx === 1}
+              onClick={() => pageTabs.onChange(1)}
+            />
+          )}
 
           {/* FAB giữa — Tìm khách hàng */}
           <div className="flex items-start justify-center">
@@ -370,14 +390,22 @@ export default function MobileBottomNav() {
             </button>
           </div>
 
-          {tabs.slice(2, 3).map((tab) => (
-            <NavTabItem
-              key={tab.href}
-              tab={tab}
-              active={isActive(tab)}
-              resolveHref={resolveHref}
+          {pageTabs ? (
+            <PageTabBtn
+              item={pageTabs.items[2]}
+              active={pageTabs.activeIdx === 2}
+              onClick={() => pageTabs.onChange(2)}
             />
-          ))}
+          ) : (
+            tabs.slice(2, 3).map((tab) => (
+              <NavTabItem
+                key={tab.href}
+                tab={tab}
+                active={isActive(tab)}
+                resolveHref={resolveHref}
+              />
+            ))
+          )}
 
           {/* Nút "Thêm" */}
           <button
@@ -897,6 +925,47 @@ function ActionChip({
     >
       <Icon className="w-3.5 h-3.5" />
       {label}
+    </button>
+  );
+}
+
+function PageTabBtn({
+  item,
+  active,
+  onClick,
+}: {
+  item: { key: string; label: string; count?: number; icon?: React.ComponentType<{ className?: string }> } | undefined;
+  active: boolean;
+  onClick: () => void;
+}) {
+  if (!item) return <div />;
+  const Icon = item.icon;
+  const count = item.count;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-0.5 transition-colors relative ${
+        active ? 'text-blue-600' : 'text-gray-500 active:text-blue-600'
+      }`}
+      aria-current={active ? 'page' : undefined}
+    >
+      {active && <span className="absolute top-0 w-8 h-0.5 rounded-full bg-blue-600" />}
+      <div className="relative">
+        {Icon ? (
+          <Icon className={`w-5 h-5 ${active ? 'stroke-[2.4]' : ''}`} />
+        ) : (
+          <span className={`text-[15px] font-bold leading-none ${active ? '' : ''}`}>{item.label[0]}</span>
+        )}
+        {typeof count === 'number' && count > 0 && (
+          <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </div>
+      <span className={`text-[10px] leading-tight ${active ? 'font-semibold' : 'font-medium'}`}>
+        {item.label}
+      </span>
     </button>
   );
 }
