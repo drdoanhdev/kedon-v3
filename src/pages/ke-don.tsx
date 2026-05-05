@@ -1037,36 +1037,39 @@ export default function KeDon() {
 
           {/* Patient Mini Card - Mobile (sticky full-bleed header replacement) */}
           {benhNhan ? (
-            <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5 flex items-center gap-3 shadow-sm">
+            <div className="sticky top-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5 flex items-center gap-3 shadow-sm">
+              <div className="h-10 w-10 rounded-full bg-white/20 border border-white/35 text-white font-bold text-sm flex items-center justify-center flex-shrink-0">
+                {(benhNhan.ten || '?').trim().charAt(0).toUpperCase()}
+              </div>
               <div className="flex-1 min-w-0">
-                <h1 className="font-extrabold text-base text-gray-800 tracking-tight truncate">{benhNhan.ten}</h1>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                  <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <h1 className="font-extrabold text-base text-white tracking-tight truncate">{benhNhan.ten}</h1>
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
+                  <Calendar className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
                   <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi}t)` : ''}</span>
-                  <Phone className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <Phone className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
                   <span className="truncate">{benhNhan.dienthoai}</span>
                 </div>
                 {benhNhan.diachi && (
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                    <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
+                    <MapPin className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
                     <span className="truncate">{benhNhan.diachi}</span>
                   </div>
                 )}
               </div>
               <div className="flex gap-1 flex-shrink-0">
                 <Link href={`/ke-don-kinh?bn=${benhnhanid}`}>
-                  <Button className="h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs px-2" size="sm">
+                  <Button variant="outline" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" size="sm">
                     Kê kính
                   </Button>
                 </Link>
-                <Button variant="outline" size="sm" className="h-8 text-xs px-2" onClick={openEditPatientDialog}>
+                <Button variant="outline" size="sm" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" onClick={openEditPatientDialog}>
                   <Pencil className="w-3 h-3" />
                 </Button>
               </div>
             </div>
           ) : (
-            <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5">
-              <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
+            <div className="sticky top-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5">
+              <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
             </div>
           )}
 
@@ -1594,6 +1597,7 @@ export default function KeDon() {
                   dsThuoc={dsChon}
                   benhNhan={benhNhan}
                   tongTien={tongTien}
+                  buttonClassName="w-full justify-center border-gray-200 transition-colors gap-1.5"
                 />
               )}
             </div>
@@ -2392,6 +2396,7 @@ export default function KeDon() {
             dsThuoc={dsChon}
             benhNhan={benhNhan}
             tongTien={tongTien}
+            buttonClassName="w-full justify-center border-gray-200 text-xs py-2.5 transition-colors gap-1"
           />
         )}
       </div>      

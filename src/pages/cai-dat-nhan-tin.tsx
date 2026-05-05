@@ -2,6 +2,7 @@
  * Trang cấu hình "Nhắn tin tự động" — kết nối Zalo OA + quản lý workflow + xem job.
  */
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import Header from '../components/Header';
 import { FeatureGate } from '../components/FeatureGate';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
@@ -84,6 +85,7 @@ export function CaiDatNhanTinSection() {
 }
 
 function Content() {
+  const router = useRouter();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
@@ -91,6 +93,10 @@ function Content() {
   const [loading, setLoading] = useState(true);
   const [showWfModal, setShowWfModal] = useState(false);
   const [editing, setEditing] = useState<Partial<Workflow> | null>(null);
+
+  const quickPhone = typeof router.query.quick_phone === 'string' ? router.query.quick_phone.trim() : '';
+  const quickName = typeof router.query.quick_name === 'string' ? router.query.quick_name.trim() : '';
+  const hasQuickContext = quickPhone.length > 0;
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -125,6 +131,13 @@ function Content() {
   }, [reload]);
 
   const zalo = channels.find((c) => c.provider === 'zalo_oa');
+
+  const clearQuickContext = useCallback(() => {
+    const nextQuery = { ...router.query };
+    delete nextQuery.quick_phone;
+    delete nextQuery.quick_name;
+    router.replace({ pathname: router.pathname, query: nextQuery }, undefined, { shallow: true });
+  }, [router]);
 
   async function connectZalo() {
     const r = await fetchWithAuth('/api/messaging/zalo/connect-url', { method: 'POST' });
@@ -207,6 +220,48 @@ function Content() {
           Làm mới
         </button>
       </div>
+
+      {hasQuickContext && (
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-emerald-900">Liên hệ nhanh từ danh sách tìm kiếm</p>
+            <p className="text-sm text-emerald-800 truncate">
+              {quickName || 'Khách hàng'} • {quickPhone}
+            </p>
+            <p className="text-xs text-emerald-700 mt-1">
+              Zalo OA hiện gửi theo workflow/ZNS template. Dùng số này để kiểm tra hoặc cấu hình workflow phù hợp.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (!quickPhone) return;
+                if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return;
+                navigator.clipboard.writeText(quickPhone).catch(() => {
+                  /* ignore */
+                });
+              }}
+              className="h-8 px-3 rounded border border-emerald-200 text-emerald-800 text-xs bg-white hover:bg-emerald-100"
+            >
+              Copy SĐT
+            </button>
+            <a
+              href={`tel:${quickPhone}`}
+              className="h-8 px-3 rounded border border-emerald-200 text-emerald-800 text-xs bg-white hover:bg-emerald-100 inline-flex items-center"
+            >
+              Gọi ngay
+            </a>
+            <button
+              type="button"
+              onClick={clearQuickContext}
+              className="h-8 px-3 rounded border border-emerald-200 text-emerald-800 text-xs bg-white hover:bg-emerald-100"
+            >
+              Ẩn
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Card kết nối Zalo */}
       <div className="bg-white rounded-xl shadow-sm border p-5">

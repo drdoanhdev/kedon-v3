@@ -752,14 +752,6 @@ export default function KeDonKinh() {
     return () => document.removeEventListener('keydown', keyHandler);
   }, []);
 
-  // Focus mặc định vào ô thị lực không kính mắt phải khi mở trang hoặc reset form
-  useEffect(() => {
-    const el = document.querySelector<HTMLInputElement>('[data-first-focus="thiluc_khongkinh_mp"]');
-    if (el) {
-      setTimeout(() => { el.focus(); el.select(); }, 50);
-    }
-  }, [form.id]);
-
   // Auto-populate left eye from right eye for lens brand
   const handleRightEyeLensBrandChange = (value: string) => {
     const selectedBrand = hangTrongs.find(h => h.ten_hang === value);
@@ -1212,38 +1204,41 @@ export default function KeDonKinh() {
         <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
             {/* Patient info — Mobile: fixed header (không scroll) */}
             {benhNhan ? (
-              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5 flex items-center gap-3 shadow-sm">
+              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5 flex items-center gap-3 shadow-sm">
+                <div className="h-10 w-10 rounded-full bg-white/20 border border-white/35 text-white font-bold text-sm flex items-center justify-center flex-shrink-0">
+                  {(benhNhan.ten || '?').trim().charAt(0).toUpperCase()}
+                </div>
                 <div className="flex-1 min-w-0">
-                  <h1 className="font-extrabold text-base text-gray-800 tracking-tight truncate">{benhNhan.ten}</h1>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                    <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                  <h1 className="font-extrabold text-base text-white tracking-tight truncate">{benhNhan.ten}</h1>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
+                    <Calendar className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
                     <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi}t)` : ''}</span>
                     {benhNhan.dienthoai && <>
-                      <Phone className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <Phone className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
                       <span className="truncate">{benhNhan.dienthoai}</span>
                     </>}
                   </div>
                   {benhNhan.diachi && (
-                    <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
+                      <MapPin className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
                       <span className="truncate">{benhNhan.diachi}</span>
                     </div>
                   )}
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   <Link href={`/ke-don?bn=${benhnhanid}`}>
-                    <Button className="h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs px-2" size="sm">
+                    <Button variant="outline" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" size="sm">
                       Kê thuốc
                     </Button>
                   </Link>
-                  <Button variant="outline" size="sm" className="h-8 text-xs px-2" onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}>
+                  <Button variant="outline" size="sm" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}>
                     <Pencil className="w-3 h-3" />
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5">
-                <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
+              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5">
+                <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
               </div>
             )}
 
@@ -1402,7 +1397,7 @@ export default function KeDonKinh() {
 
                   <div className="mt-3 pt-3 border-t border-gray-100">
                       {/* Mobile: Unified 2-column table layout */}
-                      <div className="block sm:hidden">
+                      <div className="block sm:hidden -mx-2 -mb-2">
                         <div className="border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
                           {/* Header */}
                           <div className="grid grid-cols-[3rem_1fr_1fr] bg-gray-100">
@@ -1464,10 +1459,10 @@ export default function KeDonKinh() {
                           <div className="grid grid-cols-[3rem_1fr_1fr]">
                             <div className="px-1 py-1.5 border-r border-gray-200 flex items-center"><span className="text-[10px] font-medium text-gray-600 leading-tight">PD/2</span></div>
                             <div className="px-1 py-1.5 border-r border-gray-200">
-                              <input type="text" value={form.pd_mp || ''} onChange={(e) => setForm({ ...form, pd_mp: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" value={form.pd_mp || ''} onChange={(e) => setForm({ ...form, pd_mp: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div className="px-1 py-1.5">
-                              <input type="text" value={form.pd_mt || ''} onChange={(e) => setForm({ ...form, pd_mt: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" value={form.pd_mt || ''} onChange={(e) => setForm({ ...form, pd_mt: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                           </div>
                         </div>
@@ -1568,6 +1563,8 @@ export default function KeDonKinh() {
           <td className="px-1.5 py-1 border-b border-gray-300 bg-white">
             <input
               type="text"
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
               value={form.pd_mp || ''}
               onChange={(e) => setForm({ ...form, pd_mp: e.target.value })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -1641,6 +1638,8 @@ export default function KeDonKinh() {
           <td className="px-1.5 py-1 bg-white">
             <input
               type="text"
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
               value={form.pd_mt || ''}
               onChange={(e) => setForm({ ...form, pd_mt: e.target.value })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -1973,27 +1972,59 @@ export default function KeDonKinh() {
                     </div>
                 </div>
                 {/* Nút hành động */}
-                <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
-                  {!isEditing && (
-                    <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={luuDonKinh}>Lưu đơn</button>
-                  )}
-                  {isEditing && form.id && (
+                <div className="pt-4 border-t border-gray-200 space-y-2">
+                  {!isEditing ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        className="col-span-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-md shadow-blue-200/70 active:scale-[0.98] transition-all text-sm touch-manipulation"
+                        onClick={luuDonKinh}
+                      >
+                        Lưu đơn
+                      </button>
+                      <button
+                        className="col-span-1 bg-white border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl hover:bg-gray-50 active:scale-[0.98] transition-all text-sm touch-manipulation"
+                        onClick={resetForm}
+                      >
+                        Đơn mới
+                      </button>
+                    </div>
+                  ) : form.id ? (
                     <>
-                      <button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={handleUpdate}>Sửa đơn</button>
-                      <button className="bg-white border border-gray-300 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation" onClick={handleCopy}>Sao chép</button>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation"
+                          onClick={handleUpdate}
+                        >
+                          Sửa đơn
+                        </button>
+                        <button
+                          className="bg-white border border-gray-300 text-gray-700 font-bold py-2.5 rounded-xl hover:bg-gray-50 active:scale-[0.98] transition-all text-sm touch-manipulation"
+                          onClick={handleCopy}
+                        >
+                          Sao chép
+                        </button>
+                        <button
+                          className="bg-amber-50 border border-amber-200 text-amber-700 font-bold py-2.5 rounded-xl hover:bg-amber-100 active:scale-[0.98] transition-all text-sm touch-manipulation"
+                          onClick={resetForm}
+                        >
+                          Đơn mới
+                        </button>
+                      </div>
+                      <div className={`grid gap-2 ${benhNhan ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        {benhNhan && (
+                          <div className="[&>button]:w-full [&>button]:justify-center">
+                            <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
+                          </div>
+                        )}
+                        <button
+                          className="bg-white border border-red-200 text-red-600 font-bold py-2.5 rounded-xl hover:bg-red-50 active:scale-[0.98] transition-all text-sm touch-manipulation flex items-center justify-center gap-1"
+                          onClick={handleDelete}
+                        >
+                          <Trash2 className="w-4 h-4" /> Xóa
+                        </button>
+                      </div>
                     </>
-                  )}
-                  <button className="bg-white border border-gray-200 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation" onClick={resetForm}>
-                    <FilePlus className="w-4 h-4 mr-1 inline" /> Đơn mới
-                  </button>
-                  {isEditing && form.id && (
-                    <button className="bg-white border border-red-200 text-red-500 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-red-50 touch-manipulation" onClick={handleDelete}>
-                      <Trash2 className="w-4 h-4 mr-1 inline" /> Xóa
-                    </button>
-                  )}
-                  {isEditing && form.id && benhNhan && (
-                    <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Mobile History Section */}
@@ -2342,38 +2373,58 @@ export default function KeDonKinh() {
 
           {/* Fixed-bottom action buttons */}
           <div className="flex-shrink-0 p-3 border-t border-gray-200 space-y-2">
-            {!isEditing && (
-              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]" onClick={luuDonKinh}>
-                ✓ LƯU ĐƠN
-              </button>
-            )}
-            {isEditing && form.id && (
-              <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]" onClick={handleUpdate}>
-                ✓ CẬP NHẬT
-              </button>
-            )}
-            <div className="grid grid-cols-2 gap-1.5">
-              <button className="bg-white border border-gray-200 text-gray-700 font-bold text-[11px] py-2 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1" onClick={resetForm}>
-                <FilePlus className="w-3.5 h-3.5" /> Mới
-              </button>
-              {isEditing && form.id ? (
-                <button className="bg-white border border-gray-200 text-gray-700 font-bold text-[11px] py-2 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-1" onClick={handleCopy}>
-                  📋 Chép
+            {!isEditing ? (
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  className="col-span-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+                  onClick={luuDonKinh}
+                >
+                  ✓ Lưu đơn
                 </button>
-              ) : (
-                <div />
-              )}
-            </div>
-            {isEditing && form.id && (
-              <button className="w-full bg-white border border-red-200 text-red-500 font-bold text-[11px] py-2 rounded-xl hover:bg-red-50 transition-colors" onClick={handleDelete}>
-                Xóa đơn
-              </button>
-            )}
-            <div className="flex gap-1.5">
-              {isEditing && form.id && benhNhan && (
-                <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
-              )}
-            </div>
+                <button
+                  className="col-span-1 bg-white border border-gray-300 text-gray-600 font-semibold text-[11px] py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+                  onClick={resetForm}
+                >
+                  Đơn mới
+                </button>
+              </div>
+            ) : form.id ? (
+              <>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] py-2 rounded-xl transition-colors"
+                    onClick={handleUpdate}
+                  >
+                    Sửa đơn
+                  </button>
+                  <button
+                    className="bg-white border border-gray-300 text-gray-700 font-bold text-[11px] py-2 rounded-xl hover:bg-gray-50 transition-colors"
+                    onClick={handleCopy}
+                  >
+                    Sao chép
+                  </button>
+                  <button
+                    className="bg-amber-50 border border-amber-200 text-amber-700 font-bold text-[11px] py-2 rounded-xl hover:bg-amber-100 transition-colors"
+                    onClick={resetForm}
+                  >
+                    Đơn mới
+                  </button>
+                </div>
+                <div className={`grid gap-1.5 ${benhNhan ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  {benhNhan && (
+                    <div className="[&>button]:w-full [&>button]:justify-center [&>button]:text-[11px] [&>button]:py-2">
+                      <PrintDonKinh config={printConfig} don={form as any} benhNhan={benhNhan} />
+                    </div>
+                  )}
+                  <button
+                    className="bg-white border border-red-200 text-red-600 font-bold text-[11px] py-2 rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-1"
+                    onClick={handleDelete}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Xóa
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </aside>
       </div>

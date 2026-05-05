@@ -21,8 +21,12 @@ const noHeaderPages = ['/login', '/register'];
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const showHeader = !noHeaderPages.includes(router.pathname);
-  const hideGlobalHeaderOnMobile = router.pathname === '/benh-nhan';
-  const mobileThemeColor = router.pathname === '/benh-nhan' ? '#3a7efb' : '#065f46';
+  const hideGlobalHeaderOnMobile = router.pathname === '/benh-nhan' || router.pathname === '/lich-hen';
+  const mobileThemeColor = router.pathname === '/benh-nhan'
+    ? '#3a7efb'
+    : router.pathname === '/lich-hen'
+      ? '#1976D2'
+      : '#065f46';
   const mainClass = showHeader
     ? (hideGlobalHeaderOnMobile ? 'pb-8 md:pt-10' : 'pt-10 pb-8')
     : '';

@@ -42,6 +42,7 @@ interface PrintDonThuocProps {
   benhNhan: BenhNhanData;
   tongTien: number;
   ghiChu?: string;
+  buttonClassName?: string;
 }
 
 function formatDate(dateStr?: string): string {
@@ -54,7 +55,7 @@ function formatDate(dateStr?: string): string {
   }
 }
 
-const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKham, dsThuoc, benhNhan, tongTien, ghiChu }) => {
+const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKham, dsThuoc, benhNhan, tongTien, ghiChu, buttonClassName }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
@@ -120,7 +121,7 @@ const PrintDonThuoc: React.FC<PrintDonThuocProps> = ({ config, chandoan, ngayKha
       <button
         type="button"
         onClick={handlePrint}
-        className="bg-white border border-gray-300 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation flex items-center gap-1"
+        className={`bg-white border border-gray-300 text-gray-700 font-bold text-sm py-2.5 px-3 rounded-xl hover:bg-gray-50 touch-manipulation flex items-center gap-1${buttonClassName ? ` ${buttonClassName}` : ''}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         In đơn

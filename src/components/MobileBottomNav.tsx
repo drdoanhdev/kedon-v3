@@ -37,7 +37,6 @@ import {
   Phone,
   Loader2,
   Lock,
-  Clock,
   History,
   ChevronRight as ChevronRightIcon,
 } from 'lucide-react';
@@ -46,6 +45,7 @@ import { useBranch } from '../contexts/BranchContext';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { usePageTabsContext } from '../contexts/PageTabsContext';
+import { fetchWithAuth } from '../lib/fetchWithAuth';
 import type { FeatureKey } from '../lib/featureConfig';
 
 const HIDDEN_ON_PATHS = new Set<string>([
@@ -75,6 +75,7 @@ interface PatientResult {
   id: number;
   ten: string;
   dienthoai?: string;
+  diachi?: string;
   namsinh?: string;
   mabenhnhan?: string;
   ngay_kham_gan_nhat?: string;
@@ -84,6 +85,7 @@ type DefaultAction = 'kinh' | 'thuoc' | 'hoso';
 
 const RECENT_KEY = 'mbn:recent_patients';
 const LAST_ACTION_KEY = 'mbn:last_action';
+const CONTACT_SWIPE_HINT_KEY = 'mbn:contact_swipe_hint_seen';
 const MAX_RECENT = 8;
 
 function loadRecent(): PatientResult[] {
@@ -129,6 +131,24 @@ function saveLastAction(a: DefaultAction) {
   }
 }
 
+function hasSeenContactSwipeHint(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return localStorage.getItem(CONTACT_SWIPE_HINT_KEY) === '1';
+  } catch {
+    return true;
+  }
+}
+
+function markContactSwipeHintSeen() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(CONTACT_SWIPE_HINT_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
 // Sắp xếp kết quả: ưu tiên SĐT khớp chính xác → tiền tố SĐT → khớp tên
 function rankResults(items: PatientResult[], term: string): PatientResult[] {
   const t = term.trim().toLowerCase();
@@ -168,6 +188,14 @@ function toZaloNumber(digits: string): string {
   return digits;
 }
 
+function openZaloDeepLink(zaloNumber: string) {
+  const zaloUrl = `https://zalo.me/${zaloNumber}`;
+  const popup = window.open(zaloUrl, '_blank', 'noopener,noreferrer');
+  if (!popup) {
+    window.location.href = zaloUrl;
+  }
+}
+
 export default function MobileBottomNav() {
   const router = useRouter();
   const {
@@ -194,12 +222,14 @@ export default function MobileBottomNav() {
   const [searchResults, setSearchResults] = useState<PatientResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [recent, setRecent] = useState<PatientResult[]>([]);
+  const [showContactSwipeHint, setShowContactSwipeHint] = useState(false);
   const [openContactSwipeId, setOpenContactSwipeId] = useState<number | null>(null);
   const [defaultAction, setDefaultAction] = useState<DefaultAction>('kinh');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [showFabMenu, setShowFabMenu] = useState(false);
   const fabHoldTimerRef = useRef<number | null>(null);
   const fabLongPressTriggeredRef = useRef(false);
+  const zaloOaConnectedRef = useRef<boolean | null>(null);
 
   const clearFabHoldTimer = useCallback(() => {
     if (fabHoldTimerRef.current !== null) {
@@ -283,14 +313,20 @@ export default function MobileBottomNav() {
     if (showSearch) {
       setRecent(loadRecent());
       setDefaultAction(loadLastAction());
+      setShowContactSwipeHint(!hasSeenContactSwipeHint());
       const t = setTimeout(() => searchInputRef.current?.focus(), 120);
       return () => clearTimeout(t);
     } else {
+      setShowContactSwipeHint(false);
       setOpenContactSwipeId(null);
       setSearchTerm('');
       setSearchResults([]);
     }
   }, [showSearch]);
+
+  useEffect(() => {
+    zaloOaConnectedRef.current = null;
+  }, [currentTenantId]);
 
   // Debounced search
   useEffect(() => {
@@ -400,6 +436,58 @@ export default function MobileBottomNav() {
     }
   };
 
+  const dismissContactSwipeHint = () => {
+    markContactSwipeHintSeen();
+    setShowContactSwipeHint(false);
+  };
+
+  const ensureZaloOaConnected = async (): Promise<boolean> => {
+    if (zaloOaConnectedRef.current !== null) return zaloOaConnectedRef.current;
+
+    try {
+      const res = await fetchWithAuth('/api/messaging/channels');
+      if (!res.ok) {
+        zaloOaConnectedRef.current = false;
+        return false;
+      }
+
+      const payload = await res.json();
+      const channels = Array.isArray(payload?.data) ? payload.data : [];
+      const connected = channels.some(
+        (c: any) => c?.provider === 'zalo_oa' && c?.status === 'connected'
+      );
+      zaloOaConnectedRef.current = connected;
+      return connected;
+    } catch {
+      zaloOaConnectedRef.current = false;
+      return false;
+    }
+  };
+
+  const handlePatientZaloAction = async (p: PatientResult) => {
+    const zaloNumber = toZaloNumber(digitsOnly(p.dienthoai));
+    if (!zaloNumber) return;
+
+    setOpenContactSwipeId(null);
+    dismissContactSwipeHint();
+
+    if (!canAccessFeature('messaging_automation')) {
+      openZaloDeepLink(zaloNumber);
+      return;
+    }
+
+    const connected = await ensureZaloOaConnected();
+    if (connected) {
+      const params = new URLSearchParams();
+      params.set('quick_phone', zaloNumber);
+      if (p.ten) params.set('quick_name', p.ten);
+      router.push(`/cai-dat-nhan-tin?${params.toString()}`);
+      return;
+    }
+
+    openZaloDeepLink(zaloNumber);
+  };
+
   const handleEnterDefault = () => {
     const list = searchTerm.trim() ? searchResults : recent;
     if (list.length === 0) return;
@@ -442,6 +530,11 @@ export default function MobileBottomNav() {
 
     toggleSearchSheet();
   };
+
+  const shouldShowSwipeHint =
+    showContactSwipeHint &&
+    !searching &&
+    (searchTerm.trim() ? searchResults.length > 0 : recent.length > 0);
 
   return (
     <>
@@ -680,6 +773,25 @@ export default function MobileBottomNav() {
 
             {/* Results / Recent */}
             <div className="flex-1 overflow-y-auto">
+              {shouldShowSwipeHint && (
+                <div className="px-4 pt-3">
+                  <div className="rounded-xl border border-blue-100 bg-blue-50 text-blue-900 px-3 py-2.5 flex items-start gap-2">
+                    <MessageCircle className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
+                    <div className="flex-1 text-xs leading-relaxed">
+                      Vuốt sang trái trên mỗi khách để hiện nút Gọi và Zalo.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={dismissContactSwipeHint}
+                      className="text-blue-500 hover:text-blue-700"
+                      aria-label="Ẩn hướng dẫn vuốt"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {searching && (
                 <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -721,6 +833,8 @@ export default function MobileBottomNav() {
                             onAction={triggerAction}
                             isContactSwipeOpen={openContactSwipeId === p.id}
                             setOpenContactSwipeId={setOpenContactSwipeId}
+                            onZaloAction={handlePatientZaloAction}
+                            onSwipeHintSeen={dismissContactSwipeHint}
                           />
                         ))}
                       </ul>
@@ -746,6 +860,8 @@ export default function MobileBottomNav() {
                       highlightFirst={idx === 0}
                       isContactSwipeOpen={openContactSwipeId === p.id}
                       setOpenContactSwipeId={setOpenContactSwipeId}
+                      onZaloAction={handlePatientZaloAction}
+                      onSwipeHintSeen={dismissContactSwipeHint}
                     />
                   ))}
                 </ul>
@@ -1004,6 +1120,8 @@ function PatientRow({
   highlightFirst,
   isContactSwipeOpen,
   setOpenContactSwipeId,
+  onZaloAction,
+  onSwipeHintSeen,
 }: {
   p: PatientResult;
   defaultAction: DefaultAction;
@@ -1011,6 +1129,8 @@ function PatientRow({
   highlightFirst?: boolean;
   isContactSwipeOpen: boolean;
   setOpenContactSwipeId: (id: number | null) => void;
+  onZaloAction: (p: PatientResult) => void;
+  onSwipeHintSeen?: () => void;
 }) {
   const SWIPE_ACTION_WIDTH_PX = 132;
   const [dragging, setDragging] = useState(false);
@@ -1081,6 +1201,7 @@ function PatientRow({
         ? clampedOffset <= -SWIPE_ACTION_WIDTH_PX * 0.35
         : isContactSwipeOpen;
 
+    if (shouldStayOpen) onSwipeHintSeen?.();
     setOpenContactSwipeId(shouldStayOpen ? p.id : null);
     setDragging(false);
     setDragOffsetPx(0);
@@ -1093,31 +1214,19 @@ function PatientRow({
     const dial = toDialNumber(phoneDigits);
     if (!dial) return;
 
+    onSwipeHintSeen?.();
     setOpenContactSwipeId(null);
     window.location.href = `tel:${dial}`;
   };
 
   const handleOpenZalo = () => {
     if (!canContact) return;
-    const zaloNumber = toZaloNumber(phoneDigits);
-    if (!zaloNumber) return;
-
+    onSwipeHintSeen?.();
     setOpenContactSwipeId(null);
-    const zaloUrl = `https://zalo.me/${zaloNumber}`;
-    const popup = window.open(zaloUrl, '_blank', 'noopener,noreferrer');
-    if (!popup) {
-      window.location.href = zaloUrl;
-    }
+    onZaloAction(p);
   };
 
   const cardTranslateX = dragging ? dragOffsetPx : (isContactSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0);
-  const lastVisit = p.ngay_kham_gan_nhat
-    ? new Date(p.ngay_kham_gan_nhat).toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: '2-digit',
-      })
-    : null;
   return (
     <li className={highlightFirst ? 'bg-blue-50/30' : ''}>
       <div className="relative overflow-hidden">
@@ -1178,109 +1287,33 @@ function PatientRow({
             {(p.ten || '?')[0]?.toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-800 truncate">
-              {p.ten || '(không tên)'}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-sm font-semibold text-gray-800 truncate">{p.ten || '(không tên)'}</span>
+              {p.namsinh && <span className="text-xs text-gray-500 shrink-0">• {p.namsinh}</span>}
               {highlightFirst && (
                 <span className="ml-1.5 text-[9px] uppercase tracking-wider text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded font-bold">
                   Enter
                 </span>
               )}
             </div>
-            <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-              {p.dienthoai && (
-                <span className="flex items-center gap-1">
-                  <Phone className="w-3 h-3" />
-                  {p.dienthoai}
-                </span>
-              )}
-              {p.namsinh && <span>• {p.namsinh}</span>}
-              {lastVisit && (
-                <span className="flex items-center gap-0.5 text-gray-400">
-                  <Clock className="w-3 h-3" />
-                  {lastVisit}
-                </span>
-              )}
-            </div>
+            {(p.dienthoai || p.diachi) && (
+              <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5 min-w-0">
+                {p.dienthoai && (
+                  <span className="flex items-center gap-1 shrink-0">
+                    <Phone className="w-3 h-3" />
+                    {p.dienthoai}
+                  </span>
+                )}
+                {p.dienthoai && p.diachi && <span className="text-gray-300">•</span>}
+                {p.diachi && <span className="truncate">{p.diachi}</span>}
+              </div>
+            )}
           </div>
           <ChevronRightIcon className="w-4 h-4 text-gray-300 flex-shrink-0" />
         </button>
-
-        {/* Action chips */}
-        <div className="mt-2 grid grid-cols-3 gap-1.5">
-          <ActionChip
-            label="Kê kính"
-            icon={Glasses}
-            primary={defaultAction === 'kinh'}
-            onClick={() => {
-              setOpenContactSwipeId(null);
-              onAction(p, 'kinh');
-            }}
-            color="emerald"
-          />
-          <ActionChip
-            label="Kê thuốc"
-            icon={FileText}
-            primary={defaultAction === 'thuoc'}
-            onClick={() => {
-              setOpenContactSwipeId(null);
-              onAction(p, 'thuoc');
-            }}
-            color="blue"
-          />
-          <ActionChip
-            label="Hồ sơ"
-            icon={Users}
-            primary={defaultAction === 'hoso'}
-            onClick={() => {
-              setOpenContactSwipeId(null);
-              onAction(p, 'hoso');
-            }}
-            color="gray"
-          />
-        </div>
       </div>
       </div>
     </li>
-  );
-}
-
-function ActionChip({
-  label,
-  icon: Icon,
-  primary,
-  onClick,
-  color,
-}: {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  primary: boolean;
-  onClick: () => void;
-  color: 'emerald' | 'blue' | 'gray';
-}) {
-  const colorMap: Record<typeof color, { active: string; idle: string }> = {
-    emerald: {
-      active: 'bg-emerald-600 text-white border-emerald-600',
-      idle: 'bg-white text-emerald-700 border-emerald-200 active:bg-emerald-50',
-    },
-    blue: {
-      active: 'bg-blue-600 text-white border-blue-600',
-      idle: 'bg-white text-blue-700 border-blue-200 active:bg-blue-50',
-    },
-    gray: {
-      active: 'bg-gray-700 text-white border-gray-700',
-      idle: 'bg-white text-gray-700 border-gray-200 active:bg-gray-50',
-    },
-  };
-  const cls = primary ? colorMap[color].active : colorMap[color].idle;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center justify-center gap-1 h-9 rounded-lg border text-xs font-semibold transition-colors active:scale-[0.97] ${cls}`}
-    >
-      <Icon className="w-3.5 h-3.5" />
-      {label}
-    </button>
   );
 }
 

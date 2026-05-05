@@ -816,7 +816,7 @@ export default function BenhNhanPage() {
         {/* Mobile Layout */}
   <div className="block md:hidden">
           {/* Header Mobile */}
-          <div className="sticky top-0 z-30 -mx-2 bg-[#3a7efb] px-2.5 py-2">
+          <div className="sticky top-0 z-30 -mx-2 bg-[#1976D2] px-2.5 py-2">
             <div className="flex items-center gap-2">
               <Search className="w-[1.6rem] h-[1.6rem] text-white shrink-0" />
               <div className="flex-1 overflow-hidden">
