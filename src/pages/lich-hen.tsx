@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Phone, MessageSquare, Check, X, Trash2, CalendarDays, RefreshCw, Copy, Pencil, Plus, Settings, AlertTriangle } from 'lucide-react';
+import { Phone, MessageSquare, Check, X, Trash2, CalendarDays, Clock, RefreshCw, Copy, Pencil, Plus, Settings, AlertTriangle } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
 import { Button } from '../components/ui/button';
