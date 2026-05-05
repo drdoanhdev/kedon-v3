@@ -19,6 +19,7 @@ import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calend
 import axios from "axios";
 import Link from "next/link";
 import Head from "next/head";
+import { useRouter } from "next/router";
 import toast from "react-hot-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute'
@@ -101,6 +102,7 @@ const TRANG_THAI_MAP: Record<string, { label: string; color: string; bg: string 
 };
 
 export default function BenhNhanPage() {
+  const router = useRouter();
   const { confirm } = useConfirm();
   const { isMultiBranch } = useBranch();
   const [benhNhans, setBenhNhans] = useState<BenhNhan[]>([]);
@@ -132,6 +134,59 @@ export default function BenhNhanPage() {
       document.title = 'Bệnh nhân';
     }
   }, []);
+
+  // Mở nhanh dialog thêm mới khi điều hướng từ FAB: /benh-nhan?new=1
+  useEffect(() => {
+    if (!router.isReady || typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') !== '1') return;
+
+    setIsEditing(false);
+    setForm({
+      ten: '',
+      namsinh: '',
+      dienthoai: '',
+      diachi: '',
+    });
+    setOpen(true);
+
+    params.delete('new');
+    const queryString = params.toString();
+    const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
+    router.replace(nextUrl, undefined, { shallow: true });
+  }, [router.isReady, router.pathname, router.asPath]);
+
+  // Nhận tham số từ FAB "Hồ sơ": /benh-nhan?search=...&focusId=...
+  useEffect(() => {
+    if (!router.isReady || typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const searchParam = params.get('search');
+    const normalizedSearch = searchParam?.trim() ?? '';
+    const focusRaw = params.get('focusId');
+
+    if (searchParam !== null && normalizedSearch !== search) {
+      setSearch(normalizedSearch);
+      setCurrentPage(1);
+      setOpenSwipePatientId(null);
+      setSelectedBenhNhanId(null);
+      setDonThuocs([]);
+      setDonKinhs([]);
+      setChiTietDonThuocs({});
+      setDienTiens({});
+      setHenKhams([]);
+      setActiveTab("don-thuoc");
+    }
+
+    if (focusRaw) {
+      const parsedFocusId = Number(focusRaw);
+      if (Number.isFinite(parsedFocusId) && parsedFocusId > 0) {
+        pendingFocusPatientIdRef.current = parsedFocusId;
+      }
+    }
+  }, [router.isReady, router.asPath]);
+
   // Sorting state - hỗ trợ multi-level sorting
   type SortField = 'ten' | 'namsinh' | 'tuoi' | 'dienthoai' | 'diachi' | 'created_at' | 'ngay_kham_gan_nhat';
   const [sortConfig, setSortConfig] = useState<Array<{ field: SortField; direction: 'asc' | 'desc' }>>([]);
@@ -159,6 +214,7 @@ export default function BenhNhanPage() {
   const dienthoaiRef = useRef<HTMLInputElement | null>(null);
   const diachiRef = useRef<HTMLInputElement | null>(null);
   const choKhamPanelRef = useRef<ChoKhamPanelRef>(null);
+  const pendingFocusPatientIdRef = useRef<number | null>(null);
 
   const scheduleDragOffset = useCallback((offsetPx: number) => {
     pendingDragOffsetRef.current = offsetPx;
@@ -355,6 +411,30 @@ export default function BenhNhanPage() {
       setHenKhams([]);
     }
   }, []);
+
+  // Khi đã tải xong list và có focusId từ query, tự mở hồ sơ bệnh nhân mục tiêu
+  useEffect(() => {
+    if (!router.isReady || typeof window === 'undefined') return;
+
+    const focusId = pendingFocusPatientIdRef.current;
+    if (!focusId) return;
+
+    const targetExists = benhNhans.some((bn) => bn.id === focusId);
+    if (!targetExists) return;
+
+    setSelectedBenhNhanId(focusId);
+    setActiveTab("don-thuoc");
+    fetchDonThuoc(focusId);
+    pendingFocusPatientIdRef.current = null;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('focusId')) {
+      params.delete('focusId');
+      const queryString = params.toString();
+      const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
+      router.replace(nextUrl, undefined, { shallow: true });
+    }
+  }, [benhNhans, fetchDonThuoc, router.isReady, router.pathname]);
 
   const handleSelectBenhNhan = useCallback(
     (benhnhanid: number) => {

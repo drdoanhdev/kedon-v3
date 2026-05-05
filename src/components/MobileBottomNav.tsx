@@ -3,7 +3,7 @@
 // Layout: [Trang chủ] [Bệnh nhân] [🔍 FAB Tìm khách] [Lịch hẹn] [Thêm]
 // Sheet "Thêm" chứa: thông báo, tin nhắn, chuyển phòng khám, chuyển chi nhánh,
 // toàn bộ menu, và đăng xuất.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import axios from 'axios';
@@ -151,6 +151,23 @@ function scoreItem(p: PatientResult, t: string, isPhoneLike: boolean): number {
   return s;
 }
 
+function digitsOnly(value?: string): string {
+  return (value || '').replace(/\D/g, '');
+}
+
+function toDialNumber(digits: string): string {
+  if (!digits) return '';
+  if (digits.startsWith('84')) return `+${digits}`;
+  return digits;
+}
+
+function toZaloNumber(digits: string): string {
+  if (!digits) return '';
+  if (digits.startsWith('0')) return `84${digits.slice(1)}`;
+  if (digits.startsWith('84')) return digits;
+  return digits;
+}
+
 export default function MobileBottomNav() {
   const router = useRouter();
   const {
@@ -177,22 +194,69 @@ export default function MobileBottomNav() {
   const [searchResults, setSearchResults] = useState<PatientResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [recent, setRecent] = useState<PatientResult[]>([]);
+  const [openContactSwipeId, setOpenContactSwipeId] = useState<number | null>(null);
   const [defaultAction, setDefaultAction] = useState<DefaultAction>('kinh');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [showFabMenu, setShowFabMenu] = useState(false);
+  const fabHoldTimerRef = useRef<number | null>(null);
+  const fabLongPressTriggeredRef = useRef(false);
+
+  const clearFabHoldTimer = useCallback(() => {
+    if (fabHoldTimerRef.current !== null) {
+      clearTimeout(fabHoldTimerRef.current);
+      fabHoldTimerRef.current = null;
+    }
+  }, []);
+
+  const closeAllSheets = useCallback(() => {
+    clearFabHoldTimer();
+    fabLongPressTriggeredRef.current = false;
+    setShowFabMenu(false);
+    setOpenContactSwipeId(null);
+    setShowSearch(false);
+    setShowMore(false);
+  }, [clearFabHoldTimer]);
+
+  const toggleSearchSheet = useCallback(() => {
+    setShowFabMenu(false);
+    setShowMore(false);
+    setShowSearch((prev) => !prev);
+  }, []);
+
+  const toggleMoreSheet = useCallback(() => {
+    setShowFabMenu(false);
+    setShowSearch(false);
+    setShowMore((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    return () => clearFabHoldTimer();
+  }, [clearFabHoldTimer]);
 
   // Đóng sheet khi đổi route
   useEffect(() => {
     const handle = () => {
-      setShowSearch(false);
-      setShowMore(false);
+      closeAllSheets();
     };
     router.events.on('routeChangeStart', handle);
     return () => router.events.off('routeChangeStart', handle);
-  }, [router.events]);
+  }, [closeAllSheets, router.events]);
 
-  // Khoá scroll body khi mở sheet
+  // Hỗ trợ phím ESC để đóng sheet
   useEffect(() => {
-    const open = showSearch || showMore;
+    if (!showSearch && !showMore && !showFabMenu) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAllSheets();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [closeAllSheets, showFabMenu, showMore, showSearch]);
+
+  // Khoá scroll body khi mở sheet hoặc menu nhanh FAB
+  useEffect(() => {
+    const open = showSearch || showMore || showFabMenu;
     if (open) {
       const prev = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -200,7 +264,7 @@ export default function MobileBottomNav() {
         document.body.style.overflow = prev;
       };
     }
-  }, [showSearch, showMore]);
+  }, [showFabMenu, showSearch, showMore]);
 
   // Phát hiện bàn phím ảo — ẩn bottom bar khi gõ
   useEffect(() => {
@@ -222,6 +286,7 @@ export default function MobileBottomNav() {
       const t = setTimeout(() => searchInputRef.current?.focus(), 120);
       return () => clearTimeout(t);
     } else {
+      setOpenContactSwipeId(null);
       setSearchTerm('');
       setSearchResults([]);
     }
@@ -232,6 +297,7 @@ export default function MobileBottomNav() {
     if (!showSearch) return;
     const term = searchTerm.trim();
     if (!term) {
+      setOpenContactSwipeId(null);
       setSearchResults([]);
       setSearching(false);
       return;
@@ -274,9 +340,9 @@ export default function MobileBottomNav() {
     []
   );
 
-  const moreItems: MoreItem[] = useMemo(() => {
+  const moreItems = useMemo<MoreItem[]>(() => {
     const isOwnerAdmin = currentRole === 'owner' || currentRole === 'admin';
-    return [
+    const items: MoreItem[] = [
       { href: '/', label: 'Trang chủ', icon: Home },
       { href: '/benh-nhan', label: 'Bệnh nhân', icon: Users, feature: 'patient_management' },
       { href: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays, feature: 'appointments' },
@@ -296,7 +362,8 @@ export default function MobileBottomNav() {
       { href: '/quan-ly-phong-kham', label: 'Phòng khám', icon: Settings, visible: isOwnerAdmin },
       { href: '/billing', label: 'Gói dịch vụ', icon: CreditCard },
       { href: '/admin', label: 'Quản trị nền tảng', icon: Shield, visible: userRole === 'superadmin' },
-    ].filter((i) => i.visible !== false);
+    ];
+    return items.filter((i) => i.visible !== false);
   }, [currentRole, userRole]);
 
   if (!user) return null;
@@ -319,10 +386,18 @@ export default function MobileBottomNav() {
     saveRecent(p);
     saveLastAction(action);
     setDefaultAction(action);
+    setOpenContactSwipeId(null);
+    setShowFabMenu(false);
     setShowSearch(false);
     if (action === 'kinh') router.push(`/ke-don-kinh?bn=${p.id}`);
     else if (action === 'thuoc') router.push(`/ke-don?bn=${p.id}`);
-    else router.push(`/benh-nhan?search=${encodeURIComponent(p.dienthoai || p.ten || '')}`);
+    else {
+      const params = new URLSearchParams();
+      const searchSeed = (p.dienthoai || p.ten || '').trim();
+      if (searchSeed) params.set('search', searchSeed);
+      params.set('focusId', String(p.id));
+      router.push(`/benh-nhan?${params.toString()}`);
+    }
   };
 
   const handleEnterDefault = () => {
@@ -332,8 +407,40 @@ export default function MobileBottomNav() {
   };
 
   const handleAddNewPatient = () => {
-    setShowSearch(false);
+    closeAllSheets();
     router.push('/benh-nhan?new=1');
+  };
+
+  const handleFabPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    fabLongPressTriggeredRef.current = false;
+    clearFabHoldTimer();
+
+    fabHoldTimerRef.current = window.setTimeout(() => {
+      fabLongPressTriggeredRef.current = true;
+      setShowSearch(false);
+      setShowMore(false);
+      setShowFabMenu(true);
+    }, 420);
+  };
+
+  const handleFabPointerEnd = () => {
+    clearFabHoldTimer();
+  };
+
+  const handleFabClick = () => {
+    if (fabLongPressTriggeredRef.current) {
+      fabLongPressTriggeredRef.current = false;
+      return;
+    }
+
+    if (showFabMenu) {
+      setShowFabMenu(false);
+      return;
+    }
+
+    toggleSearchSheet();
   };
 
   return (
@@ -344,6 +451,15 @@ export default function MobileBottomNav() {
         className="md:hidden h-[68px]"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       />
+
+      {showFabMenu && (
+        <button
+          type="button"
+          aria-label="Đóng menu nhanh FAB"
+          onClick={() => setShowFabMenu(false)}
+          className="md:hidden fixed inset-0 z-[49] bg-black/10 backdrop-blur-[1px]"
+        />
+      )}
 
       {/* Bottom navigation */}
       <nav
@@ -379,14 +495,62 @@ export default function MobileBottomNav() {
           )}
 
           {/* FAB giữa — Tìm khách hàng */}
-          <div className="flex items-start justify-center">
+          <div className="relative flex items-start justify-center">
+            <div
+              id="mbn-fab-menu"
+              className={`absolute -top-[132px] z-20 w-44 rounded-2xl border border-gray-200 bg-white/95 backdrop-blur-sm shadow-xl p-1.5 transition-all duration-150 ${
+                showFabMenu
+                  ? 'opacity-100 translate-y-0 pointer-events-auto'
+                  : 'opacity-0 translate-y-1 pointer-events-none'
+              }`}
+            >
+              <FabQuickAction
+                label="Tìm khách"
+                icon={Search}
+                onClick={() => {
+                  setShowFabMenu(false);
+                  setShowMore(false);
+                  setShowSearch(true);
+                }}
+              />
+              <FabQuickAction
+                label="Thêm khách"
+                icon={UserPlus}
+                onClick={handleAddNewPatient}
+              />
+              <FabQuickAction
+                label="Mở menu"
+                icon={Menu}
+                onClick={() => {
+                  setShowFabMenu(false);
+                  setShowSearch(false);
+                  setShowMore(true);
+                }}
+              />
+            </div>
+
             <button
               type="button"
-              onClick={() => setShowSearch(true)}
-              aria-label="Tìm khách hàng"
-              className="-mt-6 w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-emerald-600 text-white shadow-lg active:scale-95 transition-transform flex items-center justify-center ring-4 ring-white"
+              onClick={handleFabClick}
+              onPointerDown={handleFabPointerDown}
+              onPointerUp={handleFabPointerEnd}
+              onPointerCancel={handleFabPointerEnd}
+              onPointerLeave={handleFabPointerEnd}
+              onContextMenu={(e) => e.preventDefault()}
+              aria-label={showFabMenu ? 'Đóng menu nhanh FAB' : showSearch ? 'Đóng tìm khách hàng' : 'Tìm khách hàng'}
+              aria-expanded={showSearch || showFabMenu}
+              aria-controls={showFabMenu ? 'mbn-fab-menu' : 'mbn-search-sheet'}
+              className={`-mt-6 w-14 h-14 rounded-full text-white shadow-lg active:scale-95 transition-transform flex items-center justify-center ring-4 ring-white ${
+                showSearch || showFabMenu
+                  ? 'bg-gradient-to-br from-blue-700 to-emerald-700 scale-[0.97]'
+                  : 'bg-gradient-to-br from-blue-600 to-emerald-600'
+              }`}
             >
-              <Search className="w-6 h-6" strokeWidth={2.5} />
+              {showSearch || showFabMenu ? (
+                <X className="w-6 h-6" strokeWidth={2.5} />
+              ) : (
+                <Search className="w-6 h-6" strokeWidth={2.5} />
+              )}
             </button>
           </div>
 
@@ -410,8 +574,14 @@ export default function MobileBottomNav() {
           {/* Nút "Thêm" */}
           <button
             type="button"
-            onClick={() => setShowMore(true)}
-            className="flex flex-col items-center justify-center gap-0.5 text-gray-500 active:text-blue-600 active:bg-gray-50 relative"
+            onClick={toggleMoreSheet}
+            aria-expanded={showMore}
+            aria-controls="mbn-more-sheet"
+            className={`flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
+              showMore
+                ? 'text-blue-600 bg-blue-50'
+                : 'text-gray-500 active:text-blue-600 active:bg-gray-50'
+            }`}
             aria-label="Mở menu thêm"
           >
             <div className="relative">
@@ -429,7 +599,7 @@ export default function MobileBottomNav() {
 
       {/* ─────────── Sheet: Tìm khách hàng (Action Hub) ─────────── */}
       {showSearch && (
-        <BottomSheet onClose={() => setShowSearch(false)} fullHeight>
+        <BottomSheet onClose={closeAllSheets} fullHeight sheetId="mbn-search-sheet">
           <div className="flex flex-col h-full">
             {/* Search input */}
             <div className="px-4 pb-2 border-b border-gray-100">
@@ -549,6 +719,8 @@ export default function MobileBottomNav() {
                             p={p}
                             defaultAction={defaultAction}
                             onAction={triggerAction}
+                            isContactSwipeOpen={openContactSwipeId === p.id}
+                            setOpenContactSwipeId={setOpenContactSwipeId}
                           />
                         ))}
                       </ul>
@@ -572,6 +744,8 @@ export default function MobileBottomNav() {
                       defaultAction={defaultAction}
                       onAction={triggerAction}
                       highlightFirst={idx === 0}
+                      isContactSwipeOpen={openContactSwipeId === p.id}
+                      setOpenContactSwipeId={setOpenContactSwipeId}
                     />
                   ))}
                 </ul>
@@ -594,7 +768,7 @@ export default function MobileBottomNav() {
 
       {/* ─────────── Sheet: Thêm (account + menu + logout) ─────────── */}
       {showMore && (
-        <BottomSheet onClose={() => setShowMore(false)} fullHeight>
+        <BottomSheet onClose={closeAllSheets} fullHeight sheetId="mbn-more-sheet">
           <div className="flex flex-col h-full">
             {/* Header */}
             <div className="px-4 pb-3 border-b border-gray-100">
@@ -775,6 +949,27 @@ export default function MobileBottomNav() {
 
 /* ───────── Sub components ───────── */
 
+function FabQuickAction({
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-sm font-medium text-gray-700 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+    >
+      <Icon className="w-4 h-4 text-blue-600" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function DefaultActionPill({
   active,
   icon: Icon,
@@ -807,12 +1002,115 @@ function PatientRow({
   defaultAction,
   onAction,
   highlightFirst,
+  isContactSwipeOpen,
+  setOpenContactSwipeId,
 }: {
   p: PatientResult;
   defaultAction: DefaultAction;
   onAction: (p: PatientResult, action: DefaultAction) => void;
   highlightFirst?: boolean;
+  isContactSwipeOpen: boolean;
+  setOpenContactSwipeId: (id: number | null) => void;
 }) {
+  const SWIPE_ACTION_WIDTH_PX = 132;
+  const [dragging, setDragging] = useState(false);
+  const [dragOffsetPx, setDragOffsetPx] = useState(0);
+  const touchStartXRef = useRef(0);
+  const touchCurrentXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const touchCurrentYRef = useRef(0);
+  const swipingRef = useRef(false);
+  const swipeAxisLockRef = useRef<'h' | 'v' | null>(null);
+  const swipeBaseOffsetRef = useRef(0);
+  const phoneDigits = digitsOnly(p.dienthoai);
+  const canContact = phoneDigits.length >= 8;
+
+  const handleSwipeStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!canContact) return;
+    if (!isContactSwipeOpen) {
+      setOpenContactSwipeId(null);
+    }
+
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    swipingRef.current = true;
+    swipeAxisLockRef.current = null;
+    touchStartXRef.current = touch.clientX;
+    touchCurrentXRef.current = touch.clientX;
+    touchStartYRef.current = touch.clientY;
+    touchCurrentYRef.current = touch.clientY;
+    swipeBaseOffsetRef.current = isContactSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0;
+    setDragging(true);
+    setDragOffsetPx(swipeBaseOffsetRef.current);
+  };
+
+  const handleSwipeMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!swipingRef.current) return;
+
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    touchCurrentXRef.current = touch.clientX;
+    touchCurrentYRef.current = touch.clientY;
+
+    const deltaX = touchCurrentXRef.current - touchStartXRef.current;
+    const deltaY = touchCurrentYRef.current - touchStartYRef.current;
+
+    if (swipeAxisLockRef.current === null) {
+      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
+      swipeAxisLockRef.current = Math.abs(deltaX) > Math.abs(deltaY) * 1.2 ? 'h' : 'v';
+    }
+
+    if (swipeAxisLockRef.current !== 'h') return;
+
+    e.preventDefault();
+    const rawOffset = swipeBaseOffsetRef.current + deltaX;
+    const clampedOffset = Math.max(-SWIPE_ACTION_WIDTH_PX, Math.min(0, rawOffset));
+    setDragOffsetPx(clampedOffset);
+  };
+
+  const handleSwipeEnd = () => {
+    if (!swipingRef.current) return;
+
+    const deltaX = touchCurrentXRef.current - touchStartXRef.current;
+    const rawOffset = swipeBaseOffsetRef.current + deltaX;
+    const clampedOffset = Math.max(-SWIPE_ACTION_WIDTH_PX, Math.min(0, rawOffset));
+    const shouldStayOpen =
+      swipeAxisLockRef.current === 'h'
+        ? clampedOffset <= -SWIPE_ACTION_WIDTH_PX * 0.35
+        : isContactSwipeOpen;
+
+    setOpenContactSwipeId(shouldStayOpen ? p.id : null);
+    setDragging(false);
+    setDragOffsetPx(0);
+    swipingRef.current = false;
+    swipeAxisLockRef.current = null;
+  };
+
+  const handleCall = () => {
+    if (!canContact) return;
+    const dial = toDialNumber(phoneDigits);
+    if (!dial) return;
+
+    setOpenContactSwipeId(null);
+    window.location.href = `tel:${dial}`;
+  };
+
+  const handleOpenZalo = () => {
+    if (!canContact) return;
+    const zaloNumber = toZaloNumber(phoneDigits);
+    if (!zaloNumber) return;
+
+    setOpenContactSwipeId(null);
+    const zaloUrl = `https://zalo.me/${zaloNumber}`;
+    const popup = window.open(zaloUrl, '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      window.location.href = zaloUrl;
+    }
+  };
+
+  const cardTranslateX = dragging ? dragOffsetPx : (isContactSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0);
   const lastVisit = p.ngay_kham_gan_nhat
     ? new Date(p.ngay_kham_gan_nhat).toLocaleDateString('vi-VN', {
         day: '2-digit',
@@ -822,11 +1120,58 @@ function PatientRow({
     : null;
   return (
     <li className={highlightFirst ? 'bg-blue-50/30' : ''}>
-      <div className="px-4 py-2.5">
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-y-0 right-0 w-[132px] grid grid-cols-2">
+          <button
+            type="button"
+            onClick={handleCall}
+            disabled={!canContact}
+            className={`h-full flex flex-col items-center justify-center gap-1 text-[10px] font-semibold leading-tight transition-colors ${
+              canContact
+                ? 'bg-emerald-600 text-white active:bg-emerald-700'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+            aria-label={canContact ? `Gọi ${p.ten || 'khách hàng'}` : 'Không có số điện thoại để gọi'}
+          >
+            <Phone className="w-3.5 h-3.5" />
+            Gọi
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenZalo}
+            disabled={!canContact}
+            className={`h-full flex flex-col items-center justify-center gap-1 text-[10px] font-semibold leading-tight transition-colors ${
+              canContact
+                ? 'bg-blue-600 text-white active:bg-blue-700'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            }`}
+            aria-label={canContact ? `Nhắn Zalo cho ${p.ten || 'khách hàng'}` : 'Không có số điện thoại để nhắn Zalo'}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            Zalo
+          </button>
+        </div>
+
+        <div
+          className={`relative px-4 py-2.5 touch-pan-y ${dragging ? '' : 'transition-transform duration-200 ease-out'} ${
+            highlightFirst ? 'bg-blue-50/30' : 'bg-white'
+          }`}
+          style={{
+            transform: `translateX(${cardTranslateX}px)`,
+            willChange: 'transform',
+          }}
+          onTouchStart={handleSwipeStart}
+          onTouchMove={handleSwipeMove}
+          onTouchEnd={handleSwipeEnd}
+          onTouchCancel={handleSwipeEnd}
+        >
         {/* Top: avatar + info + main action */}
         <button
           type="button"
-          onClick={() => onAction(p, defaultAction)}
+          onClick={() => {
+            setOpenContactSwipeId(null);
+            onAction(p, defaultAction);
+          }}
           className="w-full flex items-center gap-3 text-left active:opacity-70"
         >
           <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
@@ -866,24 +1211,34 @@ function PatientRow({
             label="Kê kính"
             icon={Glasses}
             primary={defaultAction === 'kinh'}
-            onClick={() => onAction(p, 'kinh')}
+            onClick={() => {
+              setOpenContactSwipeId(null);
+              onAction(p, 'kinh');
+            }}
             color="emerald"
           />
           <ActionChip
             label="Kê thuốc"
             icon={FileText}
             primary={defaultAction === 'thuoc'}
-            onClick={() => onAction(p, 'thuoc')}
+            onClick={() => {
+              setOpenContactSwipeId(null);
+              onAction(p, 'thuoc');
+            }}
             color="blue"
           />
           <ActionChip
             label="Hồ sơ"
             icon={Users}
             primary={defaultAction === 'hoso'}
-            onClick={() => onAction(p, 'hoso')}
+            onClick={() => {
+              setOpenContactSwipeId(null);
+              onAction(p, 'hoso');
+            }}
             color="gray"
           />
         </div>
+      </div>
       </div>
     </li>
   );
@@ -1002,10 +1357,12 @@ function BottomSheet({
   onClose,
   children,
   fullHeight,
+  sheetId,
 }: {
   onClose: () => void;
   children: React.ReactNode;
   fullHeight?: boolean;
+  sheetId?: string;
 }) {
   return (
     <div className="md:hidden fixed inset-0 z-[60]" role="dialog" aria-modal="true">
@@ -1016,6 +1373,7 @@ function BottomSheet({
         className="absolute inset-0 bg-black/40 backdrop-blur-[2px] mbn-fade-in"
       />
       <div
+        id={sheetId}
         className={`absolute left-0 right-0 bottom-0 bg-white rounded-t-2xl shadow-2xl flex flex-col mbn-slide-up ${
           fullHeight ? 'h-[92vh]' : 'max-h-[80vh]'
         }`}
