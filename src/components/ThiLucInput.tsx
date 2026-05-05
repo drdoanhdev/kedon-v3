@@ -382,6 +382,8 @@ export const ThiLucInput: React.FC<ThiLucInputProps> = ({
 				<input
 					ref={inputRef}
 					type="text"
+					inputMode="numeric"
+					enterKeyHint="next"
 					value={raw}
 					onChange={handleChange}
 					onFocus={handleFocus}

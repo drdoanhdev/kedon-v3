@@ -267,6 +267,8 @@ export const SoKinhInput: React.FC<SoKinhInputProps> = ({ value, onChange, class
 			<input
 				ref={inputRef}
 				type="text"
+				inputMode="tel"
+				enterKeyHint="next"
 				value={raw}
 				onChange={handleChange}
 				onFocus={handleFocus}

@@ -21,6 +21,11 @@ const noHeaderPages = ['/login', '/register'];
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const showHeader = !noHeaderPages.includes(router.pathname);
+  const hideGlobalHeaderOnMobile = router.pathname === '/benh-nhan';
+  const mobileThemeColor = router.pathname === '/benh-nhan' ? '#3a7efb' : '#065f46';
+  const mainClass = showHeader
+    ? (hideGlobalHeaderOnMobile ? 'pb-8 md:pt-10' : 'pt-10 pb-8')
+    : '';
   return (
     <AuthProvider>
       <BranchProvider>
@@ -35,10 +40,14 @@ export default function App({ Component, pageProps }: AppProps) {
           {/* <link rel="icon" href="/favicon.ico" sizes="any" /> */}
           {/* <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" /> */}
           {/* <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16" /> */}
-          <meta name="theme-color" content="#065f46" />
+          <meta name="theme-color" content={mobileThemeColor} />
         </Head>
-        {showHeader && <Header />}
-        <main className={showHeader ? 'pt-10 pb-8' : ''}>
+        {showHeader && (
+          <div className={hideGlobalHeaderOnMobile ? 'hidden md:block' : ''}>
+            <Header />
+          </div>
+        )}
+        <main className={mainClass}>
           <Component {...pageProps} />
         </main>
         {showHeader && <Footer />}

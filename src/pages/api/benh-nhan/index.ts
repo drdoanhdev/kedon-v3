@@ -87,13 +87,13 @@ export default async function handler(
         }
 
         if (search) {
-          // Tìm kiếm thông minh: số → SĐT + tên, chữ → tên + địa chỉ
+          // Tìm kiếm thông minh: số → SĐT + tên + mã BN, chữ → tên + SĐT
           const isNumeric = /^\d+$/.test(search.replace(/[\s.-]/g, ''));
           if (isNumeric) {
             const digits = search.replace(/\D/g, '');
             query = query.or(`dienthoai.ilike.%${digits}%,ten.ilike.%${search}%,id.eq.${digits}`);
           } else {
-            query = query.or(`ten.ilike.%${search}%,diachi.ilike.%${search}%,dienthoai.ilike.%${search}%`);
+            query = query.or(`ten.ilike.%${search}%,dienthoai.ilike.%${search}%`);
           }
         }
 

@@ -15,9 +15,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Users, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin } from "lucide-react";
 import axios from "axios";
 import Link from "next/link";
+import Head from "next/head";
 import toast from "react-hot-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute'
@@ -114,7 +115,7 @@ export default function BenhNhanPage() {
     diachi: "",
   });
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [rowsPerPage, setRowsPerPage] = useState<number>(100);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(50);
   const [selectedBenhNhanId, setSelectedBenhNhanId] = useState<number | null>(null);
   const [donThuocs, setDonThuocs] = useState<DonThuoc[]>([]);
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]);
@@ -140,12 +141,90 @@ export default function BenhNhanPage() {
   const [showMergeDialog, setShowMergeDialog] = useState<boolean>(false);
   const [mainPatientId, setMainPatientId] = useState<number | null>(null);
 
+  // States cho vuốt card mobile: chỉ mở một card mỗi lần
+  const SWIPE_ACTION_WIDTH_PX = 144;
+  const [openSwipePatientId, setOpenSwipePatientId] = useState<number | null>(null);
+  const [draggingPatientId, setDraggingPatientId] = useState<number | null>(null);
+  const [dragOffsetPx, setDragOffsetPx] = useState<number>(0);
+  const touchStartXRef = useRef<number>(0);
+  const touchCurrentXRef = useRef<number>(0);
+  const swipingPatientIdRef = useRef<number | null>(null);
+  const swipeBaseOffsetRef = useRef<number>(0);
+  const swipeRafRef = useRef<number | null>(null);
+  const pendingDragOffsetRef = useRef<number>(0);
+
   // Refs for quick data entry in Add/Edit dialog
   const tenRef = useRef<HTMLInputElement | null>(null);
   const namsinhRef = useRef<HTMLInputElement | null>(null);
   const dienthoaiRef = useRef<HTMLInputElement | null>(null);
   const diachiRef = useRef<HTMLInputElement | null>(null);
   const choKhamPanelRef = useRef<ChoKhamPanelRef>(null);
+
+  const scheduleDragOffset = useCallback((offsetPx: number) => {
+    pendingDragOffsetRef.current = offsetPx;
+    if (swipeRafRef.current !== null) return;
+
+    swipeRafRef.current = window.requestAnimationFrame(() => {
+      setDragOffsetPx(pendingDragOffsetRef.current);
+      swipeRafRef.current = null;
+    });
+  }, []);
+
+  const handleSwipeStart = useCallback((patientId: number, e: React.TouchEvent<HTMLDivElement>) => {
+    if (openSwipePatientId !== null && openSwipePatientId !== patientId) {
+      setOpenSwipePatientId(null);
+    }
+
+    swipingPatientIdRef.current = patientId;
+    touchStartXRef.current = e.touches[0]?.clientX ?? 0;
+    touchCurrentXRef.current = touchStartXRef.current;
+    swipeBaseOffsetRef.current = openSwipePatientId === patientId ? -SWIPE_ACTION_WIDTH_PX : 0;
+    setDraggingPatientId(patientId);
+    setDragOffsetPx(swipeBaseOffsetRef.current);
+  }, [openSwipePatientId]);
+
+  const handleSwipeMove = useCallback((patientId: number, e: React.TouchEvent<HTMLDivElement>) => {
+    if (swipingPatientIdRef.current !== patientId) return;
+
+    touchCurrentXRef.current = e.touches[0]?.clientX ?? touchStartXRef.current;
+
+    const deltaX = touchCurrentXRef.current - touchStartXRef.current;
+    const rawOffset = swipeBaseOffsetRef.current + deltaX;
+    const clampedOffset = Math.max(-SWIPE_ACTION_WIDTH_PX, Math.min(0, rawOffset));
+    scheduleDragOffset(clampedOffset);
+  }, [scheduleDragOffset]);
+
+  const handleSwipeEnd = useCallback((patientId: number) => {
+    if (swipingPatientIdRef.current !== patientId) return;
+
+    const deltaX = touchCurrentXRef.current - touchStartXRef.current;
+    const rawOffset = swipeBaseOffsetRef.current + deltaX;
+    const clampedOffset = Math.max(-SWIPE_ACTION_WIDTH_PX, Math.min(0, rawOffset));
+    const shouldOpen = clampedOffset <= -SWIPE_ACTION_WIDTH_PX * 0.35;
+
+    if (shouldOpen) {
+      setOpenSwipePatientId(patientId);
+    } else {
+      setOpenSwipePatientId(null);
+    }
+
+    if (swipeRafRef.current !== null) {
+      window.cancelAnimationFrame(swipeRafRef.current);
+      swipeRafRef.current = null;
+    }
+
+    setDraggingPatientId(null);
+    setDragOffsetPx(0);
+    swipingPatientIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (swipeRafRef.current !== null) {
+        window.cancelAnimationFrame(swipeRafRef.current);
+      }
+    };
+  }, []);
 
   // Auto-focus Tên when opening dialog for creating new patient
   useEffect(() => {
@@ -504,11 +583,6 @@ export default function BenhNhanPage() {
         }
       }
       
-      // 3. Tìm theo địa chỉ
-      if (bn.diachi && searchByStartsWith(bn.diachi, searchTerm)) {
-        return true;
-      }
-      
       return false;
     });
   }, [benhNhans, search]);
@@ -567,8 +641,10 @@ export default function BenhNhanPage() {
 
   const startIndex = (currentPage - 1) * rowsPerPage;
   const paginated = useMemo(
-    () => sortedFiltered.slice(startIndex, startIndex + rowsPerPage),
-    [sortedFiltered, startIndex, rowsPerPage]
+    // API /api/benh-nhan đã phân trang theo currentPage + rowsPerPage,
+    // nên không slice lần nữa ở client để tránh trang 2/3 bị rỗng.
+    () => sortedFiltered,
+    [sortedFiltered]
   );
 
   const allSelectedCurrentPage = useMemo(() => (
@@ -651,166 +727,177 @@ export default function BenhNhanPage() {
 
   return (
     <ProtectedRoute>
-      <div className="p-2 lg:p-4">
+      <Head>
+        <meta name="theme-color" content="#3a7efb" key="theme-color" />
+        <meta name="msapplication-navbutton-color" content="#3a7efb" key="msapplication-navbutton-color" />
+      </Head>
+      <div className="px-2 pb-2 pt-0 lg:p-4">
         
         {/* Mobile Layout */}
-  <div className="block md:hidden space-y-3">
+  <div className="block md:hidden">
           {/* Header Mobile */}
-          <div className="bg-white border rounded p-3">
-            <h1 className="text-lg font-semibold mb-3">Quản Lý Bệnh Nhân</h1>
-            <div className="space-y-3">
-              <Input
-                placeholder="Tên, SĐT hoặc địa chỉ..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                  setSelectedBenhNhanId(null);
-                  setDonThuocs([]);
-                  setChiTietDonThuocs({});
-                  setDienTiens({});
-                  setHenKhams([]);
-                }}
-                className="h-10"
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  className="flex-1 h-10"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setForm({
-                      ten: capitalizeWords(search.trim()),
-                      namsinh: '',
-                      dienthoai: '',
-                      diachi: '',
-                    });
-                    setOpen(true);
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-1" /> Thêm BN
-                </Button>
-                
-                {/* Nút quản lý gộp bệnh nhân */}
-                <Button
-                  variant="outline"
-                  className="h-10 px-3"
-                  onClick={handleMergePatients}
-                  disabled={selectedForMerge.length < 2}
-                >
-                  <Users className="w-4 h-4 mr-1" />
-                  Gộp BN ({selectedForMerge.length})
-                </Button>
-
-                
-                <select
-                  value={rowsPerPage}
+          <div className="sticky top-0 z-30 -mx-2 bg-[#3a7efb] px-2.5 py-2">
+            <div className="flex items-center gap-2">
+              <Search className="w-[1.6rem] h-[1.6rem] text-white shrink-0" />
+              <div className="flex-1 overflow-hidden">
+                <Input
+                  placeholder="Tên hoặc SĐT"
+                  value={search}
                   onChange={(e) => {
-                    setRowsPerPage(+e.target.value);
+                    setSearch(e.target.value);
                     setCurrentPage(1);
+                    setSelectedBenhNhanId(null);
+                    setDonThuocs([]);
+                    setChiTietDonThuocs({});
+                    setDienTiens({});
+                    setHenKhams([]);
                   }}
-                  className="border px-3 py-2 rounded h-10 bg-white"
-                >
-                  {[50, 100, 200].map((val) => (
-                    <option key={val} value={val}>{val}</option>
-                  ))}
-                </select>
+                  className="h-10 border-0 bg-transparent text-white placeholder:text-white/80 shadow-none focus:bg-white focus:text-gray-900 focus:placeholder:text-gray-400 focus-visible:ring-0 focus-visible:ring-offset-0"
+                />
               </div>
-              <div className="text-sm text-gray-600">
-                Tổng: {filtered.length} bệnh nhân
-                {selectedForMerge.length > 0 && (
-                  <span className="ml-2 text-blue-600 font-medium">
-                    • Đã chọn {selectedForMerge.length} để gộp
+
+              <Button
+                type="button"
+                className={`shrink-0 rounded-none border-0 bg-transparent text-white shadow-none hover:bg-transparent ${selectedForMerge.length > 0 ? 'h-10 px-2' : 'h-12 w-14 p-0'}`}
+                onClick={() => {
+                  if (selectedForMerge.length > 0) {
+                    handleMergePatients();
+                    return;
+                  }
+
+                  setIsEditing(false);
+                  setForm({
+                    ten: capitalizeWords(search.trim()),
+                    namsinh: '',
+                    dienthoai: '',
+                    diachi: '',
+                  });
+                  setOpen(true);
+                }}
+              >
+                {selectedForMerge.length > 0 ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Users className="w-5 h-5" />
+                    Gộp BN
                   </span>
+                ) : (
+                  <UserPlus className="size-[1.6rem]" />
                 )}
-              </div>
+              </Button>
             </div>
           </div>
 
           {/* Patient List Mobile */}
-          <div className="bg-white border rounded p-3">
-            <h2 className="font-semibold text-base mb-2">👥 Danh sách bệnh nhân</h2>
-            <div className="space-y-2">
+          <div className="mt-0 -mx-2">
+            <div className="space-y-0">
               {paginated.length === 0 ? (
-                <p className="text-sm text-gray-500">Không tìm thấy bệnh nhân.</p>
+                <p className="px-2 py-2 text-sm text-gray-500">Không tìm thấy bệnh nhân.</p>
               ) : (
                 paginated.map((bn, index) => {
                   const isSelected = selectedForMerge.includes(bn.id!);
-                  const stt = startIndex + index + 1;
+                  const isSwipeOpen = openSwipePatientId === bn.id;
+                  const isDraggingThisCard = draggingPatientId === bn.id;
+                  const ngaySinhText = typeof bn.namsinh === 'number' ? `${bn.namsinh}` : (bn.namsinh || '--');
+                  const cardTranslateX = isDraggingThisCard
+                    ? dragOffsetPx
+                    : (isSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0);
                   
                   return (
-                  <div 
-                    key={bn.id} 
-                    className={`border rounded p-3 transition-colors ${isSelected 
-                      ? 'bg-green-200 border-green-600 shadow-sm ring-1 ring-green-500' 
-                      : 'hover:border-blue-500 hover:bg-blue-100'} `}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-mono px-1 rounded ${isSelected ? 'bg-green-700 text-white' : 'bg-gray-300 text-gray-800'}`}>{stt}</span>
-                          <div 
-                            className={`cursor-pointer ${isSelected ? 'font-bold text-green-800' : 'font-medium text-blue-700 hover:text-blue-800'} `}
-                            onClick={() => handleSelectBenhNhan(bn.id!)}
-                          >
-                            {bn.ten}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => handleEdit(bn)}>
-                          <Pencil className="w-3 h-3" />
-                        </Button>
+                  <div key={bn.id} className="space-y-2">
+                    {/* Vuốt ngang để lộ action panel giống FAB list */}
+                    <div className={`relative bg-white overflow-hidden border-x border-b border-gray-200 ${index === 0 ? 'border-t' : ''}`}>
+                      <div className="absolute inset-y-0 right-0 w-36 grid grid-cols-3">
                         <button
-                          onClick={() => toggleSelectForMerge(bn.id!)}
-                          className={`w-8 h-8 border-2 rounded flex items-center justify-center transition-colors ${
-                            isSelected 
-                              ? 'bg-green-700 border-green-700 text-white shadow' 
-                              : 'border-gray-300 hover:border-blue-500 hover:bg-blue-100'
-                          }`}
-                          aria-pressed={isSelected}
+                          className="h-full bg-red-600 text-white text-[10px] font-semibold leading-tight active:bg-red-700 flex flex-col items-center justify-center gap-1"
+                          onClick={() => {
+                            setOpenSwipePatientId(null);
+                            handleEdit(bn);
+                          }}
                         >
-                          {isSelected && <Check className="w-4 h-4" />}
+                          <Pencil className="w-3.5 h-3.5" />
+                          Sửa
+                        </button>
+                        <button
+                          className="h-full bg-blue-600 text-white text-[10px] font-semibold leading-tight active:bg-blue-700 flex flex-col items-center justify-center gap-1"
+                          onClick={async () => {
+                            setOpenSwipePatientId(null);
+                            await choKhamPanelRef.current?.addPatient(bn.id!);
+                            window.open(`/ke-don?bn=${bn.id}`, '_blank');
+                          }}
+                        >
+                          <Pill className="w-3.5 h-3.5" />
+                          Đơn thuốc
+                        </button>
+                        <button
+                          className="h-full bg-emerald-600 text-white text-[10px] font-semibold leading-tight active:bg-emerald-700 flex flex-col items-center justify-center gap-1"
+                          onClick={async () => {
+                            setOpenSwipePatientId(null);
+                            await choKhamPanelRef.current?.addPatient(bn.id!);
+                            window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
+                          }}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Đơn kính
                         </button>
                       </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-2 text-sm mb-2">
-                      <div>Sinh: {typeof bn.namsinh === 'number' ? bn.namsinh : bn.namsinh}</div>
-                      <div>Tuổi: {bn.tuoi ?? "N/A"}</div>
-                      <div>SĐT: {bn.dienthoai || "Chưa có"}</div>
-                      <div>Ngày lập: {bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</div>
-                      <div className="col-span-2">Địa chỉ: {bn.diachi}</div>
-                      <div className="col-span-2">Khám gần nhất: {bn.ngay_kham_gan_nhat ? new Date(bn.ngay_kham_gan_nhat).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Chưa khám'}</div>
-                    </div>
 
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs text-white"
-                        onClick={async () => {
-                          await choKhamPanelRef.current?.addPatient(bn.id!);
-                          window.open(`/ke-don?bn=${bn.id}`, '_blank');
+                      <div
+                        className={`relative p-3 touch-pan-y ${isDraggingThisCard ? '' : 'transition-transform duration-200 ease-out'} ${isSelected ? 'bg-green-100' : 'bg-white'}`}
+                        style={{
+                          transform: `translateX(${cardTranslateX}px)`,
+                          willChange: 'transform',
                         }}
+                        onTouchStart={(e) => handleSwipeStart(bn.id!, e)}
+                        onTouchMove={(e) => handleSwipeMove(bn.id!, e)}
+                        onTouchEnd={() => handleSwipeEnd(bn.id!)}
+                        onTouchCancel={() => handleSwipeEnd(bn.id!)}
                       >
-                        Kê đơn thuốc
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs text-white"
-                        onClick={async () => {
-                          await choKhamPanelRef.current?.addPatient(bn.id!);
-                          window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
-                        }}
-                      >
-                        Kê đơn kính
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1 h-8 bg-yellow-500 hover:bg-yellow-600 text-xs text-white"
-                        onClick={() => choKhamPanelRef.current?.addPatient(bn.id!)}
-                      >
-                        + Chờ khám
-                      </Button>
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border shrink-0 transition-colors ${
+                              isSelected
+                                ? 'bg-green-700 border-green-700 text-white'
+                                : 'bg-blue-100 border-blue-200 text-blue-700'
+                            }`}
+                            onClick={() => toggleSelectForMerge(bn.id!)}
+                            aria-pressed={isSelected}
+                            title={isSelected ? 'Bỏ chọn gộp' : 'Chọn để gộp'}
+                          >
+                            {isSelected ? <Check className="w-4 h-4" /> : (bn.ten || '?')[0]?.toUpperCase()}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="flex-1 min-w-0 text-left"
+                            onClick={() => {
+                              setOpenSwipePatientId(null);
+                              handleSelectBenhNhan(bn.id!);
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2 min-w-0">
+                              <span className={`flex-1 min-w-0 text-[16px] leading-5 truncate ${isSelected ? 'font-bold text-green-800' : 'font-semibold text-gray-800'}`}>
+                                {bn.ten}
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-[13px] text-gray-500 shrink-0 ml-2">
+                                <Calendar className="w-4 h-4 text-gray-500 shrink-0" />
+                                {ngaySinhText}
+                              </span>
+                            </div>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-gray-700 min-w-0">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Phone className="w-4 h-4 text-gray-500 shrink-0" />
+                                {bn.dienthoai || '--'}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 min-w-0 flex-1">
+                                <MapPin className="w-4 h-4 text-gray-500 shrink-0" />
+                                <span className="truncate">{bn.diachi || '--'}</span>
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Medical History Mobile */}
@@ -955,7 +1042,7 @@ export default function BenhNhanPage() {
             </div>
 
             {/* Mobile Pagination */}
-            <div className="mt-3 pt-3 border-t">
+            <div className="mt-3 pt-3 px-2">
               <SimplePagination
                 currentPage={currentPage}
                 totalPages={totalPages}
@@ -968,6 +1055,31 @@ export default function BenhNhanPage() {
                   setHenKhams([]);
                 }}
               />
+
+              <div className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-600">
+                <span>{filtered.length} bệnh nhân</span>
+                <div className="flex items-center gap-1.5">
+                  <span>/ trang</span>
+                  <select
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                      setRowsPerPage(+e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="border px-2 py-1 rounded h-8 bg-white text-sm"
+                  >
+                    {[50, 100, 200].map((val) => (
+                      <option key={val} value={val}>{val}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedForMerge.length > 0 && (
+                <div className="mt-1 text-xs text-blue-600 font-medium">
+                  Đã chọn {selectedForMerge.length} để gộp
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -986,7 +1098,7 @@ export default function BenhNhanPage() {
               <h1 className="text-xl font-semibold">Quản Lý Bệnh Nhân</h1>
               <div className="flex items-center gap-2">
                 <Input
-                  placeholder="Tên, SĐT hoặc địa chỉ..."
+                  placeholder="Tên hoặc SĐT..."
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
@@ -1036,7 +1148,7 @@ export default function BenhNhanPage() {
                   }}
                   className="border px-2 py-1 rounded text-sm"
                 >
-                  {[100, 200, 500, 1000].map((val) => (
+                  {[50, 100, 200, 500, 1000].map((val) => (
                     <option key={val} value={val}>{val}</option>
                   ))}
                 </select>
