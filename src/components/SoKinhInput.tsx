@@ -1,5 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 
+/**
+ * RxFreeInput — Nhập số kính dạng free-text theo spec optigo-rx-freetext-spec.
+ *
+ * Quy tắc gõ tắt (token cách nhau bằng dấu cách):
+ *   Token1 → SPH (3 chữ số → ÷100, mặc định âm; +75 → +0.75; 0/pl/plano → Plano)
+ *   Token2 → CYL (luôn âm; nếu giá trị nằm trong khoảng ADD và không có Token3 thì là ADD)
+ *   Token3 → AXIS (1–180)
+ *   Token4 → ADD  (luôn dương, +0.75 đến +4.00)
+ *
+ * Ví dụ:
+ *   "300 100 180 150"  →  -3.00/-1.00x180 ADD +1.50
+ *   "+75 200"          →  +0.75 ADD +2.00
+ *   "0 125"            →  Plano ADD +1.25
+ *   "pl"               →  Plano
+ *
+ * Component giữ nguyên API hiện tại để không phá ke-don-kinh.tsx.
+ */
 interface SoKinhInputProps {
 	value: string;
 	onChange: (val: string) => void;
@@ -8,229 +25,272 @@ interface SoKinhInputProps {
 	datalistId?: string;
 	disabled?: boolean;
 	dataNavOrder?: number; // thứ tự điều hướng Enter trên form cha
-	onCommitNext?: () => void; // gọi khi commit bằng Enter trong ô cuối để focus ô kế tiếp
+	onCommitNext?: () => void; // gọi khi commit bằng Enter để focus ô kế tiếp
 }
 
-// Hỗ trợ "Plano" cho phần cầu (sphere), có thể kèm ADD
-const REGEX_FULL = /^\s*((?:-?\d+(?:\.\d{1,2})?)|[Pp]lano)\s*\/\s*(-?\d+(?:\.\d{1,2})?)x(\d{1,3})(?:\s+ADD\s+([+-]?\d+(?:\.\d{1,2})?))?\s*$/i;
-// Chỉ SPH + ADD (không loạn): "-0.50 ADD +1.25"
+type RxValue = {
+	sph: number | 'plano' | null;
+	cyl: number | null;
+	axis: number | null;
+	add: number | null;
+};
+
+const REGEX_FULL = /^\s*((?:[+-]?\d+(?:\.\d{1,2})?)|[Pp]lano)\s*\/\s*([+-]?\d+(?:\.\d{1,2})?)x(\d{1,3})(?:\s+ADD\s+([+-]?\d+(?:\.\d{1,2})?))?\s*$/i;
 const REGEX_SPH_ADD = /^\s*((?:[+-]?\d+(?:\.\d{1,2})?)|[Pp]lano)\s+ADD\s+([+-]?\d+(?:\.\d{1,2})?)\s*$/i;
+const REGEX_SPH_ONLY = /^\s*((?:[+-]?\d+(?:\.\d{1,2})?)|[Pp]lano)\s*$/i;
 
-export const SoKinhInput: React.FC<SoKinhInputProps> = ({ value, onChange, className='', placeholder, datalistId, disabled, dataNavOrder, onCommitNext }) => {
-	const [editingParts, setEditingParts] = useState(false);
-	const [sph, setSph] = useState('');
-	const [cyl, setCyl] = useState('');
-	const [axis, setAxis] = useState('');
-	const [add, setAdd] = useState('');
-	const sphRef = useRef<HTMLInputElement | null>(null);
-	const cylRef = useRef<HTMLInputElement | null>(null);
-	const axisRef = useRef<HTMLInputElement | null>(null);
-	const addRef = useRef<HTMLInputElement | null>(null);
-	const wrapperRef = useRef<HTMLDivElement | null>(null);
-	const focusCylOnOpenRef = useRef(false);
+const roundQuarter = (n: number) => Math.round(n / 0.25) * 0.25;
 
-	const parseValueToParts = (val: string) => {
-		// Full format with optional ADD: "SPH/CYLxAXIS ADD +X.XX"
-		const m = REGEX_FULL.exec(val);
-		if (m) return { sph: m[1], cyl: m[2], axis: m[3], add: m[4] || '' };
-		// SPH + ADD only: "-0.50 ADD +1.25"
-		const m2 = REGEX_SPH_ADD.exec(val);
-		if (m2) return { sph: m2[1], cyl: '', axis: '', add: m2[2] };
-		return { sph: '', cyl: '', axis: '', add: '' };
-	};
+/** Parse 1 token số kính (SPH/CYL/ADD). defaultNegative = mặc định âm khi không có dấu. */
+const parseDiopter = (token: string, defaultNegative: boolean): number | null => {
+	const t = token.trim();
+	if (!t) return null;
+	const hasPlus = t.startsWith('+');
+	const hasMinus = t.startsWith('-');
+	const sign = hasPlus ? 1 : hasMinus ? -1 : (defaultNegative ? -1 : 1);
+	const digits = t.replace(/^[+-]/, '');
+	if (!/^\d+(\.\d+)?$/.test(digits)) return null;
+	const n = parseFloat(digits);
+	if (isNaN(n)) return null;
+	let val: number;
+	if (digits.includes('.')) {
+		val = n;                         // có dấu chấm: giữ nguyên (vd: 1.25 → 1.25)
+	} else if (digits.length === 1) {
+		val = n;                         // 1 chữ số: số nguyên đi-ốp (1 → 1.00)
+	} else {
+		val = n / 100;                   // ≥ 2 chữ số: chia 100 (75 → 0.75, 125 → 1.25, 1025 → 10.25)
+	}
+	return roundQuarter(sign * val);
+};
 
-	const formatValue = (s: string, c: string, a: string, ad: string) => {
-		if (!s && !c && !a && !ad) return '';
-		const normNum = (n: string) => {
-			if (n === '' || n === undefined) return '';
-			if (/^plano$/i.test(n.trim())) return 'Plano';
-			const num = Number(n);
-			if (isNaN(num)) return '';
-			return num.toFixed(2).replace(/\.00$/, '.00');
-		};
-		const normAxis = (ax: string) => {
-			if (!ax) return '';
-			const num = Math.min(180, Math.max(0, Number(ax)));
-			if (isNaN(num)) return '';
-			return String(num);
-		};
-		const sFmt = normNum(s);
-		const cFmt = normNum(c);
-		const aFmt = normAxis(a);
-		const adFmt = ad ? normNum(ad) : '';
+const isZeroDiopterToken = (t: string) => /^[+-]?0+(?:\.0+)?$/.test(t.trim());
+const isPlanoToken = (t: string) => /^(pl|plano)$/i.test(t.trim()) || isZeroDiopterToken(t);
 
-		if (!sFmt) return '';
+const canonicalSph = (token: string): number | 'plano' => {
+	if (/^plano$/i.test(token)) return 'plano';
+	const n = parseFloat(token);
+	if (isNaN(n)) return 'plano';
+	return n === 0 || Object.is(n, -0) ? 'plano' : n;
+};
 
-		let result = '';
-		if (cFmt && aFmt) {
-			result = `${sFmt}/${cFmt}x${aFmt}`;
-		} else if (!cFmt && !aFmt) {
-			// SPH only (or SPH + ADD)
-			result = sFmt;
+const parseSph = (token: string): number | 'plano' | null => {
+	if (isPlanoToken(token)) return 'plano';
+	return parseDiopter(token, true);
+};
+
+const parseCyl = (token: string): number | null => {
+	const v = parseDiopter(token, true);
+	if (v === null) return null;
+	if (v === 0) return null;
+	return v > 0 ? -v : v; // luôn âm
+};
+
+const parseAxisToken = (token: string): number | null => {
+	const t = token.trim();
+	if (!/^\d{1,3}$/.test(t)) return null;
+	const n = parseInt(t, 10);
+	if (n < 1 || n > 180) return null;
+	return n;
+};
+
+const parseAdd = (token: string): number | null => {
+	const v = parseDiopter(token, false);
+	if (v === null) return null;
+	return Math.abs(v);
+};
+
+const isValidAddRange = (n: number | null) => n !== null && n >= 0.75 && n <= 4.0;
+
+/** Parse free-text → RxValue theo spec. */
+const parseRxInput = (raw: string): RxValue | null => {
+	const tokens = raw.trim().split(/\s+/).filter(Boolean);
+	if (tokens.length === 0) return null;
+	const sph = parseSph(tokens[0]);
+	if (sph === null) return null;
+
+	let cyl: number | null = null;
+	let axis: number | null = null;
+	let add: number | null = null;
+
+	if (tokens.length === 2) {
+		// Phân biệt CYL vs ADD: nếu token nằm trong khoảng ADD hợp lệ → ADD
+		const asAdd = parseAdd(tokens[1]);
+		if (isValidAddRange(asAdd)) {
+			add = asAdd;
 		} else {
-			// Incomplete CYL/AXIS - invalid
-			return '';
+			cyl = parseCyl(tokens[1]);
 		}
-		if (adFmt) result += ` ADD ${adFmt}`;
-		return result;
-	};
-
-	const openParts = () => {
-		const parts = parseValueToParts(value);
-		if ((parts.sph && parts.cyl && parts.axis) || (parts.sph && parts.add)) {
-			setSph(parts.sph);
-			setCyl(parts.cyl);
-			setAxis(parts.axis);
-			setAdd(parts.add);
-			focusCylOnOpenRef.current = false;
-		} else {
-			setSph(value);
-			setCyl('');
-			setAxis('');
-			setAdd('');
-			focusCylOnOpenRef.current = true;
-		}
-		setEditingParts(true);
-	};
-
-	const canCommit = () => {
-		if (!sph) return false;
-		const hasCyl = cyl !== '' && axis !== '';
-		const hasAdd = add !== '';
-		// Valid: SPH + CYL + AXIS, SPH + ADD, SPH + CYL + AXIS + ADD, or SPH alone with CYL+AXIS
-		return hasCyl || hasAdd;
-	};
-
-	const commit = () => {
-		const formatted = formatValue(sph, cyl, axis, add);
-		if (formatted) onChange(formatted);
-		setEditingParts(false);
-	};
-	const cancel = () => setEditingParts(false);
-
-	useEffect(() => {
-		if (editingParts) {
-			requestAnimationFrame(() => {
-				if (focusCylOnOpenRef.current) {
-					cylRef.current?.focus();
-					cylRef.current?.select();
-					focusCylOnOpenRef.current = false;
-				} else {
-					sphRef.current?.focus();
-					sphRef.current?.select();
-				}
-			});
-		}
-	}, [editingParts]);
-
-	const handleKeyDownSingle = (e: React.KeyboardEvent<HTMLInputElement>) => {
-		if (e.key === '/' && !editingParts && !disabled) {
-			e.preventDefault();
-			openParts();
-		}
-	};
-
-	const handlePartKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, part: 'sph'|'cyl'|'axis'|'add') => {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			if (part === 'sph') {
-				cylRef.current?.focus();
-				cylRef.current?.select();
-			} else if (part === 'cyl') {
-				axisRef.current?.focus();
-				axisRef.current?.select();
-			} else if (part === 'axis') {
-				addRef.current?.focus();
-				addRef.current?.select();
-			} else if (part === 'add') {
-				if (canCommit()) {
-					commit();
-					if (onCommitNext && typeof dataNavOrder === 'number') {
-						setTimeout(() => onCommitNext(), 0);
-					}
-				}
-			}
-		}
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			cancel();
-		}
-	};
-
-	useEffect(() => {
-		if (!editingParts) return;
-		const handleClickOutside = (e: MouseEvent) => {
-			if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-				if (canCommit()) commit(); else cancel();
-			}
-		};
-		document.addEventListener('mousedown', handleClickOutside);
-		return () => document.removeEventListener('mousedown', handleClickOutside);
-	}, [editingParts, sph, cyl, axis, add]);
-
-	if (!editingParts) {
-		return (
-			<input
-				type="text"
-				list={datalistId}
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-				onKeyDown={handleKeyDownSingle}
-				data-nav={typeof dataNavOrder === 'number' ? 'presc' : undefined}
-				data-order={typeof dataNavOrder === 'number' ? dataNavOrder : undefined}
-				className={`bg-yellow-50 focus:bg-yellow-100 ${className}`}
-				placeholder={placeholder}
-				disabled={disabled}
-			/>
-		);
+	} else if (tokens.length >= 3) {
+		cyl = parseCyl(tokens[1]);
+		axis = parseAxisToken(tokens[2]);
+		if (tokens[3]) add = parseAdd(tokens[3]);
 	}
 
-		return (
-		<div ref={wrapperRef} className={`inline-flex items-center gap-1 ${editingParts ? 'sokinh-split-active' : ''}`}> 
+	return { sph, cyl, axis, add };
+};
+
+/** Nhận diện chuỗi đã ở dạng chuẩn (SPH/CYLxAXIS [ADD ±X.XX]) để re-edit không phá format. */
+const parseCanonical = (text: string): RxValue | null => {
+	const t = text.trim();
+	let m = REGEX_FULL.exec(t);
+	if (m) {
+		const sph = canonicalSph(m[1]);
+		return {
+			sph,
+			cyl: parseFloat(m[2]),
+			axis: parseInt(m[3], 10),
+			add: m[4] ? Math.abs(parseFloat(m[4])) : null,
+		};
+	}
+	m = REGEX_SPH_ADD.exec(t);
+	if (m) {
+		const sph = canonicalSph(m[1]);
+		return { sph, cyl: null, axis: null, add: Math.abs(parseFloat(m[2])) };
+	}
+	m = REGEX_SPH_ONLY.exec(t);
+	if (m) {
+		const sphRaw = m[1];
+		// Chỉ coi là dạng chuẩn nếu có dấu chấm (vd: "-3.00", "+0.75", "1.25")
+		// hoặc là Plano. Số nguyên trần ("1", "100", "300") sẽ rơi xuống free-text parser.
+		if (!/^plano$/i.test(sphRaw) && !sphRaw.includes('.')) return null;
+		const sph = canonicalSph(sphRaw);
+		return { sph, cyl: null, axis: null, add: null };
+	}
+	return null;
+};
+
+const formatRx = (rx: RxValue | null): string => {
+	if (!rx || rx.sph === null) return '';
+	const sphStr = rx.sph === 'plano' || (typeof rx.sph === 'number' && rx.sph === 0)
+		? 'Plano'
+		: (rx.sph >= 0 ? '+' : '') + rx.sph.toFixed(2);
+	let result = sphStr;
+	if (rx.cyl !== null && rx.axis !== null) {
+		result += `/${rx.cyl.toFixed(2)}x${rx.axis}`;
+	}
+	if (rx.add !== null) {
+		const addStr = (rx.add >= 0 ? '+' : '') + rx.add.toFixed(2);
+		result += ` add ${addStr}`;
+	}
+	return result;
+};
+
+const validateRx = (rx: RxValue | null): { valid: boolean; message: string | null } => {
+	if (!rx) return { valid: false, message: 'Không nhận dạng được số kính' };
+	if (rx.cyl !== null && rx.axis === null) return { valid: false, message: 'Thiếu trục (1–180°)' };
+	if (rx.axis !== null && (rx.axis < 1 || rx.axis > 180)) return { valid: false, message: 'Trục phải 1–180°' };
+	return { valid: true, message: null };
+};
+
+export const SoKinhInput: React.FC<SoKinhInputProps> = ({ value, onChange, className='', placeholder, datalistId: _datalistId, disabled, dataNavOrder, onCommitNext }) => {
+	const [raw, setRaw] = useState<string>(value || '');
+	const [focused, setFocused] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [preview, setPreview] = useState<RxValue | null>(null);
+	const inputRef = useRef<HTMLInputElement | null>(null);
+
+	// Đồng bộ raw khi prop value đổi từ ngoài và ô không đang focus
+	useEffect(() => {
+		if (!focused) setRaw(value || '');
+	}, [value, focused]);
+
+	// Cố gắng parse: ưu tiên dạng chuẩn (đang re-edit), sau đó free-text
+	const tryParse = (text: string): RxValue | null => {
+		const t = text.trim();
+		if (!t) return null;
+		return parseCanonical(t) ?? parseRxInput(t);
+	};
+
+	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const text = e.target.value;
+		setRaw(text);
+		setError(null);
+		if (text.trim() === '') { setPreview(null); return; }
+		setPreview(tryParse(text));
+	};
+
+	const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+		setFocused(true);
+		// chọn toàn bộ để gõ thay thế nhanh
+		try { e.target.select(); } catch {}
+	};
+
+	/** Commit raw → onChange. Trả về true nếu hợp lệ (hoặc rỗng). */
+	const commitFromRaw = (): boolean => {
+		const text = raw.trim();
+		if (text === '') {
+			if (value !== '') onChange('');
+			setError(null);
+			setPreview(null);
+			return true;
+		}
+		const parsed = tryParse(text);
+		const v = validateRx(parsed);
+		if (v.valid && parsed) {
+			const formatted = formatRx(parsed);
+			setRaw(formatted);
+			setPreview(null);
+			setError(null);
+			if (formatted !== value) onChange(formatted);
+			return true;
+		}
+		setError(v.message || 'Không hợp lệ');
+		return false;
+	};
+
+	const handleBlur = () => {
+		setFocused(false);
+		commitFromRaw();
+	};
+
+	const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			const ok = commitFromRaw();
+			if (!ok) {
+				e.stopPropagation();
+			}
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			setRaw('');
+			setPreview(null);
+			setError(null);
+		}
+	};
+
+	// Preview chỉ hiện khi đang focus, có giá trị parse được, và khác với chuỗi đã canonical
+	const formattedPreview = preview ? formatRx(preview) : '';
+	const showPreview = focused && !!formattedPreview && formattedPreview !== raw.trim() && !error;
+
+	return (
+		<span className={`relative inline-block ${className ? '' : 'w-full'}`}>
 			<input
-					ref={sphRef}
-					type="text" /* cho phép nhập Plano */
-					list={datalistId}
-					value={sph}
-					onChange={(e)=> setSph(e.target.value)}
-					onKeyDown={(e)=>handlePartKeyDown(e,'sph')}
-					className="w-16 h-7 border rounded px-1 text-xs text-center bg-yellow-50 focus:bg-yellow-100"
-					placeholder="Cầu"
-				/>
-			<span className="text-xs select-none">/</span>
-			<input
-				ref={cylRef}
-				type="number"
-				step="0.25"
-				list={datalistId}
-				value={cyl}
-				onChange={(e)=> setCyl(e.target.value)}
-				onKeyDown={(e)=>handlePartKeyDown(e,'cyl')}
-				className="no-spinner w-16 h-7 border rounded px-1 text-xs text-center bg-yellow-50 focus:bg-yellow-100"
-				placeholder="Loạn"
+				ref={inputRef}
+				type="text"
+				value={raw}
+				onChange={handleChange}
+				onFocus={handleFocus}
+				onBlur={handleBlur}
+				onKeyDown={handleKeyDown}
+				data-nav={typeof dataNavOrder === 'number' ? 'presc' : undefined}
+				data-order={typeof dataNavOrder === 'number' ? dataNavOrder : undefined}
+				className={`bg-yellow-50 focus:bg-yellow-100 ${error ? 'border-red-500 ring-1 ring-red-400' : ''} ${className}`}
+				placeholder={placeholder ?? 'vd: 300 100 180 150'}
+				disabled={disabled}
+				autoComplete="off"
+				spellCheck={false}
 			/>
-			<span className="text-xs select-none">x</span>
-			<input
-				ref={axisRef}
-				type="number"
-				value={axis}
-				onChange={(e)=> setAxis(e.target.value)}
-				onKeyDown={(e)=>handlePartKeyDown(e,'axis')}
-				className="no-spinner w-14 h-7 border rounded px-1 text-xs text-center bg-yellow-50 focus:bg-yellow-100"
-				placeholder="Trục"
-			/>
-			<span className="text-xs select-none text-blue-600 font-medium">ADD</span>
-			<input
-				ref={addRef}
-				type="number"
-				step="0.25"
-				value={add}
-				onChange={(e)=> setAdd(e.target.value)}
-				onKeyDown={(e)=>handlePartKeyDown(e,'add')}
-				className="no-spinner w-14 h-7 border rounded px-1 text-xs text-center bg-blue-50 focus:bg-blue-100"
-				placeholder="Add"
-			/>
-		</div>
+			{showPreview && (
+				<span className="absolute left-0 top-full mt-0.5 z-20 px-1.5 py-0.5 rounded bg-gray-700 text-white text-[10px] whitespace-nowrap pointer-events-none shadow sm:top-auto sm:bottom-full sm:mb-0.5 sm:mt-0">
+					{formattedPreview}
+				</span>
+			)}
+			{error && (
+				<span className="absolute left-0 top-full mt-0.5 z-20 px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] whitespace-nowrap pointer-events-none shadow sm:top-auto sm:bottom-full sm:mb-0.5 sm:mt-0">
+					{error}
+				</span>
+			)}
+		</span>
 	);
 };
 

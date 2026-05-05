@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
+import ThiLucInput from '../components/ThiLucInput';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Link from 'next/link';
 import { useAuth } from '../contexts/AuthContext';
@@ -271,13 +272,18 @@ export default function KeDonKinh() {
   );
 
   // === Swipe ngang để chuyển tab trên mobile ===
+  const [tabDragX, setTabDragX] = useState(0);
+  const [tabDragging, setTabDragging] = useState(false);
   const tabSwipeStart = useRef<{ x: number; y: number; locked: 'h' | 'v' | null }>({ x: 0, y: 0, locked: null });
   const tabSwipeActive = useRef(false);
+  const tabViewportRef = useRef<HTMLDivElement | null>(null);
   const onTabTouchStart = (e: React.TouchEvent) => {
     const t = e.target as HTMLElement;
     // Bỏ qua nếu touch bắt đầu trong vùng input/textarea/select/button/link/[data-no-tab-swipe]
     if (t.closest('input,textarea,select,button,a,[data-no-tab-swipe]')) return;
     tabSwipeActive.current = true;
+    setTabDragging(false);
+    setTabDragX(0);
     tabSwipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
   const onTabTouchMove = (e: React.TouchEvent) => {
@@ -287,19 +293,33 @@ export default function KeDonKinh() {
     if (tabSwipeStart.current.locked === null) {
       if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
         tabSwipeStart.current.locked = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v';
+        if (tabSwipeStart.current.locked === 'h') setTabDragging(true);
       }
+    }
+    if (tabSwipeStart.current.locked === 'h') {
+      let next = dx;
+      if (mobileTab === 0 && next > 0) next = next * 0.3;
+      if (mobileTab === 2 && next < 0) next = next * 0.3;
+      setTabDragX(next);
     }
   };
   const onTabTouchEnd = (e: React.TouchEvent) => {
     if (!tabSwipeActive.current) return;
     const locked = tabSwipeStart.current.locked;
     tabSwipeActive.current = false;
-    if (locked !== 'h') { tabSwipeStart.current.locked = null; return; }
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - tabSwipeStart.current.x;
-    const threshold = 60;
-    if (dx < -threshold && mobileTab < 2) setMobileTab((mobileTab + 1) as 0 | 1 | 2);
-    else if (dx > threshold && mobileTab > 0) setMobileTab((mobileTab - 1) as 0 | 1 | 2);
+    setTabDragging(false);
+    if (locked !== 'h') {
+      setTabDragX(0);
+      tabSwipeStart.current.locked = null;
+      return;
+    }
+    const w = tabViewportRef.current?.clientWidth || 360;
+    const threshold = w * 0.22;
+    let next = mobileTab;
+    if (tabDragX < -threshold && mobileTab < 2) next = (mobileTab + 1) as 0 | 1 | 2;
+    else if (tabDragX > threshold && mobileTab > 0) next = (mobileTab - 1) as 0 | 1 | 2;
+    setMobileTab(next);
+    setTabDragX(0);
     tabSwipeStart.current.locked = null;
   };
 
@@ -430,6 +450,10 @@ export default function KeDonKinh() {
   const [frameStock, setFrameStock] = useState<number | null>(null);
   const [lensStockMp, setLensStockMp] = useState<{ ton: number | null; trang_thai: string } | null>(null);
   const [lensStockMt, setLensStockMt] = useState<{ ton: number | null; trang_thai: string } | null>(null);
+  const thiLucSuggestions = useMemo(
+    () => mauThiLucs.map((tl) => tl.gia_tri).filter(Boolean),
+    [mauThiLucs]
+  );
   const [form, setForm] = useState<Partial<DonKinh>>({
     chandoan: '',
     ngaykham: (() => {
@@ -701,21 +725,23 @@ export default function KeDonKinh() {
     }
   };
 
-  // Điều hướng Enter tuần tự giữa các ô nhập theo data-order
+  // Điều hướng Enter giống Tab cho các ô kê đơn kính
   useEffect(() => {
-    const selector = '[data-nav="presc"][data-order]';
+    const selector = 'input[data-nav="presc"], select[data-nav="presc"], textarea[data-nav="presc"]';
+    const isVisible = (el: HTMLElement) => {
+      if ((el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      return el.offsetParent !== null;
+    };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key !== 'Enter') return;
       const target = e.target as HTMLElement;
-      if (!target || !target.hasAttribute('data-order')) return;
+      if (!target) return;
       if (target.getAttribute('data-nav') !== 'presc') return;
-      // Nếu SoKinhInput đang ở chế độ tách 3 ô thì để nó tự xử lý
-      if (target.closest('.sokinh-split-active')) return;
       e.preventDefault();
-      const inputs = Array.from(document.querySelectorAll<HTMLElement>(selector))
-        .sort((a,b) => Number(a.getAttribute('data-order')) - Number(b.getAttribute('data-order')));
-      const currentOrder = Number(target.getAttribute('data-order'));
-      const idx = inputs.findIndex(el => Number(el.getAttribute('data-order')) === currentOrder);
+      const inputs = Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(isVisible);
+      const idx = inputs.indexOf(target);
       if (idx >= 0 && idx < inputs.length - 1) {
         const next = inputs[idx + 1];
         (next as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).focus();
@@ -1097,7 +1123,7 @@ export default function KeDonKinh() {
   return (
     <ProtectedRoute>
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
-      <div className="flex flex-col -mt-10 lg:mt-0 lg:flex-row" style={{ height: 'calc(100vh - 72px)' }}>
+      <div className="flex flex-col -mt-10 h-[calc(100dvh-68px)] overflow-hidden lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
         
         {/* History sidebar - Hidden on mobile, shown on desktop */}
         <aside className="hidden lg:flex lg:flex-col w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
@@ -1183,10 +1209,10 @@ export default function KeDonKinh() {
         </aside>
 
         {/* Main content area */}
-        <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8]">
+        <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
             {/* Patient info — Mobile: fixed header (không scroll) */}
             {benhNhan ? (
-              <div className="lg:hidden flex-shrink-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5 flex items-center gap-3 shadow-sm">
+              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5 flex items-center gap-3 shadow-sm">
                 <div className="flex-1 min-w-0">
                   <h1 className="font-extrabold text-base text-gray-800 tracking-tight truncate">{benhNhan.ten}</h1>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
@@ -1216,18 +1242,27 @@ export default function KeDonKinh() {
                 </div>
               </div>
             ) : (
-              <div className="lg:hidden flex-shrink-0 bg-white border-b border-gray-200 px-3 py-2.5">
+              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-white border-b border-gray-200 px-3 py-2.5">
                 <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
               </div>
             )}
 
             {/* Scrollable content area (chứa form, payment, history, lịch hẹn) */}
             <div
-              className="flex-1 min-h-0 overflow-y-auto px-2 py-2 lg:p-4 flex flex-col gap-2 lg:gap-4"
+              ref={tabViewportRef}
+              className="relative flex-1 min-h-0 overflow-hidden"
               onTouchStart={onTabTouchStart}
               onTouchMove={onTabTouchMove}
               onTouchEnd={onTabTouchEnd}
               onTouchCancel={onTabTouchEnd}
+            >
+            <div
+              className={`absolute inset-0 min-h-0 overflow-y-auto overscroll-y-contain px-2 py-2 flex flex-col gap-2 ${mobileTab === 0 ? 'pointer-events-auto' : 'pointer-events-none'} lg:static lg:inset-auto lg:p-4 lg:gap-4 lg:pointer-events-auto`}
+              style={{
+                transform: `translate3d(calc(${-mobileTab * 100}% + ${tabDragX}px), 0, 0)`,
+                transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
+                willChange: 'transform',
+              }}
             >
 
             {/* Patient info — Desktop card */}
@@ -1267,7 +1302,7 @@ export default function KeDonKinh() {
             {/* Form kê đơn kính - Responsive Layout */}
             <div className="space-y-4">
               {/* Thông tin chung */}
-              <div className={`bg-white rounded-xl shadow-sm border border-gray-200 lg:p-4 p-2 ${mobileTab === 0 ? 'block' : 'hidden'} lg:block`}>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 lg:p-4 p-2 block lg:block">
                   {/* Mobile: flat layout (giống /ke-don) */}
                   <div className="lg:hidden px-1.5 py-1">
                     <div className="flex items-center gap-1 pb-1">
@@ -1379,30 +1414,30 @@ export default function KeDonKinh() {
                           <div className="grid grid-cols-[3rem_1fr_1fr]">
                             <div className="px-1 py-1.5 border-b border-r border-gray-200 flex items-center"><span className="text-[10px] font-medium text-gray-600 leading-tight">TL KK</span></div>
                             <div className="px-1 py-1.5 border-b border-r border-gray-200">
-                              <input data-nav="presc" data-order="1" data-first-focus="thiluc_khongkinh_mp" list="thiluc-list" value={form.thiluc_khongkinh_mp || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mp: e.target.value })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <ThiLucInput dataNavOrder={1} dataFirstFocus="thiluc_khongkinh_mp" customValues={thiLucSuggestions} value={form.thiluc_khongkinh_mp || ''} onChange={(val) => setForm({ ...form, thiluc_khongkinh_mp: val })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div className="px-1 py-1.5 border-b border-gray-200">
-                              <input data-nav="presc" data-order="2" list="thiluc-list" value={form.thiluc_khongkinh_mt || ''} onChange={(e) => setForm({ ...form, thiluc_khongkinh_mt: e.target.value })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <ThiLucInput dataNavOrder={2} customValues={thiLucSuggestions} value={form.thiluc_khongkinh_mt || ''} onChange={(val) => setForm({ ...form, thiluc_khongkinh_mt: val })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                           </div>
                           {/* TL Kính cũ */}
                           <div className="grid grid-cols-[3rem_1fr_1fr]">
                             <div className="px-1 py-1.5 border-b border-r border-gray-200 flex items-center"><span className="text-[10px] font-medium text-gray-600 leading-tight">TL cũ</span></div>
                             <div className="px-1 py-1.5 border-b border-r border-gray-200">
-                              <input data-nav="presc" data-order="3" list="thiluc-list" value={form.thiluc_kinhcu_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mp: e.target.value })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <ThiLucInput dataNavOrder={3} customValues={thiLucSuggestions} value={form.thiluc_kinhcu_mp || ''} onChange={(val) => setForm({ ...form, thiluc_kinhcu_mp: val })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div className="px-1 py-1.5 border-b border-gray-200">
-                              <input data-nav="presc" data-order="4" list="thiluc-list" value={form.thiluc_kinhcu_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhcu_mt: e.target.value })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <ThiLucInput dataNavOrder={4} customValues={thiLucSuggestions} value={form.thiluc_kinhcu_mt || ''} onChange={(val) => setForm({ ...form, thiluc_kinhcu_mt: val })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                           </div>
                           {/* TL Kính mới */}
                           <div className="grid grid-cols-[3rem_1fr_1fr]">
                             <div className="px-1 py-1.5 border-b border-r border-gray-200 flex items-center"><span className="text-[10px] font-medium text-gray-600 leading-tight">TL mới</span></div>
                             <div className="px-1 py-1.5 border-b border-r border-gray-200">
-                              <input data-nav="presc" data-order="5" list="thiluc-list" value={form.thiluc_kinhmoi_mp || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mp: e.target.value })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <ThiLucInput dataNavOrder={5} customValues={thiLucSuggestions} value={form.thiluc_kinhmoi_mp || ''} onChange={(val) => setForm({ ...form, thiluc_kinhmoi_mp: val })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                             <div className="px-1 py-1.5 border-b border-gray-200">
-                              <input data-nav="presc" data-order="6" list="thiluc-list" value={form.thiluc_kinhmoi_mt || ''} onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mt: e.target.value })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <ThiLucInput dataNavOrder={6} customValues={thiLucSuggestions} value={form.thiluc_kinhmoi_mt || ''} onChange={(val) => setForm({ ...form, thiluc_kinhmoi_mt: val })} className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                             </div>
                           </div>
                           {/* Số kính cũ */}
@@ -1472,31 +1507,39 @@ export default function KeDonKinh() {
           <td className="px-1.5 py-1 border-b border-r border-gray-300 font-bold text-center text-gray-900">MP</td>
 
           <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
-            <input data-nav="presc" data-order="1" data-first-focus="thiluc_khongkinh_mp" list="thiluc-list"
+            <ThiLucInput
+              dataNavOrder={1}
+              dataFirstFocus="thiluc_khongkinh_mp"
+              customValues={thiLucSuggestions}
               value={form.thiluc_khongkinh_mp || ''}
-              onChange={(e) => setForm({ ...form, thiluc_khongkinh_mp: e.target.value })}
+              onChange={(val) => setForm({ ...form, thiluc_khongkinh_mp: val })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </td>
 
           <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
-            <input data-nav="presc" data-order="3" list="thiluc-list"
+            <ThiLucInput
+              dataNavOrder={3}
+              customValues={thiLucSuggestions}
               value={form.thiluc_kinhcu_mp || ''}
-              onChange={(e) => setForm({ ...form, thiluc_kinhcu_mp: e.target.value })}
+              onChange={(val) => setForm({ ...form, thiluc_kinhcu_mp: val })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </td>
 
           <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
-            <input data-nav="presc" data-order="5" list="thiluc-list"
+            <ThiLucInput
+              dataNavOrder={5}
+              customValues={thiLucSuggestions}
               value={form.thiluc_kinhmoi_mp || ''}
-              onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mp: e.target.value })}
+              onChange={(val) => setForm({ ...form, thiluc_kinhmoi_mp: val })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </td>
 
           <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
             <SoKinhInput
+              dataNavOrder={7}
               onCommitNext={() => {
                 const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="8"]');
                 n?.focus(); (n as HTMLInputElement)?.select?.();
@@ -1510,6 +1553,7 @@ export default function KeDonKinh() {
 
           <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
             <SoKinhInput
+              dataNavOrder={8}
               onCommitNext={() => {
                 const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="10"]');
                 n?.focus(); (n as HTMLInputElement)?.select?.();
@@ -1537,31 +1581,38 @@ export default function KeDonKinh() {
           <td className="px-1.5 py-1 border-r border-gray-300 font-bold text-center text-gray-900">MT</td>
 
           <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
-            <input data-nav="presc" data-order="2" list="thiluc-list"
+            <ThiLucInput
+              dataNavOrder={2}
+              customValues={thiLucSuggestions}
               value={form.thiluc_khongkinh_mt || ''}
-              onChange={(e) => setForm({ ...form, thiluc_khongkinh_mt: e.target.value })}
+              onChange={(val) => setForm({ ...form, thiluc_khongkinh_mt: val })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </td>
 
           <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
-            <input data-nav="presc" data-order="4" list="thiluc-list"
+            <ThiLucInput
+              dataNavOrder={4}
+              customValues={thiLucSuggestions}
               value={form.thiluc_kinhcu_mt || ''}
-              onChange={(e) => setForm({ ...form, thiluc_kinhcu_mt: e.target.value })}
+              onChange={(val) => setForm({ ...form, thiluc_kinhcu_mt: val })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </td>
 
           <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
-            <input data-nav="presc" data-order="6" list="thiluc-list"
+            <ThiLucInput
+              dataNavOrder={6}
+              customValues={thiLucSuggestions}
               value={form.thiluc_kinhmoi_mt || ''}
-              onChange={(e) => setForm({ ...form, thiluc_kinhmoi_mt: e.target.value })}
+              onChange={(val) => setForm({ ...form, thiluc_kinhmoi_mt: val })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </td>
 
           <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
             <SoKinhInput
+              dataNavOrder={9}
               onCommitNext={() => {
                 const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="9"]');
                 n?.focus(); (n as HTMLInputElement)?.select?.();
@@ -1575,6 +1626,7 @@ export default function KeDonKinh() {
 
           <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
             <SoKinhInput
+              dataNavOrder={10}
               onCommitNext={() => {
                 const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="11"]');
                 n?.focus(); (n as HTMLInputElement)?.select?.();
@@ -1605,7 +1657,7 @@ export default function KeDonKinh() {
               </div>
 
               {/* Sản phẩm */}
-              <div className={`bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200 ${mobileTab === 0 ? 'block' : 'hidden'} lg:block`}>
+              <div className="bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200 block lg:block">
                   <h3 className="font-bold text-gray-900 text-sm tracking-tight mb-2">Sản phẩm</h3>
                   <div className="space-y-2 sm:space-y-3">
                     {/* Mobile: inline label + input */}
@@ -1826,7 +1878,7 @@ export default function KeDonKinh() {
 
               {/* Mobile Thanh toán + History + Appointment - ẩn trên desktop */}
               <div className="block lg:hidden">
-                <div className={`bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200 ${mobileTab === 0 ? 'block' : 'hidden'}`}>
+                <div className="bg-white rounded-xl shadow-sm p-4 space-y-3 border border-gray-200 block">
                     <div className="flex items-center justify-between">
                       <h3 className="font-bold text-gray-900 text-sm tracking-tight">Thanh toán</h3>
                       {isAdmin && (
@@ -1921,7 +1973,7 @@ export default function KeDonKinh() {
                     </div>
                 </div>
                 {/* Nút hành động */}
-                <div className={`flex flex-wrap gap-2 pt-4 border-t border-gray-200 ${mobileTab === 0 ? 'flex' : 'hidden'}`}>
+                <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
                   {!isEditing && (
                     <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl shadow-sm active:scale-[0.98] transition-all text-sm touch-manipulation" onClick={luuDonKinh}>Lưu đơn</button>
                   )}
@@ -1945,12 +1997,12 @@ export default function KeDonKinh() {
                 </div>
 
                 {/* Mobile History Section */}
-                <div className={`${mobileTab === 1 ? 'block' : 'hidden'}`}>
+                <div className="hidden">
                   <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
                 </div>
 
                 {/* Mobile Appointment Section */}
-                <div className={`${mobileTab === 2 ? 'block' : 'hidden'}`}>
+                <div className="hidden">
                   <div>
                     <div className="px-1 pt-1 pb-2 flex justify-between items-center">
                       <h2 className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1">
@@ -2053,6 +2105,103 @@ export default function KeDonKinh() {
               <datalist id="gongkinh-list">
                 {gongKinhs.map(gk => (<option key={gk.id} value={gk.ten_gong} />))}
               </datalist>
+            </div>
+            </div>
+
+            {/* Panel 1: Đơn cũ (mobile viewport track) */}
+            <div
+              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 1 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              style={{
+                transform: `translate3d(calc(${(1 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
+                transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
+                willChange: 'transform',
+              }}
+            >
+              <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
+            </div>
+
+            {/* Panel 2: Lịch hẹn (mobile viewport track) */}
+            <div
+              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 2 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              style={{
+                transform: `translate3d(calc(${(2 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
+                transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
+                willChange: 'transform',
+              }}
+            >
+              <div>
+                <div className="px-1 pt-1 pb-2 flex justify-between items-center">
+                  <h2 className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1">
+                    <CalendarDays className="w-4 h-4 text-blue-600" /> Lịch hẹn
+                    {henKhamStats.cho > 0 && <span className="ml-1 text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-bold">{henKhamStats.cho}</span>}
+                    {henKhamStats.qua_han > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">{henKhamStats.qua_han}</span>}
+                  </h2>
+                  <button
+                    className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 transition-colors"
+                    onClick={() => { setEditHenForm(null); setAddHenForm({ ngay_hen: addDaysToToday(7), gio_hen: '', ly_do: 'Lấy kính', ghichu: '' }); setOpenHenDialog(true); }}
+                  >
+                    + Thêm
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {dsHenKham.length === 0 ? (
+                    <p className="text-xs text-gray-400 px-1">Chưa có lịch hẹn nào</p>
+                  ) : (
+                    dsHenKham.map(hen => {
+                      const st = TRANG_THAI_HEN[hen.trang_thai] || TRANG_THAI_HEN.cho;
+                      const countdown = getHenCountdown(hen.ngay_hen, hen.trang_thai);
+                      return (
+                        <div key={hen.id} className={`bg-white px-2.5 py-2 rounded-xl border shadow-sm ${hen.trang_thai === 'qua_han' ? 'border-red-200' : 'border-gray-200'}`}>
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1 flex-wrap mb-0.5">
+                                <span className="text-[11px] font-bold text-gray-700">{formatNgayHen(hen.ngay_hen)}</span>
+                                {hen.gio_hen && <span className="text-[10px] text-gray-400">{hen.gio_hen.substring(0, 5)}</span>}
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>{st.label}</span>
+                                {countdown && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${countdown.className}`}>{countdown.text}</span>}
+                              </div>
+                              <p className="text-[11px] text-gray-600 truncate">{hen.ly_do || ''}{hen.ghichu ? ` · ${hen.ghichu}` : ''}</p>
+                            </div>
+                            <div className="flex gap-1 ml-1 flex-shrink-0">
+                              {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
+                                <button className="p-1 text-green-500 hover:text-green-700 transition-colors" onClick={() => updateHenTrangThai(hen.id, 'da_den')}>
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button className="p-1 text-gray-400 hover:text-blue-600 transition-colors" onClick={() => { setEditHenForm({ id: hen.id, ngay_hen: hen.ngay_hen, gio_hen: hen.gio_hen?.substring(0, 5) || '', ly_do: hen.ly_do || '', ghichu: hen.ghichu || '' }); setOpenHenDialog(true); }}>
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button className="p-1 text-gray-400 hover:text-red-500 transition-colors" onClick={() => deleteHenKham(hen.id)}>
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-[9px] text-gray-400">Dời:</span>
+                              {[7, 14, 30].map(d => (
+                                <button key={d} onClick={() => rescheduleHen(hen.id, d)} className="px-1.5 py-0.5 text-[10px] bg-purple-50 text-purple-600 rounded hover:bg-purple-100 font-medium">
+                                  +{d < 30 ? `${d}d` : '1th'}
+                                </button>
+                              ))}
+                              {hen.trang_thai === 'cho' && (
+                                <button className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-500 rounded hover:bg-red-100 font-medium" onClick={() => updateHenTrangThai(hen.id, 'huy')}>
+                                  Hủy
+                                </button>
+                              )}
+                              {hen.dienthoai && (
+                                <a href={`tel:${hen.dienthoai}`} className="px-1.5 py-0.5 text-[10px] bg-green-50 text-green-600 rounded hover:bg-green-100 font-medium flex items-center gap-0.5">
+                                  <Phone className="w-2.5 h-2.5" /> Gọi
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
             </div>
         </div>
