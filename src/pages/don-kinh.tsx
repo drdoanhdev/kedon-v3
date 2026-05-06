@@ -1,13 +1,13 @@
 //src/pages/don-kinh.tsx
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Pagination, SimplePagination } from '@/components/ui/pagination';
-import { Trash2, Pencil, Settings } from 'lucide-react';
+import { Trash2, Pencil, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -68,6 +68,264 @@ function calcAge(namsinh: string | null): number | "" {
   return "";
 }
 
+function getTodayLocalDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+interface MobileDonKinhOrderCardProps {
+  dk: DonKinh;
+  stt: number;
+  showProfitUnlocked: boolean;
+  isActionOpen: boolean;
+  isProfitRevealed: boolean;
+  onToggleActions: (id: number) => void;
+  onRevealProfit: (id: number) => void;
+  onRequireUnlockProfit: () => void;
+  onDelete: (id: number) => Promise<void>;
+  formatMoney: (amount: number) => string;
+}
+
+const PROFIT_REVEAL_WIDTH = 92;
+const PROFIT_SWIPE_THRESHOLD = 38;
+
+const MobileDonKinhOrderCard = React.memo(function MobileDonKinhOrderCard({
+  dk,
+  stt,
+  showProfitUnlocked,
+  isActionOpen,
+  isProfitRevealed,
+  onToggleActions,
+  onRevealProfit,
+  onRequireUnlockProfit,
+  onDelete,
+  formatMoney,
+}: MobileDonKinhOrderCardProps) {
+  const swipeRef = useRef<HTMLDivElement | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const startOffsetRef = useRef(0);
+  const currentOffsetRef = useRef(0);
+  const lockAxisRef = useRef<'x' | 'y' | null>(null);
+  const draggingRef = useRef(false);
+  const frameRef = useRef<number | null>(null);
+
+  const totalAmount = dk.giatrong + dk.giagong;
+  const debtAmount = totalAmount - dk.sotien_da_thanh_toan;
+  const isDebt = debtAmount > 0;
+
+  const applyOffset = useCallback((offset: number, animate: boolean) => {
+    const node = swipeRef.current;
+    if (!node) return;
+    node.style.transition = animate
+      ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
+      : 'none';
+    node.style.transform = `translate3d(${offset}px, 0, 0)`;
+    currentOffsetRef.current = offset;
+  }, []);
+
+  useEffect(() => {
+    const targetOffset = isProfitRevealed && showProfitUnlocked ? -PROFIT_REVEAL_WIDTH : 0;
+    applyOffset(targetOffset, true);
+  }, [applyOffset, isProfitRevealed, showProfitUnlocked]);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+
+  const queueOffset = useCallback((offset: number) => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+    }
+    frameRef.current = requestAnimationFrame(() => {
+      applyOffset(offset, false);
+      frameRef.current = null;
+    });
+  }, [applyOffset]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!showProfitUnlocked) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    pointerIdRef.current = e.pointerId;
+    draggingRef.current = true;
+    lockAxisRef.current = null;
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    startOffsetRef.current = isProfitRevealed ? -PROFIT_REVEAL_WIDTH : 0;
+    applyOffset(startOffsetRef.current, false);
+  }, [applyOffset, isProfitRevealed, showProfitUnlocked]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current || pointerIdRef.current !== e.pointerId) return;
+
+    const deltaX = e.clientX - startXRef.current;
+    const deltaY = e.clientY - startYRef.current;
+
+    if (!lockAxisRef.current) {
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      if (absX < 7 && absY < 7) return;
+      lockAxisRef.current = absX > absY ? 'x' : 'y';
+      if (lockAxisRef.current === 'x' && swipeRef.current) {
+        swipeRef.current.setPointerCapture(e.pointerId);
+        swipeRef.current.style.willChange = 'transform';
+      }
+    }
+
+    if (lockAxisRef.current !== 'x') return;
+    if (deltaX > 0) return;
+
+    const nextOffset = Math.max(
+      -PROFIT_REVEAL_WIDTH,
+      startOffsetRef.current + deltaX
+    );
+    queueOffset(nextOffset);
+  }, [queueOffset]);
+
+  const finalizeSwipe = useCallback((pointerId: number) => {
+    if (!draggingRef.current || pointerIdRef.current !== pointerId) return;
+
+    const lockAxis = lockAxisRef.current;
+    draggingRef.current = false;
+    pointerIdRef.current = null;
+    lockAxisRef.current = null;
+
+    if (swipeRef.current?.hasPointerCapture(pointerId)) {
+      swipeRef.current.releasePointerCapture(pointerId);
+    }
+    if (swipeRef.current) {
+      swipeRef.current.style.willChange = 'auto';
+    }
+
+    if (lockAxis !== 'x') return;
+
+    if (!isProfitRevealed && currentOffsetRef.current <= -PROFIT_SWIPE_THRESHOLD) {
+      onRevealProfit(dk.id);
+      return;
+    }
+
+    const targetOffset = isProfitRevealed && showProfitUnlocked ? -PROFIT_REVEAL_WIDTH : 0;
+    applyOffset(targetOffset, true);
+  }, [applyOffset, dk.id, isProfitRevealed, onRevealProfit, showProfitUnlocked]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    finalizeSwipe(e.pointerId);
+  }, [finalizeSwipe]);
+
+  const onPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    finalizeSwipe(e.pointerId);
+  }, [finalizeSwipe]);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl border shadow-sm ${isDebt ? 'border-amber-400 bg-amber-50/50' : 'border-slate-200 bg-white'}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {showProfitUnlocked && (
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-[92px] items-center justify-center border-l border-emerald-200 bg-emerald-50">
+          <div className="text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Lãi</p>
+            <p className="text-sm font-bold text-emerald-700">{formatMoney(dk.lai)}k</p>
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={swipeRef}
+        className="relative"
+        style={{ transform: 'translate3d(0px, 0, 0)', touchAction: 'pan-y' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
+        <CardContent className="space-y-2.5 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-1.5 text-base font-semibold leading-tight text-slate-800">
+                <span className="font-mono text-[13px] text-slate-500">{stt}</span>
+                <span className="truncate">{dk.benhnhan.ten || 'Không có tên'}</span>
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {new Date(dk.ngaykham).toLocaleDateString('vi-VN')} {new Date(dk.ngaykham).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xl font-semibold leading-none text-blue-700">{formatMoney(totalAmount)}k</p>
+              {isDebt && (
+                <p className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Nợ: {formatMoney(debtAmount)}k
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-[13px] text-slate-600">
+            <div className="truncate">NS: {dk.benhnhan.namsinh || '-'}</div>
+            <div className="truncate">{calcAge(dk.benhnhan.namsinh ?? null) || '-'} tuổi</div>
+            <div className="truncate">{dk.benhnhan.diachi || '-'}</div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[13px]">
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-700">MP: {dk.sokinh_moi_mp || '-'}</span>
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-700">MT: {dk.sokinh_moi_mt || '-'}</span>
+            {!showProfitUnlocked && (
+              <button
+                type="button"
+                className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600"
+                onClick={onRequireUnlockProfit}
+              >
+                Mở khóa để vuốt xem lãi
+              </button>
+            )}
+          </div>
+        </CardContent>
+
+        <button
+          type="button"
+          className="flex w-full items-center justify-center gap-1 border-t border-slate-200 bg-slate-50 py-2 text-sm font-medium text-blue-700"
+          onClick={() => onToggleActions(dk.id)}
+        >
+          {isActionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          {isActionOpen ? 'Thu thao tác' : 'Mở thao tác'}
+        </button>
+
+        {isActionOpen && (
+          <div className="grid grid-cols-2 divide-x border-t border-slate-200 bg-white">
+            <a
+              href={`/ke-don-kinh?bn=${dk.benhnhanid}`}
+              className="flex h-10 items-center justify-center gap-1 text-sm font-medium text-blue-700"
+            >
+              <Pencil className="h-4 w-4" />
+              Sửa
+            </a>
+            <button
+              type="button"
+              className="flex h-10 items-center justify-center gap-1 text-sm font-medium text-rose-600"
+              onClick={() => { void onDelete(dk.id); }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Xóa
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+MobileDonKinhOrderCard.displayName = 'MobileDonKinhOrderCard';
+
+type MobileQuickFilter = 'all' | 'debt' | 'today' | 'custom';
+
 export default function DonKinhPage() {
   const { confirm } = useConfirm();
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]);
@@ -85,6 +343,10 @@ export default function DonKinhPage() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [mobileQuickFilter, setMobileQuickFilter] = useState<MobileQuickFilter>('all');
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [openActionCardId, setOpenActionCardId] = useState<number | null>(null);
+  const [revealedProfitCardId, setRevealedProfitCardId] = useState<number | null>(null);
   const { user, signIn } = useAuth();
   const { isMultiBranch } = useBranch();
 
@@ -104,6 +366,61 @@ export default function DonKinhPage() {
 
     return () => clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    setOpenActionCardId(null);
+    setRevealedProfitCardId(null);
+  }, [currentPage, rowsPerPage, searchDebounced, dateFilter, debtFilter]);
+
+  useEffect(() => {
+    if (!showProfit) {
+      setRevealedProfitCardId(null);
+    }
+  }, [showProfit]);
+
+  const applyMobileQuickFilter = useCallback((next: MobileQuickFilter) => {
+    const today = getTodayLocalDate();
+    setMobileQuickFilter(next);
+    setCurrentPage(1);
+
+    if (next === 'all') {
+      setDebtFilter(null);
+      setDateFilter('');
+      return;
+    }
+
+    if (next === 'debt') {
+      setDebtFilter(true);
+      setDateFilter('');
+      return;
+    }
+
+    if (next === 'today') {
+      setDebtFilter(null);
+      setDateFilter(`${today}T00:00`);
+      return;
+    }
+
+    setDebtFilter(null);
+    if (!dateFilter) {
+      setDateFilter(`${today}T00:00`);
+    }
+    setShowMobileFilters(true);
+  }, [dateFilter]);
+
+  const toggleMobileActions = useCallback((id: number) => {
+    setOpenActionCardId((prev) => (prev === id ? null : id));
+    setRevealedProfitCardId(null);
+  }, []);
+
+  const revealMobileProfit = useCallback((id: number) => {
+    if (!showProfit) {
+      setShowPasswordDialog(true);
+      return;
+    }
+    setOpenActionCardId(null);
+    setRevealedProfitCardId(id);
+  }, [showProfit]);
 
   const handleSettingsClick = () => {
     if (showProfit) {
@@ -198,7 +515,9 @@ export default function DonKinhPage() {
     try {
       const res = await axios.delete(`/api/don-kinh?id=${id}`);
       if (res.status === 200) {
-        setDonKinhs(donKinhs.filter((dk) => dk.id !== id));
+        setDonKinhs((prev) => prev.filter((dk) => dk.id !== id));
+        setOpenActionCardId((prev) => (prev === id ? null : prev));
+        setRevealedProfitCardId((prev) => (prev === id ? null : prev));
         toast.success('Đã xóa đơn kính');
       }
     } catch (error: unknown) {
@@ -219,6 +538,28 @@ export default function DonKinhPage() {
   const filtered = useMemo(() => donKinhs, [donKinhs]);
   const totalPages = useMemo(() => Math.ceil(total / rowsPerPage), [total, rowsPerPage]);
   const paginated = useMemo(() => filtered, [filtered]);
+  const mobileTodayLabel = useMemo(() => new Date().toLocaleDateString('vi-VN'), []);
+  const mobileDebtCount = useMemo(
+    () => filtered.filter((dk) => (dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan) > 0).length,
+    [filtered]
+  );
+  const mobileTotalAmount = useMemo(
+    () => filtered.reduce((sum, dk) => sum + dk.giatrong + dk.giagong, 0),
+    [filtered]
+  );
+
+  useEffect(() => {
+    if (debtFilter === true) {
+      setMobileQuickFilter('debt');
+      return;
+    }
+    if (dateFilter) {
+      const dateOnly = dateFilter.includes('T') ? dateFilter.split('T')[0] : dateFilter;
+      setMobileQuickFilter(dateOnly === getTodayLocalDate() ? 'today' : 'custom');
+      return;
+    }
+    setMobileQuickFilter('all');
+  }, [dateFilter, debtFilter]);
 
   const formatMoney = useCallback((amount: number) => {
     return (amount / 1000).toLocaleString('vi-VN');
@@ -238,56 +579,152 @@ export default function DonKinhPage() {
         ) : (
           <>
             {/* Mobile Controls */}
-            <div className="block md:hidden space-y-3">
-              <Input
-                placeholder="Tìm tên, số ĐT, địa chỉ..."
-                value={search}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  setSearch(e.target.value);
-                  // Không set currentPage ở đây, để debounce xử lý
-                }}
-                className="w-full h-12"
-              />
-              <Input
-                type="datetime-local"
-                value={dateFilter}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  setDateFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full h-12"
-              />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    checked={debtFilter === true}
-                    onCheckedChange={(checked: boolean) => {
-                      setDebtFilter(checked ? true : null);
+            <div className="block md:hidden space-y-2.5">
+              <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#1f78d1] via-[#2d80d7] to-[#1f6cc0] text-white shadow-sm">
+                <div className="px-3.5 pb-2 pt-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[11px] text-white/85">OptiGo • Đơn kính</p>
+                      <p className="text-sm font-semibold">PKM kính mắt</p>
+                    </div>
+                    <span className="text-[11px] text-white/90">{mobileTodayLabel}</span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+                    <span className="rounded-full bg-white/15 px-2 py-0.5">● {filtered.length} đơn kính</span>
+                    <span className="rounded-full bg-white/15 px-2 py-0.5">● Nợ: {mobileDebtCount}</span>
+                    <span className="rounded-full bg-white/15 px-2 py-0.5">● Tổng: {formatMoney(mobileTotalAmount)}k</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/15 bg-black/10 px-1.5 pb-1.5 pt-1">
+                  <div className="grid grid-cols-4 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => applyMobileQuickFilter('all')}
+                      className={`h-8 rounded-md text-xs font-medium ${mobileQuickFilter === 'all' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
+                    >
+                      Tất cả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyMobileQuickFilter('debt')}
+                      className={`h-8 rounded-md text-xs font-medium ${mobileQuickFilter === 'debt' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
+                    >
+                      Còn nợ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyMobileQuickFilter('today')}
+                      className={`h-8 rounded-md text-xs font-medium ${mobileQuickFilter === 'today' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
+                    >
+                      Hôm nay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyMobileQuickFilter('custom')}
+                      className={`h-8 rounded-md text-xs font-medium ${mobileQuickFilter === 'custom' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
+                    >
+                      Khoảng
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-[#f3f1ec] p-2.5">
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Tìm tên, SĐT, địa chỉ..."
+                    value={search}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      setSearch(e.target.value);
+                    }}
+                    className="h-9 border-slate-300 bg-white"
+                  />
+
+                  <select
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                      setRowsPerPage(+e.target.value);
                       setCurrentPage(1);
                     }}
-                  />
-                  <label className="text-sm font-semibold">Chỉ hiển thị đơn còn nợ</label>
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+                  >
+                    {[25, 50, 100, 200].map((val) => (
+                      <option key={val} value={val}>{val} / trang</option>
+                    ))}
+                  </select>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setShowMobileFilters((prev) => !prev)}
+                  >
+                    Bộ lọc
+                  </Button>
                 </div>
-                <select
-                  value={rowsPerPage}
-                  onChange={(e) => {
-                    setRowsPerPage(+e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="border px-3 py-2 rounded text-sm h-10"
-                >
-                  {[25, 50, 100, 200].map((val) => (
-                    <option key={val} value={val}>{val}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Tổng: {total} đơn kính (hiển thị {filtered.length} trên trang {currentPage})
+
+                {showMobileFilters && (
+                  <div className="mt-2.5 space-y-2">
+                    <Input
+                      type="datetime-local"
+                      value={dateFilter}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        setDateFilter(e.target.value);
+                        setMobileQuickFilter('custom');
+                        setCurrentPage(1);
+                      }}
+                      className="h-9 border-slate-300 bg-white"
+                    />
+
+                    <div className="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-2.5 py-2">
+                      <label className="text-sm font-medium text-slate-700">Chỉ hiện đơn còn nợ</label>
+                      <Switch
+                        checked={debtFilter === true}
+                        onCheckedChange={(checked: boolean) => {
+                          setDebtFilter(checked ? true : null);
+                          setMobileQuickFilter(checked ? 'debt' : (dateFilter ? 'custom' : 'all'));
+                          setCurrentPage(1);
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={showProfit ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-9 flex-1"
+                        onClick={handleSettingsClick}
+                      >
+                        <Settings className="mr-1 h-4 w-4" />
+                        {showProfit ? 'Đang mở lãi' : 'Mở khóa lãi'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => {
+                          setSearch('');
+                          setDateFilter('');
+                          setDebtFilter(null);
+                          setMobileQuickFilter('all');
+                          setCurrentPage(1);
+                        }}
+                      >
+                        Xóa lọc
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                  <span>Hiển thị {filtered.length} đơn · trang {currentPage}</span>
+                  <span>← vuốt trái để xem lãi</span>
                 </div>
-                <Button type="button" variant={showProfit ? 'default' : 'outline'} size="sm" onClick={handleSettingsClick} className="h-10 px-3">
-                  <Settings className="w-4 h-4" />
-                </Button>
               </div>
             </div>
 
@@ -342,78 +779,44 @@ export default function DonKinhPage() {
             </div>
 
             {/* Mobile Card Layout */}
-            <div className="block md:hidden space-y-4">
+            <div
+              className="block md:hidden space-y-2.5"
+              onClick={() => {
+                setOpenActionCardId(null);
+                setRevealedProfitCardId(null);
+              }}
+            >
               {paginated.map((dk, index) => {
                 const stt = (currentPage - 1) * rowsPerPage + index + 1;
-                const isDebt = (dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan) > 0;
                 return (
-                <Card key={dk.id} className={`border ${isDebt ? 'bg-amber-200 border-amber-500 shadow-md ring-1 ring-amber-400/60' : ''}`}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <h3 className="font-semibold text-base flex items-center gap-2"><span className="text-[10px] font-mono bg-gray-200 text-gray-700 px-1 rounded">{stt}</span>{dk.benhnhan.ten || 'Không có tên'}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(dk.ngaykham).toLocaleDateString('vi-VN')} {new Date(dk.ngaykham).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-base font-semibold">{formatMoney(dk.giatrong + dk.giagong)}k</p>
-                        {showProfit && (
-                          <p className="text-xs text-emerald-600">Lãi: {formatMoney(dk.lai)}k</p>
-                        )}
-                        {dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan > 0 && (
-                          <p className="text-sm text-red-600">
-                            Nợ: {formatMoney(dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan)}k
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">NS:</span> {dk.benhnhan.namsinh || '-'}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Tuổi:</span> {calcAge(dk.benhnhan.namsinh ?? null)}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">SĐT:</span> {dk.benhnhan.dienthoai || '-'}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Địa chỉ:</span> {dk.benhnhan.diachi || '-'}
-                      </div>
-                    </div>
+                  <MobileDonKinhOrderCard
+                    key={dk.id}
+                    dk={dk}
+                    stt={stt}
+                    showProfitUnlocked={showProfit}
+                    isActionOpen={openActionCardId === dk.id}
+                    isProfitRevealed={revealedProfitCardId === dk.id}
+                    onToggleActions={toggleMobileActions}
+                    onRevealProfit={revealMobileProfit}
+                    onRequireUnlockProfit={() => setShowPasswordDialog(true)}
+                    onDelete={handleDelete}
+                    formatMoney={formatMoney}
+                  />
+                );
+              })}
 
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Mắt phải:</span> {dk.sokinh_moi_mp || '-'}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Mắt trái:</span> {dk.sokinh_moi_mt || '-'}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 pt-2">
-                      <Button size="sm" variant="outline" className="flex-1 h-10" asChild>
-                        <a href={`/ke-don-kinh?bn=${dk.benhnhanid}`}>
-                          <Pencil className="w-4 h-4 mr-1" />
-                          Sửa
-                        </a>
-                      </Button>
-                      <Button size="sm" variant="destructive" className="flex-1 h-10" onClick={() => handleDelete(dk.id)}>
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Xóa
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )})}
               {paginated.length === 0 && (
                 <Card>
                   <CardContent className="p-8 text-center text-muted-foreground">
                     Không tìm thấy đơn kính.
                   </CardContent>
                 </Card>
+              )}
+
+              {paginated.length > 0 && (
+                <div className="rounded-lg bg-slate-100 px-3 py-2 text-center text-[11px] text-slate-500">
+                  ← Vuốt trái để xem lãi đơn · Bấm "Mở thao tác" để hiện nút hành động
+                </div>
               )}
             </div>
 

@@ -2,6 +2,7 @@
  * API Admin: Quản lý tất cả phòng khám (tenants)
  * GET  — Danh sách phòng khám + thông tin plan/trial
  * PUT  — Cập nhật trạng thái (active/suspended) hoặc plan
+ * DELETE — Xóa mềm phòng khám (chuyển status = inactive)
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireSuperAdmin } from '../../../lib/adminGuard';
@@ -103,6 +104,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       return res.status(200).json({ message: 'Đã cập nhật phòng khám', data });
+    } catch (err: any) {
+      return res.status(500).json({ message: 'Lỗi server', error: err.message });
+    }
+  }
+
+  // DELETE: Xóa mềm tenant (status -> inactive)
+  if (req.method === 'DELETE') {
+    try {
+      const tenantId =
+        (typeof req.query.tenantId === 'string' ? req.query.tenantId : '') ||
+        (typeof req.body?.tenantId === 'string' ? req.body.tenantId : '');
+
+      if (!tenantId) {
+        return res.status(400).json({ message: 'Thiếu tenantId' });
+      }
+
+      const { data: existing, error: existingErr } = await supabaseAdmin
+        .from('tenants')
+        .select('id, name, status')
+        .eq('id', tenantId)
+        .maybeSingle();
+
+      if (existingErr) {
+        return res.status(500).json({ message: 'Lỗi kiểm tra phòng khám', error: existingErr.message });
+      }
+
+      if (!existing) {
+        return res.status(404).json({ message: 'Không tìm thấy phòng khám' });
+      }
+
+      if (existing.status === 'inactive') {
+        return res.status(400).json({ message: 'Phòng khám đã ở trạng thái ngưng hoạt động' });
+      }
+
+      const { error } = await supabaseAdmin
+        .from('tenants')
+        .update({
+          status: 'inactive',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', tenantId);
+
+      if (error) {
+        return res.status(400).json({ message: 'Lỗi xóa mềm phòng khám', error: error.message });
+      }
+
+      return res.status(200).json({
+        message: `Đã xóa mềm phòng khám ${existing.name}`,
+      });
     } catch (err: any) {
       return res.status(500).json({ message: 'Lỗi server', error: err.message });
     }

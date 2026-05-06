@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -32,10 +32,10 @@ interface HenKham {
 type FilterTab = 'hom_nay' | '7_ngay_toi' | '1_thang_toi' | 'khoang_ngay';
 
 const TRANG_THAI_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  cho: { label: 'Chờ', color: 'text-[#B8860B]', bg: 'bg-[#FFF8E1]' },
-  da_den: { label: 'Đã đến', color: 'text-[#2E7D32]', bg: 'bg-[#E8F5E9]' },
-  huy: { label: 'Hủy', color: 'text-[#C62828]', bg: 'bg-[#FFEBEE]' },
-  qua_han: { label: 'Quá hạn', color: 'text-[#455A64]', bg: 'bg-[#ECEFF1]' },
+  cho: { label: 'Chờ', color: 'text-yellow-700', bg: 'bg-yellow-100' },
+  da_den: { label: 'Đã đến', color: 'text-green-700', bg: 'bg-green-100' },
+  huy: { label: 'Hủy', color: 'text-red-700', bg: 'bg-red-100' },
+  qua_han: { label: 'Quá hạn', color: 'text-gray-700', bg: 'bg-gray-200' },
 };
 
 function getToday(): string {
@@ -88,9 +88,6 @@ export default function LichHen() {
   const [toDate, setToDate] = useState(getToday());
   const [filterTrangThai, setFilterTrangThai] = useState('tat_ca');
   const [search, setSearch] = useState('');
-  const [expandedCardIds, setExpandedCardIds] = useState<number[]>([]);
-  const [swipeMenuCardId, setSwipeMenuCardId] = useState<number | null>(null);
-  const touchStartRef = useRef<Record<number, { x: number; y: number }>>({});
 
   // SMS dialog
   const [openSms, setOpenSms] = useState(false);
@@ -297,49 +294,6 @@ export default function LichHen() {
     }
   }, []);
 
-  const openEditDialog = useCallback((hen: HenKham) => {
-    setEditForm({
-      id: hen.id,
-      ngay_hen: hen.ngay_hen,
-      gio_hen: hen.gio_hen ? formatGio(hen.gio_hen) : '',
-      ly_do: hen.ly_do || '',
-      ghichu: hen.ghichu || '',
-    });
-    setOpenEdit(true);
-  }, []);
-
-  const toggleCardExpanded = useCallback((id: number) => {
-    setExpandedCardIds(prev => (prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]));
-    setSwipeMenuCardId(prev => (prev === id ? null : prev));
-  }, []);
-
-  const handleCardTouchStart = useCallback((id: number, e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
-    touchStartRef.current[id] = { x: touch.clientX, y: touch.clientY };
-  }, []);
-
-  const handleCardTouchEnd = useCallback((hen: HenKham, e: React.TouchEvent<HTMLDivElement>) => {
-    const start = touchStartRef.current[hen.id];
-    if (!start) return;
-
-    const touch = e.changedTouches[0];
-    const deltaX = touch.clientX - start.x;
-    const deltaY = touch.clientY - start.y;
-    delete touchStartRef.current[hen.id];
-
-    if (Math.abs(deltaX) < 55 || Math.abs(deltaX) < Math.abs(deltaY)) return;
-
-    if (deltaX > 0) {
-      if (hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') {
-        updateTrangThai(hen.id, 'da_den');
-      }
-      return;
-    }
-
-    setSwipeMenuCardId(hen.id);
-    setExpandedCardIds(prev => (prev.includes(hen.id) ? prev : [...prev, hen.id]));
-  }, [updateTrangThai]);
-
   const addHenKham = async () => {
     if (!addForm.ten_benhnhan || !addForm.ngay_hen) {
       toast.error('Vui lòng nhập tên và ngày hẹn');
@@ -379,18 +333,55 @@ export default function LichHen() {
     data.filter(h => h.trang_thai === 'cho' && h.ngay_hen < getToday()).length
   ), [data]);
 
-  useEffect(() => {
-    const ids = new Set(data.map(h => h.id));
-    setExpandedCardIds(prev => prev.filter(id => ids.has(id)));
-    setSwipeMenuCardId(prev => (prev && ids.has(prev) ? prev : null));
-  }, [data]);
-
   const currentRangeLabel = useMemo(() => {
     if (tab === 'hom_nay') return 'Hôm nay';
     if (tab === '7_ngay_toi') return '7 ngày tới';
     if (tab === '1_thang_toi') return '1 tháng tới';
     return `${formatNgay(fromDate)} - ${formatNgay(toDate)}`;
   }, [tab, fromDate, toDate]);
+
+  const statusQuickFilters = [
+    {
+      key: 'tat_ca',
+      label: 'Tổng',
+      count: stats.total,
+      countClass: 'text-blue-700',
+      dotClass: 'bg-blue-500',
+      activeClass: 'border-blue-400 bg-blue-50 ring-1 ring-blue-200'
+    },
+    {
+      key: 'cho',
+      label: 'Đang chờ',
+      count: stats.cho,
+      countClass: 'text-yellow-700',
+      dotClass: 'bg-yellow-500',
+      activeClass: 'border-yellow-400 bg-yellow-50 ring-1 ring-yellow-200'
+    },
+    {
+      key: 'da_den',
+      label: 'Đã đến',
+      count: stats.da_den,
+      countClass: 'text-green-700',
+      dotClass: 'bg-green-500',
+      activeClass: 'border-green-400 bg-green-50 ring-1 ring-green-200'
+    },
+    {
+      key: 'huy',
+      label: 'Đã hủy',
+      count: stats.huy,
+      countClass: 'text-red-700',
+      dotClass: 'bg-red-500',
+      activeClass: 'border-red-400 bg-red-50 ring-1 ring-red-200'
+    },
+    {
+      key: 'qua_han',
+      label: 'Quá hạn',
+      count: stats.qua_han,
+      countClass: 'text-slate-700',
+      dotClass: 'bg-slate-500',
+      activeClass: 'border-slate-400 bg-slate-100 ring-1 ring-slate-200'
+    },
+  ] as const;
 
   // Batch mark all overdue as qua_han + notify
   const batchMarkOverdue = useCallback(async () => {
@@ -420,54 +411,92 @@ export default function LichHen() {
   return (
     <ProtectedRoute>
       <FeatureGate feature="appointments">
-      <div className="min-h-screen bg-[#F3F4F6] md:bg-gray-50">
-        <div className="mx-auto max-w-6xl pb-24 md:pb-6">
-          <div className="md:hidden">
-            <div className="sticky top-0 z-20">
-              <div className="bg-[#1976D2] px-3 pt-3 pb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <h1 className="text-xl font-semibold text-white">Lịch hẹn</h1>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setFilterTrangThai(prev => (prev === 'cho' ? 'tat_ca' : 'cho'))}
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                        filterTrangThai === 'cho'
-                          ? 'bg-white text-[#1976D2]'
-                          : 'bg-white/20 text-white hover:bg-white/30'
-                      }`}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#FFD740]" /> Chờ {stats.cho}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterTrangThai(prev => (prev === 'da_den' ? 'tat_ca' : 'da_den'))}
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                        filterTrangThai === 'da_den'
-                          ? 'bg-white text-[#1976D2]'
-                          : 'bg-white/20 text-white hover:bg-white/30'
-                      }`}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#69F0AE]" /> Đến {stats.da_den}
-                    </button>
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-6xl mx-auto p-3 md:p-4 pb-24 md:pb-6 space-y-3 md:space-y-4">
+          {/* Page summary + actions */}
+          <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white via-blue-50 to-cyan-50 shadow-sm">
+            <div className="pointer-events-none absolute -top-16 -right-10 h-36 w-36 rounded-full bg-blue-200/40 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-14 left-10 h-32 w-32 rounded-full bg-cyan-200/35 blur-3xl" />
+            <CardContent className="relative p-3 md:p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="w-5 h-5 text-blue-700" />
+                    <h1 className="text-lg md:text-xl font-bold text-slate-800 leading-tight">Lịch hẹn khám</h1>
+                  </div>
+                  <p className="mt-1 text-xs md:text-sm text-slate-600">
+                    {currentRangeLabel} • {filteredData.length}/{data.length} lịch hẹn
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                      Chờ {stats.cho}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-green-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-green-700">
+                      Đã đến {stats.da_den}
+                    </span>
+                    {(stats.qua_han > 0 || pendingOverdueCount > 0) && (
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                        Cần xử lý {stats.qua_han + pendingOverdueCount}
+                      </span>
+                    )}
                   </div>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchData}
+                  disabled={loading}
+                  className="h-9 px-2.5 md:px-3 shrink-0 border-blue-200 bg-white/90 hover:bg-white"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline ml-1">Tải lại</span>
+                </Button>
+              </div>
 
-                <div className="mt-2 grid grid-cols-4 gap-1 rounded-xl bg-black/15 p-1">
-                  {([
-                    ['hom_nay', 'Hôm nay'],
-                    ['7_ngay_toi', '7 ngày'],
-                    ['1_thang_toi', '1 tháng'],
-                    ['khoang_ngay', 'Khoảng'],
-                  ] as const).map(([key, label]) => (
+              <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2">
+                <Button className="h-10 md:h-9 bg-slate-900 hover:bg-slate-800" onClick={() => setOpenAdd(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Thêm hẹn
+                </Button>
+                <Button variant="outline" className="h-10 md:h-9 border-slate-300 bg-white/90 hover:bg-white" onClick={() => setOpenTemplateManager(true)}>
+                  <Settings className="w-4 h-4 mr-1" /> Mẫu tin
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Status quick filters */}
+          <div className="overflow-x-auto pb-1">
+            <div className="flex min-w-max gap-2 md:grid md:min-w-0 md:grid-cols-5 md:gap-3">
+            {statusQuickFilters.map(item => (
+              <button
+                key={item.key}
+                onClick={() => setFilterTrangThai(item.key)}
+                className={`min-w-[136px] rounded-2xl border p-3 text-left transition-all ${
+                  filterTrangThai === item.key
+                    ? `${item.activeClass} shadow-sm`
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-slate-500">{item.label}</div>
+                  <span className={`h-2 w-2 rounded-full ${item.dotClass}`} />
+                </div>
+                <div className={`mt-1 text-2xl font-bold leading-none ${item.countClass}`}>{item.count}</div>
+              </button>
+            ))}
+            </div>
+          </div>
+
+          {/* Filters */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardContent className="p-3 space-y-3">
+              {/* Time tabs */}
+              <div className="overflow-x-auto">
+                <div className="flex min-w-max gap-2">
+                  {([['hom_nay', 'Hôm nay'], ['7_ngay_toi', '7 ngày tới'], ['1_thang_toi', '1 tháng tới'], ['khoang_ngay', 'Khoảng ngày']] as const).map(([key, label]) => (
                     <button
                       key={key}
-                      type="button"
-                      className={`h-8 rounded-lg text-xs font-medium transition-colors ${
-                        tab === key
-                          ? 'bg-white text-[#1976D2]'
-                          : 'text-white/75 hover:bg-white/15 hover:text-white'
-                      }`}
+                      className={`h-9 px-4 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${tab === key ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                       onClick={() => setTab(key)}
                     >
                       {label}
@@ -476,454 +505,184 @@ export default function LichHen() {
                 </div>
               </div>
 
-              <div className="border-b border-[#E0E0E0] bg-white px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="h-9 border-[#E0E0E0] bg-[#F5F5F5] text-sm"
-                    placeholder="Tìm tên, SĐT..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={fetchData}
-                    disabled={loading}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
-                    aria-label="Tải lại"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOpenTemplateManager(true)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#E0E0E0] bg-white text-slate-600 transition-colors hover:bg-slate-100"
-                    aria-label="Mẫu tin"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="mt-1 flex items-center justify-between text-[11px] text-[#78909C]">
-                  <span>{currentRangeLabel} • {filteredData.length}/{data.length} lịch</span>
-                  <span>↔ vuốt để thao tác</span>
-                </div>
-
-                {tab === 'khoang_ngay' && (
-                  <div className="mt-2 space-y-2 border-t border-[#ECEFF1] pt-2">
-                    <div className="flex items-center gap-1.5 text-xs text-[#546E7A]">
-                      <span className="whitespace-nowrap">Từ</span>
-                      <Input
-                        type="date"
-                        className="h-9 min-w-0 flex-1 border-[#E0E0E0] bg-[#FAFAFA] px-2 text-[12px]"
-                        value={fromDate}
-                        onChange={e => setFromDate(e.target.value)}
-                      />
-                      <span className="whitespace-nowrap">đến</span>
-                      <Input
-                        type="date"
-                        className="h-9 min-w-0 flex-1 border-[#E0E0E0] bg-[#FAFAFA] px-2 text-[12px]"
-                        value={toDate}
-                        onChange={e => setToDate(e.target.value)}
-                      />
-                    </div>
-                    <Button size="sm" className="mt-2 h-8 w-full bg-[#1976D2] hover:bg-[#1565C0]" onClick={fetchData}>Áp dụng khoảng ngày</Button>
+              {/* Date range picker */}
+              {tab === 'khoang_ngay' && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Input type="date" className="h-10 w-full" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+                    <Input type="date" className="h-10 w-full" value={toDate} onChange={e => setToDate(e.target.value)} />
                   </div>
+                  <Button size="sm" className="h-9 w-full sm:w-auto" onClick={fetchData}>Áp dụng khoảng ngày</Button>
+                </div>
+              )}
+
+              {/* Search */}
+              <div className="flex gap-2 flex-wrap items-center">
+                <Input className="h-10 w-full" placeholder="Tìm tên, SĐT..." value={search} onChange={e => setSearch(e.target.value)} />
+                {search.trim() && (
+                  <button
+                    type="button"
+                    className="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+                    onClick={() => setSearch('')}
+                  >
+                    Xóa tìm
+                  </button>
                 )}
               </div>
-            </div>
 
-            {(stats.qua_han > 0 || pendingOverdueCount > 0) && (
-              <div className="mx-3 mt-3 flex items-center gap-2 rounded-xl border border-[#FFE082] bg-[#FFF8E1] px-3 py-2">
-                <AlertTriangle className="h-4 w-4 text-[#B8860B]" />
-                {pendingOverdueCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={batchMarkOverdue}
-                    className="rounded-lg border border-[#FFD54F] bg-[#FFE082] px-2 py-1 text-xs font-medium text-[#8D6E00] hover:bg-[#FFD54F]"
-                  >
-                    Cập nhật quá hạn ({pendingOverdueCount})
-                  </button>
-                )}
-                <span className="text-sm font-medium text-[#B8860B]">{stats.qua_han + pendingOverdueCount} lịch cần xử lý</span>
-                <div className="ml-auto flex items-center gap-1">
-                  {[7, 14, 30].map(d => (
+              {/* Batch actions for overdue */}
+              {(stats.qua_han > 0 || pendingOverdueCount > 0) && (
+                <div className="flex items-center gap-2 flex-wrap bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-700" />
+                  {pendingOverdueCount > 0 && (
                     <button
-                      key={d}
-                      onClick={() => batchRescheduleOverdue(d)}
-                      className="rounded-md border border-[#FFECB3] bg-white px-2 py-1 text-xs font-medium text-[#B8860B] hover:bg-[#FFF8E1]"
+                      type="button"
+                      onClick={batchMarkOverdue}
+                      className="px-2.5 py-1 text-xs bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 border border-amber-200 font-medium transition-colors"
                     >
+                      Cập nhật quá hạn ({pendingOverdueCount})
+                    </button>
+                  )}
+                  <span className="text-sm text-amber-800 font-medium">{stats.qua_han + pendingOverdueCount} lịch cần xử lý</span>
+                  <span className="text-xs text-amber-700">Dời tất cả:</span>
+                  {[7, 14, 30].map(d => (
+                    <button key={d} onClick={() => batchRescheduleOverdue(d)} className="px-2.5 py-1 text-xs bg-white text-amber-700 rounded-lg hover:bg-amber-100 border border-amber-200 font-medium transition-colors">
                       +{d < 30 ? `${d} ngày` : '1 tháng'}
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </CardContent>
+          </Card>
 
-            {loading ? (
-              <div className="py-10 text-center text-gray-500">Đang tải...</div>
-            ) : filteredData.length === 0 ? (
-              <div className="py-10 text-center text-gray-400">Không có lịch hẹn nào</div>
-            ) : (
-              <div className="space-y-2.5 px-3 pt-3">
-                {filteredData.map(hen => {
-                  const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
-                  const countdown = getCountdownLabel(hen.ngay_hen, hen.trang_thai);
-                  const isArrived = hen.trang_thai === 'da_den';
-                  const canMarkArrived = hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han';
-                  const canExpand = !isArrived;
-                  const isExpanded = expandedCardIds.includes(hen.id);
-                  const detailVisibility = isExpanded ? 'block' : 'hidden';
-
-                  return (
-                    <Card
-                      key={hen.id}
-                      className={`overflow-hidden border ${isArrived ? 'border-[#A5D6A7] bg-[#F1F8E9]' : 'border-[#E0E0E0] bg-white'} shadow-sm`}
-                      onTouchStart={(e) => handleCardTouchStart(hen.id, e)}
-                      onTouchEnd={(e) => handleCardTouchEnd(hen, e)}
-                    >
-                      <CardContent className={`p-3 ${isArrived ? 'pb-2' : 'pb-3'}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <Link
-                            href={hen.benhnhanid ? `/ke-don-kinh?bn=${hen.benhnhanid}` : '#'}
-                            className={`truncate font-semibold hover:underline ${isArrived ? 'text-slate-500 line-through' : 'text-slate-800'}`}
-                          >
-                            {hen.ten_benhnhan || 'Không tên'}
-                          </Link>
-                          <div className="flex items-center gap-1">
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.bg} ${st.color}`}>
+          {/* List */}
+          {loading ? (
+            <div className="text-center py-10 text-gray-500">Đang tải...</div>
+          ) : filteredData.length === 0 ? (
+            <div className="text-center py-10 text-gray-400">Không có lịch hẹn nào</div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredData.map(hen => {
+                const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
+                const countdown = getCountdownLabel(hen.ngay_hen, hen.trang_thai);
+                const statusBorderClass = hen.trang_thai === 'da_den'
+                  ? 'border-l-4 border-l-green-300'
+                  : hen.trang_thai === 'huy'
+                    ? 'border-l-4 border-l-red-300'
+                    : hen.trang_thai === 'qua_han'
+                      ? 'border-l-4 border-l-slate-300'
+                      : 'border-l-4 border-l-yellow-300';
+                return (
+                  <Card key={hen.id} className={`${statusBorderClass} border-slate-200 hover:shadow-md transition-shadow ${countdown && getDaysDiff(hen.ngay_hen) < 0 ? 'border-red-300' : countdown && getDaysDiff(hen.ngay_hen) === 0 ? 'border-orange-300' : ''}`}>
+                    <CardContent className="p-3 md:p-4">
+                      <div className="flex flex-col md:flex-row md:items-start gap-3">
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <Link href={hen.benhnhanid ? `/ke-don-kinh?bn=${hen.benhnhanid}` : '#'} className="font-bold text-blue-700 hover:underline truncate">
+                              {hen.ten_benhnhan || 'Không tên'}
+                            </Link>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>
                               {st.label}
                             </span>
-                            {countdown && !isArrived && (
-                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${countdown.className}`}>
+                            {countdown && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${countdown.className}`}>
                                 {countdown.text}
                               </span>
                             )}
                           </div>
-                        </div>
-
-                        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-sm text-slate-600">
-                          <span className="inline-flex items-center gap-1 text-[13px]">
-                            <CalendarDays className="h-3.5 w-3.5" /> {formatNgay(hen.ngay_hen)}
-                          </span>
-                          {hen.gio_hen && (
-                            <span className="text-[13px]">{formatGio(hen.gio_hen)}</span>
-                          )}
-                          {hen.dienthoai && <span className="text-[13px]">• {hen.dienthoai}</span>}
-                          {hen.ly_do && <span className="text-[13px]">• {hen.ly_do}</span>}
-                        </div>
-
-                        {!isArrived && hen.ghichu && <p className="mt-1 text-xs text-slate-500">{hen.ghichu}</p>}
-
-                        {canExpand && (
-                          <div className={`${detailVisibility} mt-2 space-y-2`}>
-                            {canMarkArrived && (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] text-[#78909C]">Dời:</span>
-                                {[
-                                  { days: 7, label: '+7 ngày' },
-                                  { days: 14, label: '+14 ngày' },
-                                  { days: 30, label: '+1 tháng' },
-                                ].map(({ days, label }) => (
-                                  <button
-                                    key={days}
-                                    type="button"
-                                    onClick={() => reschedule(hen.id, days)}
-                                    className="rounded-lg border border-[#90CAF9] bg-white px-2.5 py-1 text-xs font-medium text-[#1976D2] hover:bg-[#E3F2FD]"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-4 gap-1.5 border-t border-[#ECEFF1] pt-2">
-                              {hen.dienthoai ? (
-                                <>
-                                  <a href={`tel:${hen.dienthoai}`} className="inline-flex h-8 items-center justify-center rounded-lg border border-[#A5D6A7] bg-[#F1F8E9] text-xs font-medium text-[#2E7D32]">Gọi</a>
-                                  <button type="button" className="inline-flex h-8 items-center justify-center rounded-lg border border-[#90CAF9] bg-[#E3F2FD] text-xs font-medium text-[#1565C0]" onClick={() => { setZaloTarget(hen); setSelectedZaloTemplate(0); setOpenZalo(true); }}>Zalo</button>
-                                  <button type="button" className="inline-flex h-8 items-center justify-center rounded-lg border border-[#CE93D8] bg-[#F3E5F5] text-xs font-medium text-[#6A1B9A]" onClick={() => { setSmsTarget(hen); setSelectedTemplate(0); setOpenSms(true); }}>SMS</button>
-                                  <button type="button" className="inline-flex h-8 items-center justify-center rounded-lg border border-[#CFD8DC] bg-[#FAFAFA] text-xs font-medium text-[#546E7A]" onClick={() => openEditDialog(hen)}>Sửa</button>
-                                </>
-                              ) : (
-                                <button type="button" className="col-span-4 inline-flex h-8 items-center justify-center rounded-lg border border-[#CFD8DC] bg-[#FAFAFA] text-xs font-medium text-[#546E7A]" onClick={() => openEditDialog(hen)}>Sửa lịch hẹn</button>
-                              )}
-                            </div>
-
-                            {swipeMenuCardId === hen.id && (
-                              <div className="grid grid-cols-3 gap-1.5">
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-[#CFD8DC] bg-white text-xs font-medium text-[#546E7A]"
-                                  onClick={() => {
-                                    openEditDialog(hen);
-                                    setSwipeMenuCardId(null);
-                                  }}
-                                >
-                                  Sửa
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-[#EF9A9A] bg-[#FFEBEE] text-xs font-medium text-[#C62828]"
-                                  onClick={() => {
-                                    updateTrangThai(hen.id, 'huy');
-                                    setSwipeMenuCardId(null);
-                                  }}
-                                >
-                                  Hủy
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-[#CFD8DC] bg-white text-xs font-medium text-[#546E7A]"
-                                  onClick={() => {
-                                    deleteHen(hen.id);
-                                    setSwipeMenuCardId(null);
-                                  }}
-                                >
-                                  Xóa
-                                </button>
-                              </div>
-                            )}
-
-                            {canMarkArrived ? (
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  className="inline-flex h-10 items-center justify-center rounded-lg bg-[#43A047] text-sm font-medium text-white hover:bg-[#388E3C]"
-                                  onClick={() => updateTrangThai(hen.id, 'da_den')}
-                                >
-                                  <Check className="mr-1 h-4 w-4" /> Đã đến
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-10 items-center justify-center rounded-lg border border-[#CFD8DC] bg-white text-sm font-medium text-[#C62828] hover:bg-[#FAFAFA]"
-                                  onClick={() => updateTrangThai(hen.id, 'huy')}
-                                >
-                                  <X className="mr-1 h-4 w-4" /> Hủy
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  className="inline-flex h-9 items-center justify-center rounded-lg border border-[#CFD8DC] bg-white text-xs font-medium text-[#546E7A]"
-                                  onClick={() => openEditDialog(hen)}
-                                >
-                                  <Pencil className="mr-1 h-3.5 w-3.5" /> Sửa
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-9 items-center justify-center rounded-lg border border-[#EF9A9A] bg-[#FFEBEE] text-xs font-medium text-[#C62828]"
-                                  onClick={() => deleteHen(hen.id)}
-                                >
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Xóa
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </CardContent>
-
-                      {canExpand && (
-                        <button
-                          type="button"
-                          className="w-full border-t border-[#ECEFF1] bg-[#FAFAFA] py-1.5 text-xs font-medium text-[#1976D2]"
-                          onClick={() => toggleCardExpanded(hen.id)}
-                        >
-                          {isExpanded ? '▲ Thu gọn' : '▼ Mở để thao tác'}
-                        </button>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-
-            {!loading && filteredData.length > 0 && (
-              <div className="mx-3 mt-2 rounded-r-lg border-l-2 border-[#FFD740] bg-[#FFF8E1] px-3 py-2 text-[11px] text-[#B8860B]">
-                ← Vuốt trái: Sửa / Hủy / Xóa   Vuốt phải: Đánh dấu Đã đến →
-              </div>
-            )}
-          </div>
-
-          <div className="hidden md:block">
-            <div className="bg-white border-b px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <CalendarDays className="w-6 h-6 text-blue-600" />
-                  <h1 className="text-lg font-bold text-gray-800">Lịch hẹn khám</h1>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-                    <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Tải lại
-                  </Button>
-                  <Button size="sm" onClick={() => setOpenAdd(true)}>
-                    <Plus className="w-4 h-4 mr-1" /> Thêm hẹn
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setOpenTemplateManager(true)}>
-                    <Settings className="w-4 h-4 mr-1" /> Mẫu tin
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 space-y-4">
-
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'tat_ca' ? 'ring-2 ring-blue-400' : ''}`} onClick={() => setFilterTrangThai('tat_ca')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-blue-600">{stats.total}</div><div className="text-xs text-gray-500">Tổng</div></CardContent></Card>
-              <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'cho' ? 'ring-2 ring-yellow-400' : ''}`} onClick={() => setFilterTrangThai('cho')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-yellow-600">{stats.cho}</div><div className="text-xs text-gray-500">Đang chờ</div></CardContent></Card>
-              <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'da_den' ? 'ring-2 ring-green-400' : ''}`} onClick={() => setFilterTrangThai('da_den')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-green-600">{stats.da_den}</div><div className="text-xs text-gray-500">Đã đến</div></CardContent></Card>
-              <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'huy' ? 'ring-2 ring-red-400' : ''}`} onClick={() => setFilterTrangThai('huy')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-red-600">{stats.huy}</div><div className="text-xs text-gray-500">Đã hủy</div></CardContent></Card>
-              <Card className={`cursor-pointer transition-all hover:shadow-md ${filterTrangThai === 'qua_han' ? 'ring-2 ring-gray-400' : ''}`} onClick={() => setFilterTrangThai('qua_han')}><CardContent className="p-3 text-center"><div className="text-2xl font-bold text-gray-600">{stats.qua_han}</div><div className="text-xs text-gray-500">Quá hạn</div></CardContent></Card>
-            </div>
-
-            <Card>
-              <CardContent className="p-3 space-y-3">
-                <div className="flex gap-2 flex-wrap">
-                  {([['hom_nay', 'Hôm nay'], ['7_ngay_toi', '7 ngày tới'], ['1_thang_toi', '1 tháng tới'], ['khoang_ngay', 'Khoảng ngày']] as const).map(([key, label]) => (
-                    <button
-                      key={key}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                      onClick={() => setTab(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {tab === 'khoang_ngay' && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Input type="date" className="w-40" value={fromDate} onChange={e => setFromDate(e.target.value)} />
-                    <span className="text-gray-500">đến</span>
-                    <Input type="date" className="w-40" value={toDate} onChange={e => setToDate(e.target.value)} />
-                    <Button size="sm" onClick={fetchData}>Tìm</Button>
-                  </div>
-                )}
-
-                <div className="flex gap-2 flex-wrap items-center">
-                  <select className="border border-gray-300 rounded-md px-3 py-2 text-sm" value={filterTrangThai} onChange={e => setFilterTrangThai(e.target.value)}>
-                    <option value="tat_ca">Tất cả</option>
-                    <option value="cho">Đang chờ</option>
-                    <option value="da_den">Đã đến</option>
-                    <option value="huy">Đã hủy</option>
-                    <option value="qua_han">Quá hạn</option>
-                  </select>
-                  <Input className="w-72" placeholder="Tìm tên, SĐT..." value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-
-                {stats.qua_han > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                    <span className="text-sm text-red-700 font-medium">{stats.qua_han} lịch hẹn quá hạn</span>
-                    <span className="text-gray-300">|</span>
-                    <span className="text-xs text-gray-500">Dời tất cả:</span>
-                    {[7, 14, 30].map(d => (
-                      <button key={d} onClick={() => batchRescheduleOverdue(d)} className="px-2 py-1 text-xs bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100 border border-purple-200 font-medium transition-colors">
-                        +{d < 30 ? `${d} ngày` : '1 tháng'}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {loading ? (
-              <div className="text-center py-10 text-gray-500">Đang tải...</div>
-            ) : filteredData.length === 0 ? (
-              <div className="text-center py-10 text-gray-400">Không có lịch hẹn nào</div>
-            ) : (
-              <div className="space-y-2">
-                {filteredData.map(hen => {
-                  const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
-                  const countdown = getCountdownLabel(hen.ngay_hen, hen.trang_thai);
-                  return (
-                    <Card key={hen.id} className={`hover:shadow-md transition-shadow ${countdown && getDaysDiff(hen.ngay_hen) < 0 ? 'border-red-300' : countdown && getDaysDiff(hen.ngay_hen) === 0 ? 'border-orange-300' : ''}`}>
-                      <CardContent className="p-4">
-                        <div className="flex flex-col lg:flex-row lg:items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <Link href={hen.benhnhanid ? `/ke-don-kinh?bn=${hen.benhnhanid}` : '#'} className="font-bold text-blue-700 hover:underline truncate">
-                                {hen.ten_benhnhan || 'Không tên'}
-                              </Link>
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>
-                                {st.label}
-                              </span>
-                              {countdown && (
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${countdown.className}`}>
-                                  {countdown.text}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                            <span className="flex items-center gap-1">
+                              <CalendarDays className="w-3.5 h-3.5" /> {formatNgay(hen.ngay_hen)}
+                            </span>
+                            {hen.gio_hen && (
                               <span className="flex items-center gap-1">
-                                <CalendarDays className="w-3.5 h-3.5" /> {formatNgay(hen.ngay_hen)}
+                                <Clock className="w-3.5 h-3.5" /> {formatGio(hen.gio_hen)}
                               </span>
-                              {hen.gio_hen && (
-                                <span className="flex items-center gap-1">
-                                  <Clock className="w-3.5 h-3.5" /> {formatGio(hen.gio_hen)}
-                                </span>
-                              )}
-                              {hen.dienthoai && <span>SĐT: {hen.dienthoai}</span>}
-                              {hen.ly_do && <span className="text-gray-500">• {hen.ly_do}</span>}
-                            </div>
-                            {hen.ghichu && <p className="text-xs text-gray-400 mt-1">{hen.ghichu}</p>}
-
-                            {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
-                              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                                <span className="text-xs text-gray-400">Dời lịch:</span>
-                                {[
-                                  { days: 7, label: '+7 ngày' },
-                                  { days: 14, label: '+14 ngày' },
-                                  { days: 30, label: '+1 tháng' },
-                                ].map(({ days, label }) => (
-                                  <button
-                                    key={days}
-                                    onClick={() => reschedule(hen.id, days)}
-                                    className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded-md hover:bg-purple-100 border border-purple-200 transition-colors font-medium"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
                             )}
+                            {hen.dienthoai && <span>SĐT: {hen.dienthoai}</span>}
+                            {hen.ly_do && <span className="text-gray-500">• {hen.ly_do}</span>}
                           </div>
+                          {hen.ghichu && <p className="text-xs text-gray-400 mt-1">{hen.ghichu}</p>}
 
-                          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                          {/* Quick reschedule buttons */}
+                          {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              <span className="text-xs text-slate-400">Dời lịch:</span>
+                              {[
+                                { days: 7, label: '+7 ngày' },
+                                { days: 14, label: '+14 ngày' },
+                                { days: 30, label: '+1 tháng' },
+                              ].map(({ days, label }) => (
+                                <button
+                                  key={days}
+                                  onClick={() => reschedule(hen.id, days)}
+                                  className="px-2 py-0.5 text-xs bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 border border-indigo-200 transition-colors font-medium"
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="w-full md:w-auto md:min-w-[260px]">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 md:flex md:flex-wrap gap-2">
+                            {/* Edit button */}
                             <button
-                              className="inline-flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                              onClick={() => openEditDialog(hen)}
+                              className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
+                              onClick={() => {
+                                setEditForm({
+                                  id: hen.id,
+                                  ngay_hen: hen.ngay_hen,
+                                  gio_hen: hen.gio_hen ? formatGio(hen.gio_hen) : '',
+                                  ly_do: hen.ly_do || '',
+                                  ghichu: hen.ghichu || '',
+                                });
+                                setOpenEdit(true);
+                              }}
                             >
                               <Pencil className="w-4 h-4" /> Sửa
                             </button>
+                            {/* Gọi điện */}
                             {hen.dienthoai && (
-                              <a href={`tel:${hen.dienthoai}`} className="inline-flex items-center gap-1 px-3 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors">
+                              <a href={`tel:${hen.dienthoai}`} className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-green-50 text-green-700 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors">
                                 <Phone className="w-4 h-4" /> Gọi
                               </a>
                             )}
+                            {/* Nhắn tin SMS */}
                             {hen.dienthoai && (
                               <button
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+                                className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
                                 onClick={() => { setSmsTarget(hen); setSelectedTemplate(0); setOpenSms(true); }}
                               >
                                 <MessageSquare className="w-4 h-4" /> SMS
                               </button>
                             )}
+                            {/* Zalo */}
                             {hen.dienthoai && (
                               <button
-                                className="inline-flex items-center gap-1 px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+                                className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
                                 onClick={() => { setZaloTarget(hen); setSelectedZaloTemplate(0); setOpenZalo(true); }}
                               >
                                 Zalo
                               </button>
                             )}
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {/* Status actions */}
                             {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
                               <>
                                 <button
-                                  className="inline-flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+                                  className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
                                   onClick={() => updateTrangThai(hen.id, 'da_den')}
                                 >
                                   <Check className="w-4 h-4" /> Đã đến
                                 </button>
                                 <button
-                                  className="inline-flex items-center gap-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
+                                  className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
                                   onClick={() => updateTrangThai(hen.id, 'huy')}
                                 >
                                   <X className="w-4 h-4" /> Hủy
@@ -931,31 +690,21 @@ export default function LichHen() {
                               </>
                             )}
                             <button
-                              className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                              className="inline-flex h-9 items-center justify-center gap-1 px-3 border border-slate-200 text-slate-500 rounded-lg text-sm font-medium hover:text-red-600 hover:border-red-200 transition-colors"
                               onClick={() => deleteHen(hen.id)}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-4 h-4" /> Xóa
                             </button>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
-
-        <button
-          type="button"
-          onClick={() => setOpenAdd(true)}
-          className="fixed bottom-24 right-4 z-20 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#1976D2] text-white shadow-lg transition-colors hover:bg-[#1565C0] md:hidden"
-          aria-label="Thêm lịch hẹn"
-        >
-          <Plus className="h-6 w-6" />
-        </button>
 
         {/* SMS Template Dialog */}
         <Dialog open={openSms} onOpenChange={setOpenSms}>
