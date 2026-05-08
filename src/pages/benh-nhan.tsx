@@ -197,7 +197,7 @@ export default function BenhNhanPage() {
   const [mainPatientId, setMainPatientId] = useState<number | null>(null);
 
   // States cho vuốt card mobile: chỉ mở một card mỗi lần
-  const SWIPE_ACTION_WIDTH_PX = 144;
+  const SWIPE_ACTION_WIDTH_PX = 192;
   const [openSwipePatientId, setOpenSwipePatientId] = useState<number | null>(null);
   const [draggingPatientId, setDraggingPatientId] = useState<number | null>(null);
   const [dragOffsetPx, setDragOffsetPx] = useState<number>(0);
@@ -644,6 +644,26 @@ export default function BenhNhanPage() {
     }
   }, [selectedBenhNhanId]);
 
+  const openPrescriptionInNewTab = useCallback((benhNhanId: number, type: 'thuoc' | 'kinh') => {
+    if (!benhNhanId || Number.isNaN(benhNhanId)) {
+      toast.error('Mã bệnh nhân không hợp lệ');
+      return;
+    }
+
+    const url = type === 'thuoc' ? `/ke-don?bn=${benhNhanId}` : `/ke-don-kinh?bn=${benhNhanId}`;
+    const newTab = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!newTab) {
+      toast.error('Không mở được tab mới. Vui lòng kiểm tra chặn pop-up của trình duyệt.');
+      return;
+    }
+
+    setOpenSwipePatientId(null);
+    Promise.resolve(choKhamPanelRef.current?.addPatient(benhNhanId)).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Không thêm được vào chờ khám';
+      toast.error(message);
+    });
+  }, []);
+
   const filtered = useMemo(() => {
     const searchTerm = search.trim();
     if (!searchTerm) return benhNhans;
@@ -886,9 +906,13 @@ export default function BenhNhanPage() {
                   <div key={bn.id} className="space-y-2">
                     {/* Vuốt ngang để lộ action panel giống FAB list */}
                     <div className={`relative bg-white overflow-hidden border-x border-b border-gray-200 ${index === 0 ? 'border-t' : ''}`}>
-                      <div className="absolute inset-y-0 right-0 w-36 grid grid-cols-3">
+                      <div
+                        className="absolute inset-y-0 right-0 grid grid-cols-3 overflow-hidden rounded-l-lg"
+                        style={{ width: SWIPE_ACTION_WIDTH_PX }}
+                      >
                         <button
-                          className="h-full bg-red-600 text-white text-[10px] font-semibold leading-tight active:bg-red-700 flex flex-col items-center justify-center gap-1"
+                          type="button"
+                          className="h-full bg-red-600 text-white text-[11px] font-semibold leading-tight active:bg-red-700 flex flex-col items-center justify-center gap-1 px-1"
                           onClick={() => {
                             setOpenSwipePatientId(null);
                             handleEdit(bn);
@@ -898,23 +922,17 @@ export default function BenhNhanPage() {
                           Sửa
                         </button>
                         <button
-                          className="h-full bg-blue-600 text-white text-[10px] font-semibold leading-tight active:bg-blue-700 flex flex-col items-center justify-center gap-1"
-                          onClick={async () => {
-                            setOpenSwipePatientId(null);
-                            await choKhamPanelRef.current?.addPatient(bn.id!);
-                            window.open(`/ke-don?bn=${bn.id}`, '_blank');
-                          }}
+                          type="button"
+                          className="h-full bg-blue-600 text-white text-[11px] font-semibold leading-tight active:bg-blue-700 flex flex-col items-center justify-center gap-1 px-1"
+                          onClick={() => openPrescriptionInNewTab(bn.id!, 'thuoc')}
                         >
                           <Pill className="w-3.5 h-3.5" />
                           Đơn thuốc
                         </button>
                         <button
-                          className="h-full bg-emerald-600 text-white text-[10px] font-semibold leading-tight active:bg-emerald-700 flex flex-col items-center justify-center gap-1"
-                          onClick={async () => {
-                            setOpenSwipePatientId(null);
-                            await choKhamPanelRef.current?.addPatient(bn.id!);
-                            window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
-                          }}
+                          type="button"
+                          className="h-full bg-emerald-600 text-white text-[11px] font-semibold leading-tight active:bg-emerald-700 flex flex-col items-center justify-center gap-1 px-1"
+                          onClick={() => openPrescriptionInNewTab(bn.id!, 'kinh')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                           Đơn kính
@@ -1388,10 +1406,7 @@ export default function BenhNhanPage() {
                               <div className="flex items-center rounded-md overflow-hidden border border-blue-600 ml-0.5">
                                 <button
                                   className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
-                                  onClick={async () => {
-                                    await choKhamPanelRef.current?.addPatient(bn.id!);
-                                    window.open(`/ke-don?bn=${bn.id}`, '_blank');
-                                  }}
+                                  onClick={() => openPrescriptionInNewTab(bn.id!, 'thuoc')}
                                   title="Kê đơn thuốc"
                                 >
                                   Thuốc
@@ -1399,10 +1414,7 @@ export default function BenhNhanPage() {
                                 <div className="w-px h-5 bg-blue-400" />
                                 <button
                                   className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
-                                  onClick={async () => {
-                                    await choKhamPanelRef.current?.addPatient(bn.id!);
-                                    window.open(`/ke-don-kinh?bn=${bn.id}`, '_blank');
-                                  }}
+                                  onClick={() => openPrescriptionInNewTab(bn.id!, 'kinh')}
                                   title="Kê đơn kính"
                                 >
                                   Kính

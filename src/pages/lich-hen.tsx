@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -78,6 +78,9 @@ function addDaysFromToday(days: number): string {
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
+
+const MOBILE_SWIPE_ACTION_WIDTH = 180;
+const MOBILE_SWIPE_OPEN_THRESHOLD = 80;
 
 export default function LichHen() {
   const { confirm } = useConfirm();
@@ -244,10 +247,133 @@ export default function LichHen() {
     );
   }, [data, search]);
 
+  const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
+  const [swipedCardId, setSwipedCardId] = useState<number | null>(null);
+  const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+  const dragOffsetRef = useRef(0);
+  const swipeStartXRef = useRef(0);
+  const swipeCardIdRef = useRef<number | null>(null);
+  const swipeMovedRef = useRef(false);
+
+  useEffect(() => {
+    if (filteredData.length === 0) {
+      setExpandedCardId(null);
+      setSwipedCardId(null);
+      return;
+    }
+
+    if (!expandedCardId || !filteredData.some(item => item.id === expandedCardId)) {
+      setExpandedCardId(filteredData[0].id);
+    }
+
+    if (swipedCardId && !filteredData.some(item => item.id === swipedCardId)) {
+      setSwipedCardId(null);
+    }
+  }, [filteredData, expandedCardId, swipedCardId]);
+
+  const openEditDialog = (hen: HenKham) => {
+    setEditForm({
+      id: hen.id,
+      ngay_hen: hen.ngay_hen,
+      gio_hen: hen.gio_hen ? formatGio(hen.gio_hen) : '',
+      ly_do: hen.ly_do || '',
+      ghichu: hen.ghichu || '',
+    });
+    setOpenEdit(true);
+  };
+
+  const openSmsDialog = (hen: HenKham) => {
+    setSmsTarget(hen);
+    setSelectedTemplate(0);
+    setOpenSms(true);
+  };
+
+  const openZaloDialog = (hen: HenKham) => {
+    setZaloTarget(hen);
+    setSelectedZaloTemplate(0);
+    setOpenZalo(true);
+  };
+
+  const getCardTranslateX = (id: number) => {
+    if (draggingCardId === id) return dragOffsetX;
+    return swipedCardId === id ? -MOBILE_SWIPE_ACTION_WIDTH : 0;
+  };
+
+  const handleCardTouchStart = (id: number, clientX: number) => {
+    swipeCardIdRef.current = id;
+    swipeStartXRef.current = clientX;
+    swipeMovedRef.current = false;
+    setDraggingCardId(id);
+    const initialOffset = swipedCardId === id ? -MOBILE_SWIPE_ACTION_WIDTH : 0;
+    dragOffsetRef.current = initialOffset;
+    setDragOffsetX(initialOffset);
+  };
+
+  const handleCardTouchMove = (id: number, clientX: number) => {
+    if (swipeCardIdRef.current !== id) return;
+
+    const deltaX = clientX - swipeStartXRef.current;
+    const base = swipedCardId === id ? -MOBILE_SWIPE_ACTION_WIDTH : 0;
+    let nextOffset = base + deltaX;
+
+    // Chỉ cho phép vuốt trái để mở action; vuốt phải chỉ dùng để đóng action đã mở.
+    if (swipedCardId !== id && nextOffset > 0) {
+      nextOffset = 0;
+    }
+
+    if (Math.abs(deltaX) > 8) {
+      swipeMovedRef.current = true;
+    }
+
+    nextOffset = Math.max(-MOBILE_SWIPE_ACTION_WIDTH, Math.min(0, nextOffset));
+    dragOffsetRef.current = nextOffset;
+    setDragOffsetX(nextOffset);
+  };
+
+  const handleCardTouchEnd = (id: number) => {
+    if (swipeCardIdRef.current !== id) return;
+
+    const shouldOpen = dragOffsetRef.current <= -MOBILE_SWIPE_OPEN_THRESHOLD;
+    setSwipedCardId(shouldOpen ? id : null);
+    setDraggingCardId(null);
+    setDragOffsetX(0);
+    dragOffsetRef.current = 0;
+    swipeCardIdRef.current = null;
+  };
+
+  const handleCardTap = (id: number) => {
+    if (swipeMovedRef.current) {
+      swipeMovedRef.current = false;
+      return;
+    }
+
+    if (swipedCardId === id) {
+      setSwipedCardId(null);
+      return;
+    }
+
+    setExpandedCardId(prev => (prev === id ? null : id));
+  };
+
+  const resetSwipeGesture = () => {
+    setDraggingCardId(null);
+    setDragOffsetX(0);
+    dragOffsetRef.current = 0;
+    swipeCardIdRef.current = null;
+    swipeMovedRef.current = false;
+  };
+
   const updateTrangThai = async (id: number, trang_thai: string) => {
     try {
       await axios.put('/api/hen-kham-lai', { id, trang_thai });
-      toast.success(trang_thai === 'da_den' ? 'Đã đánh dấu đến' : 'Đã hủy lịch hẹn');
+      const successMessage = {
+        da_den: 'Đã đánh dấu đến',
+        cho: 'Đã chuyển về trạng thái chưa đến',
+        huy: 'Đã hủy lịch hẹn',
+        qua_han: 'Đã đánh dấu quá hạn',
+      }[trang_thai] || 'Đã cập nhật trạng thái';
+      toast.success(successMessage);
       fetchData();
     } catch {
       toast.error('Lỗi khi cập nhật');
@@ -411,7 +537,288 @@ export default function LichHen() {
   return (
     <ProtectedRoute>
       <FeatureGate feature="appointments">
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-[#d8d9dd] md:bg-slate-50">
+        <div className="mx-auto min-h-screen max-w-md bg-[#d8d9dd] pb-28 md:hidden">
+          <div className="bg-[#1f74cc] px-4 pb-5 pt-5">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h1 className="text-[23px] font-semibold leading-none text-white">Lịch hẹn</h1>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ffd954]" />
+                  Chờ {stats.cho}
+                </div>
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#60f0b2]" />
+                  Đến {stats.da_den}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1 rounded-2xl bg-[#1d67b4] p-1.5">
+              {([['hom_nay', 'Hôm nay'], ['7_ngay_toi', '7 ngày'], ['1_thang_toi', '1 tháng'], ['khoang_ngay', 'Khoảng']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTab(key)}
+                  className={`rounded-xl py-2 text-[13px] font-semibold leading-none transition-colors ${tab === key ? 'bg-white text-[#1f74cc]' : 'text-white/70'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-b border-[#cfd2d8] bg-[#d8d9dd] px-3 py-3">
+            <div>
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Tìm tên, SĐT..."
+                className="h-11 w-full rounded-xl border border-[#ccd1d9] bg-white px-4 text-[14px] placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-[#1f74cc]"
+              />
+            </div>
+
+            {tab === 'khoang_ngay' && (
+              <div className="mt-2 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="date" className="h-10 rounded-xl bg-white" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+                  <Input type="date" className="h-10 rounded-xl bg-white" value={toDate} onChange={e => setToDate(e.target.value)} />
+                </div>
+                <button
+                  type="button"
+                  className="h-9 w-full rounded-xl bg-[#1f74cc] text-[12px] font-semibold text-white"
+                  onClick={fetchData}
+                >
+                  Áp dụng khoảng ngày
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5 px-2.5 py-3">
+            {loading ? (
+              <div className="py-8 text-center text-sm text-slate-500">Đang tải...</div>
+            ) : filteredData.length === 0 ? (
+              <div className="py-8 text-center text-sm text-slate-500">Không có lịch hẹn nào</div>
+            ) : (
+              filteredData.map(hen => {
+                const st = TRANG_THAI_MAP[hen.trang_thai] || TRANG_THAI_MAP.cho;
+                const countdown = getCountdownLabel(hen.ngay_hen, hen.trang_thai);
+                const isExpanded = expandedCardId === hen.id;
+                const isWaiting = hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han';
+                const translateX = getCardTranslateX(hen.id);
+                return (
+                  <div key={hen.id} className="relative overflow-hidden rounded-xl border border-[#d5d1ca] bg-white shadow-sm">
+                    <div className="absolute inset-y-0 right-0 flex w-[180px]">
+                      <button
+                        type="button"
+                        className="flex-1 bg-[#ece9e2] text-sm font-semibold text-slate-700"
+                        onClick={() => {
+                          setSwipedCardId(null);
+                          openEditDialog(hen);
+                        }}
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 bg-[#fde3e3] text-sm font-semibold text-red-700"
+                        onClick={() => {
+                          setSwipedCardId(null);
+                          updateTrangThai(hen.id, 'huy');
+                        }}
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 bg-[#dc2626] text-sm font-semibold text-white"
+                        onClick={() => {
+                          setSwipedCardId(null);
+                          deleteHen(hen.id);
+                        }}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+
+                    <div
+                      className={`relative bg-white px-3.5 py-3.5 ${draggingCardId === hen.id ? '' : 'transition-transform duration-200 ease-out'}`}
+                      style={{ transform: `translateX(${translateX}px)` }}
+                      onTouchStart={(e) => handleCardTouchStart(hen.id, e.touches[0].clientX)}
+                      onTouchMove={(e) => handleCardTouchMove(hen.id, e.touches[0].clientX)}
+                      onTouchEnd={() => handleCardTouchEnd(hen.id)}
+                      onTouchCancel={resetSwipeGesture}
+                      onClick={() => handleCardTap(hen.id)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <Link
+                          href={hen.benhnhanid ? `/ke-don-kinh?bn=${hen.benhnhanid}` : '#'}
+                          className={`truncate text-[18px] font-semibold ${hen.trang_thai === 'da_den' ? 'text-slate-500 line-through' : 'text-slate-900'}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {hen.ten_benhnhan || 'Không tên'}
+                        </Link>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${st.bg} ${st.color}`}>
+                            {st.label}
+                          </span>
+                          {countdown && (
+                            <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${countdown.className}`}>
+                              {countdown.text}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-800">
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarDays className="h-4 w-4" />
+                          {formatNgay(hen.ngay_hen)}
+                        </span>
+                        {hen.dienthoai && <span>· {hen.dienthoai}</span>}
+                        {hen.ly_do && <span>· {hen.ly_do}</span>}
+                      </div>
+
+                      {hen.ghichu && (
+                        <p className="mt-1 text-[13px] text-slate-700">{hen.ghichu}</p>
+                      )}
+
+                      {isExpanded && (
+                        <div className="mt-3 space-y-2.5 border-t border-[#d8d5cf] pt-2.5">
+                          {isWaiting && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[13px] text-slate-700">Dời:</span>
+                              {[
+                                { days: 7, label: '+7 ngày' },
+                                { days: 14, label: '+14 ngày' },
+                                { days: 30, label: '+1 tháng' },
+                              ].map(({ days, label }) => (
+                                <button
+                                  key={days}
+                                  type="button"
+                                  className="rounded-full border border-[#8dc2ff] bg-[#e9f4ff] px-3 py-1 text-[12px] font-medium text-[#1f74cc]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reschedule(hen.id, days);
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {hen.dienthoai && (
+                              <a
+                                href={`tel:${hen.dienthoai}`}
+                                className="inline-flex h-10 items-center justify-center rounded-2xl bg-[#dfe9d8] text-[13px] font-semibold text-[#2d7a3f]"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Gọi
+                              </a>
+                            )}
+                            {hen.dienthoai && (
+                              <button
+                                type="button"
+                                className="inline-flex h-10 items-center justify-center rounded-2xl bg-[#dbe8f6] text-[13px] font-semibold text-[#1f66b1]"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openZaloDialog(hen);
+                                }}
+                              >
+                                Zalo
+                              </button>
+                            )}
+                            {hen.dienthoai && (
+                              <button
+                                type="button"
+                                className="inline-flex h-10 items-center justify-center rounded-2xl bg-[#e7d8ec] text-[13px] font-semibold text-[#7a2fa0]"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openSmsDialog(hen);
+                                }}
+                              >
+                                SMS
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="inline-flex h-10 items-center justify-center rounded-2xl bg-[#e5e2dd] text-[13px] font-semibold text-slate-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditDialog(hen);
+                              }}
+                            >
+                              Sửa
+                            </button>
+                          </div>
+
+                          {isWaiting && (
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <button
+                                type="button"
+                                className="col-span-2 inline-flex h-11 items-center justify-center rounded-2xl bg-[#43a047] text-[18px] font-semibold text-white"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateTrangThai(hen.id, 'da_den');
+                                }}
+                              >
+                                ✓ Đã đến
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex h-11 items-center justify-center rounded-2xl bg-[#fbe2e2] text-[18px] font-semibold text-[#bd2e2e]"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateTrangThai(hen.id, 'huy');
+                                }}
+                              >
+                                Hủy
+                              </button>
+                            </div>
+                          )}
+
+                          {hen.trang_thai === 'da_den' && (
+                            <button
+                              type="button"
+                              className="inline-flex h-10 w-full items-center justify-center rounded-2xl bg-[#e4e8ef] text-[14px] font-semibold text-slate-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateTrangThai(hen.id, 'cho');
+                              }}
+                            >
+                              <RefreshCw className="mr-1 h-4 w-4" /> Chưa đến
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mx-2.5 rounded-r-2xl border-l-4 border-[#f0bf2e] bg-[#efe5ca] px-3 py-2 text-[12px] text-[#af7b00]">
+            ← Vuốt trái: Sửa / Hủy / Xóa
+          </div>
+
+          <div className="pointer-events-none fixed bottom-24 left-1/2 z-30 w-full max-w-md -translate-x-1/2 px-4">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#1f74cc] text-[36px] leading-none text-white shadow-lg"
+                onClick={() => setOpenAdd(true)}
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="hidden md:block">
         <div className="max-w-6xl mx-auto p-3 md:p-4 pb-24 md:pb-6 space-y-3 md:space-y-4">
           {/* Page summary + actions */}
           <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white via-blue-50 to-cyan-50 shadow-sm">
@@ -689,6 +1096,14 @@ export default function LichHen() {
                                 </button>
                               </>
                             )}
+                            {hen.trang_thai === 'da_den' && (
+                              <button
+                                className="inline-flex h-9 items-center justify-center gap-1 px-3 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
+                                onClick={() => updateTrangThai(hen.id, 'cho')}
+                              >
+                                <RefreshCw className="w-4 h-4" /> Chưa đến
+                              </button>
+                            )}
                             <button
                               className="inline-flex h-9 items-center justify-center gap-1 px-3 border border-slate-200 text-slate-500 rounded-lg text-sm font-medium hover:text-red-600 hover:border-red-200 transition-colors"
                               onClick={() => deleteHen(hen.id)}
@@ -704,6 +1119,7 @@ export default function LichHen() {
               })}
             </div>
           )}
+        </div>
         </div>
 
         {/* SMS Template Dialog */}
