@@ -537,11 +537,11 @@ export default function LichHen() {
   return (
     <ProtectedRoute>
       <FeatureGate feature="appointments">
-      <div className="min-h-screen bg-[#d8d9dd] md:bg-slate-50">
-        <div className="mx-auto min-h-screen max-w-md bg-[#d8d9dd] pb-28 md:hidden">
-          <div className="bg-[#1f74cc] px-4 pb-5 pt-5">
+      <div className="min-h-screen bg-[#d8d9dd]">
+        <div className="mx-auto min-h-screen w-full bg-[#d8d9dd] pb-28 lg:hidden">
+          <div className="bg-[#1f74cc] px-4 pb-5 pt-5 lg:px-6 lg:pb-6 lg:pt-6">
             <div className="mb-4 flex items-center justify-between gap-2">
-              <h1 className="text-[23px] font-semibold leading-none text-white">Lịch hẹn</h1>
+              <h1 className="text-[23px] font-semibold leading-none text-white lg:text-2xl">Lịch hẹn</h1>
               <div className="flex items-center gap-2">
                 <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white">
                   <span className="h-2.5 w-2.5 rounded-full bg-[#ffd954]" />
@@ -568,7 +568,7 @@ export default function LichHen() {
             </div>
           </div>
 
-          <div className="border-b border-[#cfd2d8] bg-[#d8d9dd] px-3 py-3">
+          <div className="border-b border-[#cfd2d8] bg-[#d8d9dd] px-3 py-3 lg:px-6 lg:py-4">
             <div>
               <Input
                 value={search}
@@ -595,7 +595,7 @@ export default function LichHen() {
             )}
           </div>
 
-          <div className="space-y-1.5 px-2.5 py-3">
+          <div className="space-y-2 px-3 py-3 lg:space-y-3 lg:px-6 lg:py-4">
             {loading ? (
               <div className="py-8 text-center text-sm text-slate-500">Đang tải...</div>
             ) : filteredData.length === 0 ? (
@@ -801,11 +801,11 @@ export default function LichHen() {
             )}
           </div>
 
-          <div className="mx-2.5 rounded-r-2xl border-l-4 border-[#f0bf2e] bg-[#efe5ca] px-3 py-2 text-[12px] text-[#af7b00]">
+          <div className="mx-3 rounded-r-2xl border-l-4 border-[#f0bf2e] bg-[#efe5ca] px-3 py-2 text-[12px] text-[#af7b00] lg:hidden">
             ← Vuốt trái: Sửa / Hủy / Xóa
           </div>
 
-          <div className="pointer-events-none fixed bottom-24 left-1/2 z-30 w-full max-w-md -translate-x-1/2 px-4">
+          <div className="pointer-events-none fixed bottom-24 left-1/2 z-30 w-full -translate-x-1/2 px-4 lg:max-w-6xl">
             <div className="flex justify-end">
               <button
                 type="button"
@@ -818,7 +818,7 @@ export default function LichHen() {
           </div>
         </div>
 
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
         <div className="max-w-6xl mx-auto p-3 md:p-4 pb-24 md:pb-6 space-y-3 md:space-y-4">
           {/* Page summary + actions */}
           <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white via-blue-50 to-cyan-50 shadow-sm">
