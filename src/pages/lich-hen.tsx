@@ -805,7 +805,7 @@ export default function LichHen() {
             ← Vuốt trái: Sửa / Hủy / Xóa
           </div>
 
-          <div className="pointer-events-none fixed bottom-24 left-1/2 z-30 w-full -translate-x-1/2 px-4 lg:max-w-6xl">
+          <div className="pointer-events-none fixed bottom-24 left-1/2 z-30 w-full max-w-3xl lg:max-w-6xl -translate-x-1/2 px-4">
             <div className="flex justify-end">
               <button
                 type="button"

@@ -131,6 +131,103 @@ function saveLastAction(a: DefaultAction) {
   }
 }
 
+function normalizeNameLike(text: string): string {
+  return text
+    .replace(/[\s,;._-]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      const first = word.charAt(0);
+      const rest = word.slice(1);
+      return `${first.toLocaleUpperCase('vi-VN')}${rest.toLocaleLowerCase('vi-VN')}`;
+    })
+    .join(' ');
+}
+
+function parsePatientSeed(raw: string): { ten: string; namsinh: string; dienthoai: string; diachi: string } {
+  const input = raw.trim();
+  if (!input) return { ten: '', namsinh: '', dienthoai: '', diachi: '' };
+
+  const normalizedInput = input.replace(/[\s,;]+/g, ' ').trim();
+  const splitDob = (text: string) => {
+    const fullDateMatch = text.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/);
+    if (fullDateMatch && fullDateMatch.index !== undefined) {
+      const idx = fullDateMatch.index;
+      const token = fullDateMatch[0];
+      return {
+        dob: fullDateMatch[1].replace(/-/g, '/'),
+        before: text.slice(0, idx).trim(),
+        after: text.slice(idx + token.length).trim(),
+      };
+    }
+
+    const yearMatch = text.match(/\b(19\d{2}|20\d{2})\b/);
+    if (yearMatch && yearMatch.index !== undefined) {
+      const idx = yearMatch.index;
+      const token = yearMatch[0];
+      return {
+        dob: yearMatch[1],
+        before: text.slice(0, idx).trim(),
+        after: text.slice(idx + token.length).trim(),
+      };
+    }
+
+    return { dob: '', before: text.trim(), after: '' };
+  };
+
+  let namsinh = '';
+  let diachi = '';
+  let ten = '';
+  let dienthoai = '';
+  let phoneStart = -1;
+  let phoneEnd = -1;
+
+  const phoneCompactMatch = normalizedInput.match(/(?:\+?84|0)\d{8,10}\b/);
+  if (phoneCompactMatch) {
+    dienthoai = phoneCompactMatch[0].replace(/\D/g, '');
+    phoneStart = phoneCompactMatch.index ?? -1;
+    if (phoneStart >= 0) {
+      phoneEnd = phoneStart + phoneCompactMatch[0].length;
+    }
+  } else {
+    const fallbackMatch = [...normalizedInput.matchAll(/\d{6,}/g)]
+      .sort((a, b) => (b[0]?.length ?? 0) - (a[0]?.length ?? 0))[0];
+    if (fallbackMatch?.[0]) {
+      dienthoai = fallbackMatch[0];
+      phoneStart = fallbackMatch.index ?? -1;
+      if (phoneStart >= 0) {
+        phoneEnd = phoneStart + fallbackMatch[0].length;
+      }
+    }
+  }
+
+  if (phoneStart >= 0) {
+    const beforePhone = normalizedInput.slice(0, phoneStart).trim();
+    const afterPhone = normalizedInput.slice(phoneEnd).trim();
+    const hasLettersBeforePhone = /[A-Za-zÀ-ỹ]/.test(beforePhone);
+
+    if (hasLettersBeforePhone) {
+      const leftParsed = splitDob(beforePhone);
+      namsinh = leftParsed.dob;
+      ten = normalizeNameLike(leftParsed.before);
+      diachi = normalizeNameLike(`${leftParsed.after} ${afterPhone}`.trim());
+    } else {
+      const rightParsed = splitDob(afterPhone);
+      namsinh = rightParsed.dob;
+      ten = normalizeNameLike(rightParsed.before);
+      diachi = normalizeNameLike(rightParsed.after);
+    }
+  } else {
+    const parsed = splitDob(normalizedInput);
+    namsinh = parsed.dob;
+    ten = normalizeNameLike(parsed.before);
+    diachi = normalizeNameLike(parsed.after);
+  }
+
+  return { ten, namsinh, dienthoai, diachi };
+}
+
 function hasSeenContactSwipeHint(): boolean {
   if (typeof window === 'undefined') return true;
   try {
@@ -226,6 +323,7 @@ export default function MobileBottomNav() {
   const [openContactSwipeId, setOpenContactSwipeId] = useState<number | null>(null);
   const [defaultAction, setDefaultAction] = useState<DefaultAction>('kinh');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const desktopSearchInputRef = useRef<HTMLInputElement>(null);
   const [showFabMenu, setShowFabMenu] = useState(false);
   const fabHoldTimerRef = useRef<number | null>(null);
   const fabLongPressTriggeredRef = useRef(false);
@@ -284,6 +382,36 @@ export default function MobileBottomNav() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [closeAllSheets, showFabMenu, showMore, showSearch]);
 
+  // Phím tắt toàn cục: Ctrl+K để mở nhanh tìm kiếm bệnh nhân
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'k') return;
+      const target = e.target as HTMLElement | null;
+      const isTyping = !!target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      );
+      if (isTyping) return;
+      e.preventDefault();
+      toggleSearchSheet();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleSearchSheet]);
+
+  // Trigger toàn cục từ header desktop để mở tìm kiếm nhanh
+  useEffect(() => {
+    const onOpen = () => {
+      setShowFabMenu(false);
+      setShowMore(false);
+      setShowSearch(true);
+    };
+    window.addEventListener('open-global-patient-search', onOpen as EventListener);
+    return () => window.removeEventListener('open-global-patient-search', onOpen as EventListener);
+  }, []);
+
   // Khoá scroll body khi mở sheet hoặc menu nhanh FAB
   useEffect(() => {
     const open = showSearch || showMore || showFabMenu;
@@ -314,7 +442,13 @@ export default function MobileBottomNav() {
       setRecent(loadRecent());
       setDefaultAction(loadLastAction());
       setShowContactSwipeHint(!hasSeenContactSwipeHint());
-      const t = setTimeout(() => searchInputRef.current?.focus(), 120);
+      const t = setTimeout(() => {
+        if (window.matchMedia('(min-width: 768px)').matches) {
+          desktopSearchInputRef.current?.focus();
+        } else {
+          searchInputRef.current?.focus();
+        }
+      }, 120);
       return () => clearTimeout(t);
     } else {
       setShowContactSwipeHint(false);
@@ -494,9 +628,21 @@ export default function MobileBottomNav() {
     triggerAction(list[0], defaultAction);
   };
 
-  const handleAddNewPatient = () => {
+  const handleAddNewPatient = (seedText?: string) => {
+    const rawText = (seedText ?? searchTerm).trim();
+    const params = new URLSearchParams();
+    params.set('new', '1');
+
+    if (rawText) {
+      const seed = parsePatientSeed(rawText);
+      if (seed.ten) params.set('quick_name', seed.ten);
+      if (seed.namsinh) params.set('quick_namsinh', seed.namsinh);
+      if (seed.dienthoai) params.set('quick_phone', seed.dienthoai);
+      if (seed.diachi) params.set('quick_diachi', seed.diachi);
+    }
+
     closeAllSheets();
-    router.push('/benh-nhan?new=1');
+    router.push(`/benh-nhan?${params.toString()}`);
   };
 
   const handleFabPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -538,6 +684,182 @@ export default function MobileBottomNav() {
 
   return (
     <>
+      {/* Desktop search modal */}
+      {showSearch && (
+        <div className="hidden md:block fixed inset-0 z-[60]" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            onClick={closeAllSheets}
+            className="absolute inset-0 bg-black/20 backdrop-blur-[1px]"
+            aria-label="Đóng tìm kiếm nhanh"
+          />
+
+          <div className="absolute left-1/2 top-12 w-[min(520px,86vw)] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    ref={desktopSearchInputRef}
+                    type="search"
+                    inputMode="search"
+                    enterKeyHint="go"
+                    autoComplete="off"
+                    placeholder="Tìm theo SĐT, tên, mã BN..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleEnterDefault();
+                      }
+                    }}
+                    className="w-full h-12 pl-10 pr-10 rounded-xl bg-gray-100 text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition-all"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-gray-200 text-gray-400"
+                      aria-label="Xoá"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAllSheets}
+                  className="px-3 py-2 text-sm text-blue-600 font-medium"
+                >
+                  Đóng
+                </button>
+              </div>
+
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[11px] text-gray-400 font-medium">Mặc định:</span>
+                <div className="flex gap-1 flex-1">
+                  <DefaultActionPill
+                    active={defaultAction === 'kinh'}
+                    icon={Glasses}
+                    label="Kê kính"
+                    onClick={() => {
+                      setDefaultAction('kinh');
+                      saveLastAction('kinh');
+                    }}
+                  />
+                  <DefaultActionPill
+                    active={defaultAction === 'thuoc'}
+                    icon={FileText}
+                    label="Kê thuốc"
+                    onClick={() => {
+                      setDefaultAction('thuoc');
+                      saveLastAction('thuoc');
+                    }}
+                  />
+                  <DefaultActionPill
+                    active={defaultAction === 'hoso'}
+                    icon={Users}
+                    label="Hồ sơ"
+                    onClick={() => {
+                      setDefaultAction('hoso');
+                      saveLastAction('hoso');
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="max-h-[65vh] overflow-y-auto">
+              {searching && (
+                <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Đang tìm...</span>
+                </div>
+              )}
+
+              {!searching && searchTerm.trim() && searchResults.length === 0 && (
+                <div className="px-5 py-10 text-center">
+                  <div className="text-gray-400 text-sm mb-4">
+                    Không tìm thấy khách hàng &quot;{searchTerm}&quot;
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAddNewPatient()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-medium text-sm"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Thêm khách hàng mới
+                  </button>
+                </div>
+              )}
+
+              {!searching && !searchTerm.trim() && (
+                <>
+                  {recent.length > 0 ? (
+                    <>
+                      <div className="px-5 pt-3 pb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-gray-400">
+                        <History className="w-3 h-3" />
+                        Khách gần đây
+                      </div>
+                      <ul className="divide-y divide-gray-100">
+                        {recent.map((p) => (
+                          <PatientRow
+                            key={`rd-${p.id}`}
+                            p={p}
+                            defaultAction={defaultAction}
+                            onAction={triggerAction}
+                            isContactSwipeOpen={openContactSwipeId === p.id}
+                            setOpenContactSwipeId={setOpenContactSwipeId}
+                            onZaloAction={handlePatientZaloAction}
+                            onSwipeHintSeen={dismissContactSwipeHint}
+                          />
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <div className="px-5 py-10 text-center text-gray-400 text-sm">
+                      <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                      <div className="font-medium text-gray-500 mb-1">Tìm khách hàng nhanh</div>
+                      <div>Gõ SĐT, tên hoặc mã bệnh nhân để bắt đầu</div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!searching && searchResults.length > 0 && (
+                <ul className="divide-y divide-gray-100">
+                  {searchResults.map((p, idx) => (
+                    <PatientRow
+                      key={`sd-${p.id}`}
+                      p={p}
+                      defaultAction={defaultAction}
+                      onAction={triggerAction}
+                      highlightFirst={idx === 0}
+                      isContactSwipeOpen={openContactSwipeId === p.id}
+                      setOpenContactSwipeId={setOpenContactSwipeId}
+                      onZaloAction={handlePatientZaloAction}
+                      onSwipeHintSeen={dismissContactSwipeHint}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 p-4">
+              <button
+                type="button"
+                onClick={() => handleAddNewPatient()}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50"
+              >
+                <UserPlus className="w-4 h-4" />
+                Thêm khách hàng mới
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Spacer cho mobile để bottom bar không che nội dung */}
       <div
         aria-hidden
@@ -588,7 +910,7 @@ export default function MobileBottomNav() {
           )}
 
           {/* FAB giữa — Tìm khách hàng */}
-          <div className="relative flex items-start justify-center">
+          <div className="relative flex items-center justify-center">
             <div
               id="mbn-fab-menu"
               className={`absolute -top-[132px] z-20 w-44 rounded-2xl border border-gray-200 bg-white/95 backdrop-blur-sm shadow-xl p-1.5 transition-all duration-150 ${
@@ -609,7 +931,7 @@ export default function MobileBottomNav() {
               <FabQuickAction
                 label="Thêm khách"
                 icon={UserPlus}
-                onClick={handleAddNewPatient}
+                onClick={() => handleAddNewPatient()}
               />
               <FabQuickAction
                 label="Mở menu"
@@ -633,7 +955,7 @@ export default function MobileBottomNav() {
               aria-label={showFabMenu ? 'Đóng menu nhanh FAB' : showSearch ? 'Đóng tìm khách hàng' : 'Tìm khách hàng'}
               aria-expanded={showSearch || showFabMenu}
               aria-controls={showFabMenu ? 'mbn-fab-menu' : 'mbn-search-sheet'}
-              className={`-mt-6 w-14 h-14 rounded-full text-white shadow-lg active:scale-95 transition-transform flex items-center justify-center ring-4 ring-white ${
+              className={`w-14 h-14 rounded-full text-white shadow-lg active:scale-95 transition-transform flex items-center justify-center ring-4 ring-white ${
                 showSearch || showFabMenu
                   ? 'bg-gradient-to-br from-blue-700 to-emerald-700 scale-[0.97]'
                   : 'bg-gradient-to-br from-blue-600 to-emerald-600'
@@ -806,7 +1128,7 @@ export default function MobileBottomNav() {
                   </div>
                   <button
                     type="button"
-                    onClick={handleAddNewPatient}
+                    onClick={() => handleAddNewPatient()}
                     className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-medium text-sm active:scale-95 transition-transform"
                   >
                     <UserPlus className="w-4 h-4" />
@@ -871,7 +1193,7 @@ export default function MobileBottomNav() {
             <div className="border-t border-gray-100 p-3">
               <button
                 type="button"
-                onClick={handleAddNewPatient}
+                onClick={() => handleAddNewPatient()}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-600 text-sm font-medium active:bg-gray-50"
               >
                 <UserPlus className="w-4 h-4" />

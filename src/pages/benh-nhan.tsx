@@ -135,28 +135,6 @@ export default function BenhNhanPage() {
     }
   }, []);
 
-  // Mở nhanh dialog thêm mới khi điều hướng từ FAB: /benh-nhan?new=1
-  useEffect(() => {
-    if (!router.isReady || typeof window === 'undefined') return;
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('new') !== '1') return;
-
-    setIsEditing(false);
-    setForm({
-      ten: '',
-      namsinh: '',
-      dienthoai: '',
-      diachi: '',
-    });
-    setOpen(true);
-
-    params.delete('new');
-    const queryString = params.toString();
-    const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
-    router.replace(nextUrl, undefined, { shallow: true });
-  }, [router.isReady, router.pathname, router.asPath]);
-
   // Nhận tham số từ FAB "Hồ sơ": /benh-nhan?search=...&focusId=...
   useEffect(() => {
     if (!router.isReady || typeof window === 'undefined') return;
@@ -213,6 +191,7 @@ export default function BenhNhanPage() {
   const namsinhRef = useRef<HTMLInputElement | null>(null);
   const dienthoaiRef = useRef<HTMLInputElement | null>(null);
   const diachiRef = useRef<HTMLInputElement | null>(null);
+  const initialAddFocusRef = useRef<'ten' | 'namsinh' | 'dienthoai' | 'diachi' | null>(null);
   const choKhamPanelRef = useRef<ChoKhamPanelRef>(null);
   const pendingFocusPatientIdRef = useRef<number | null>(null);
 
@@ -282,14 +261,61 @@ export default function BenhNhanPage() {
     };
   }, []);
 
-  // Auto-focus Tên when opening dialog for creating new patient
+  useEffect(() => {
+    if (!router.isReady || typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') !== '1') return;
+
+    const quickName = params.get('quick_name')?.trim() ?? '';
+    const quickDob = params.get('quick_namsinh')?.trim() ?? '';
+    const quickPhone = params.get('quick_phone')?.trim() ?? '';
+    const quickAddress = params.get('quick_diachi')?.trim() ?? '';
+
+    setIsEditing(false);
+    setForm({
+      ten: quickName,
+      namsinh: quickDob,
+      dienthoai: quickPhone,
+      diachi: quickAddress,
+    });
+
+    if (!quickName) {
+      initialAddFocusRef.current = 'ten';
+    } else if (!quickDob) {
+      initialAddFocusRef.current = 'namsinh';
+    } else if (!quickPhone) {
+      initialAddFocusRef.current = 'dienthoai';
+    } else {
+      initialAddFocusRef.current = 'diachi';
+    }
+
+    setOpen(true);
+
+    params.delete('new');
+    params.delete('quick_name');
+    params.delete('quick_namsinh');
+    params.delete('quick_phone');
+    params.delete('quick_diachi');
+    const queryString = params.toString();
+    const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
+    router.replace(nextUrl, undefined, { shallow: true });
+  }, [router.isReady, router.pathname, router.asPath]);
+
+  // Auto-focus the next field when opening dialog for creating new patient
   useEffect(() => {
     if (open && !isEditing) {
-      // focus after dialog mounts
       const id = window.setTimeout(() => {
-        tenRef.current?.focus();
-        // select existing value if any
-        try { tenRef.current?.select?.(); } catch {}
+        const target = initialAddFocusRef.current ?? 'ten';
+        const targetRef =
+          target === 'namsinh' ? namsinhRef :
+          target === 'dienthoai' ? dienthoaiRef :
+          target === 'diachi' ? diachiRef :
+          tenRef;
+
+        targetRef.current?.focus();
+        try { targetRef.current?.select?.(); } catch {}
+        initialAddFocusRef.current = null;
       }, 0);
       return () => window.clearTimeout(id);
     }
@@ -458,6 +484,119 @@ export default function BenhNhanPage() {
     },
     [selectedBenhNhanId, fetchDonThuoc]
   );
+
+  const extractPatientSeedFromSearch = useCallback((raw: string) => {
+    const input = raw.trim();
+    if (!input) {
+      return { ten: '', namsinh: '', dienthoai: '', diachi: '' };
+    }
+
+    const normalizedInput = input.replace(/[\s,;]+/g, ' ').trim();
+    const normalizeWords = (text: string) => capitalizeWords(text.replace(/[\s,;._-]+/g, ' ').trim());
+    const splitDob = (text: string) => {
+      const fullDateMatch = text.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})\b/);
+      if (fullDateMatch && fullDateMatch.index !== undefined) {
+        const idx = fullDateMatch.index;
+        const token = fullDateMatch[0];
+        return {
+          dob: fullDateMatch[1].replace(/-/g, '/'),
+          before: text.slice(0, idx).trim(),
+          after: text.slice(idx + token.length).trim(),
+        };
+      }
+
+      const yearMatch = text.match(/\b(19\d{2}|20\d{2})\b/);
+      if (yearMatch && yearMatch.index !== undefined) {
+        const idx = yearMatch.index;
+        const token = yearMatch[0];
+        return {
+          dob: yearMatch[1],
+          before: text.slice(0, idx).trim(),
+          after: text.slice(idx + token.length).trim(),
+        };
+      }
+
+      return { dob: '', before: text.trim(), after: '' };
+    };
+
+    let working = '';
+    let namsinh = '';
+    let diachi = '';
+
+    let dienthoai = '';
+    const phoneCompactMatch = normalizedInput.match(/(?:\+?84|0)\d{8,10}\b/);
+    let phoneStart = -1;
+    let phoneEnd = -1;
+
+    if (phoneCompactMatch) {
+      dienthoai = phoneCompactMatch[0].replace(/\D/g, '');
+      phoneStart = phoneCompactMatch.index ?? -1;
+      if (phoneStart >= 0) {
+        phoneEnd = phoneStart + phoneCompactMatch[0].length;
+      }
+    } else {
+      const fallbackMatch = [...normalizedInput.matchAll(/\d{6,}/g)]
+        .sort((a, b) => (b[0]?.length ?? 0) - (a[0]?.length ?? 0))[0];
+
+      if (fallbackMatch?.[0]) {
+        dienthoai = fallbackMatch[0];
+        phoneStart = fallbackMatch.index ?? -1;
+        if (phoneStart >= 0) {
+          phoneEnd = phoneStart + fallbackMatch[0].length;
+        }
+      }
+    }
+
+    if (phoneStart >= 0) {
+      const beforePhone = normalizedInput.slice(0, phoneStart).trim();
+      const afterPhone = normalizedInput.slice(phoneEnd).trim();
+      const hasLettersBeforePhone = /[A-Za-zÀ-ỹ]/.test(beforePhone);
+
+      if (hasLettersBeforePhone) {
+        const leftParsed = splitDob(beforePhone);
+        namsinh = leftParsed.dob;
+        working = leftParsed.before;
+        diachi = normalizeWords(`${leftParsed.after} ${afterPhone}`.trim());
+      } else {
+        const rightParsed = splitDob(afterPhone);
+        namsinh = rightParsed.dob;
+        working = rightParsed.before;
+        diachi = normalizeWords(rightParsed.after);
+      }
+    } else {
+      const parsed = splitDob(normalizedInput);
+      namsinh = parsed.dob;
+      working = parsed.before;
+      diachi = normalizeWords(parsed.after);
+    }
+
+    const ten = normalizeWords(working);
+    return { ten, namsinh, dienthoai, diachi };
+  }, []);
+
+  const openCreatePatientFromSearch = useCallback(() => {
+    const seed = extractPatientSeedFromSearch(search);
+
+    setIsEditing(false);
+    setForm({
+      ten: seed.ten,
+      namsinh: seed.namsinh,
+      dienthoai: seed.dienthoai,
+      diachi: seed.diachi,
+    });
+
+    if (!seed.ten) {
+      initialAddFocusRef.current = 'ten';
+    } else if (!seed.namsinh) {
+      initialAddFocusRef.current = 'namsinh';
+    } else if (!seed.dienthoai) {
+      initialAddFocusRef.current = 'dienthoai';
+    } else {
+      initialAddFocusRef.current = 'diachi';
+    }
+
+    setOpen(true);
+  }, [extractPatientSeedFromSearch, search]);
 
   
 
@@ -865,14 +1004,7 @@ export default function BenhNhanPage() {
                     return;
                   }
 
-                  setIsEditing(false);
-                  setForm({
-                    ten: capitalizeWords(search.trim()),
-                    namsinh: '',
-                    dienthoai: '',
-                    diachi: '',
-                  });
-                  setOpen(true);
+                  openCreatePatientFromSearch();
                 }}
               >
                 {selectedForMerge.length > 0 ? (
@@ -1212,14 +1344,7 @@ export default function BenhNhanPage() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    setIsEditing(false);
-                    setForm({
-                      ten: capitalizeWords(search.trim()),
-                      namsinh: '',
-                      dienthoai: '',
-                      diachi: '',
-                    });
-                    setOpen(true);
+                    openCreatePatientFromSearch();
                   }}
                 >
                   <Plus className="w-4 h-4 mr-1" /> Thêm

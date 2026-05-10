@@ -42,6 +42,11 @@ export default function Header() {
 
   const isActivePage = (href: string) => router.pathname === href;
 
+  const openGlobalPatientSearch = () => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new Event('open-global-patient-search'));
+  };
+
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
@@ -63,8 +68,8 @@ export default function Header() {
     <header className="fixed top-0 w-full z-50 bg-white/85 backdrop-blur-md border-b border-blue-50/10 shadow-sm">
       <div className="px-6 lg:px-8">
         {/* Desktop Header (md and up) */}
-        <div className="hidden md:flex items-center justify-between h-10">
-          <div className="flex items-center gap-8">
+        <div className="hidden md:flex items-center h-10 gap-3">
+          <div className="flex items-center gap-8 flex-1 min-w-0">
             <nav className="flex gap-1 items-end h-full">
               {mainMenuItems.map(({ href, label, feature }) => {
                 const locked = feature ? !canAccessFeature(feature) : false;
@@ -87,6 +92,20 @@ export default function Header() {
                 );
               })}
             </nav>
+          </div>
+
+          <div className="shrink-0">
+            <button
+              type="button"
+              onClick={openGlobalPatientSearch}
+              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+              title="Tìm khách nhanh (Ctrl+K)"
+              aria-label="Tìm khách nhanh"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Tìm</span>
+              <span className="rounded bg-white/90 px-1 py-0.5 text-[10px] leading-none text-blue-600">K</span>
+            </button>
           </div>
 
           {/* Notification & Message icons */}
