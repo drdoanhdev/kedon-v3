@@ -1,1 +1,16 @@
-{}
+{
+	"crons": [
+		{
+			"path": "/api/cho-kham/cleanup-cron",
+			"schedule": "*/10 * * * *"
+		},
+		{
+			"path": "/api/cho-kham/archive-cron",
+			"schedule": "0 3 * * *"
+		},
+		{
+			"path": "/api/recent-activity/cleanup-cron",
+			"schedule": "20 3 * * *"
+		}
+	]
+}

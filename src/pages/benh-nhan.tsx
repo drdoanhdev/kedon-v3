@@ -15,7 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin, PanelLeftOpen } from "lucide-react";
 import axios from "axios";
 import Link from "next/link";
 import Head from "next/head";
@@ -26,6 +26,8 @@ import ProtectedRoute from '../components/ProtectedRoute'
 import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
 import ChoKhamPanel, { ChoKhamPanelRef } from '@/components/ChoKhamPanel';
 import { useBranch } from '../contexts/BranchContext';
+import { pushRecentActivity } from '@/lib/recentActivity';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface BenhNhan {
   id?: number;
@@ -101,10 +103,14 @@ const TRANG_THAI_MAP: Record<string, { label: string; color: string; bg: string 
   qua_han: { label: 'Quá hạn', color: 'text-gray-700', bg: 'bg-gray-200' },
 };
 
+const WAITING_PANEL_COLLAPSED_KEY = 'benhNhan.waitingPanelCollapsed.v1';
+
 export default function BenhNhanPage() {
   const router = useRouter();
   const { confirm } = useConfirm();
   const { isMultiBranch } = useBranch();
+  const { role } = usePermissions();
+  const canClearDoneCases = role === 'admin' || role === 'doctor';
   const [benhNhans, setBenhNhans] = useState<BenhNhan[]>([]);
   const [search, setSearch] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
@@ -127,6 +133,7 @@ export default function BenhNhanPage() {
   const [total, setTotal] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>("don-thuoc");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isWaitingPanelCollapsed, setIsWaitingPanelCollapsed] = useState<boolean>(false);
   
   // Đặt tiêu đề trang tĩnh
   useEffect(() => {
@@ -134,6 +141,29 @@ export default function BenhNhanPage() {
       document.title = 'Bệnh nhân';
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const storedState = window.localStorage.getItem(WAITING_PANEL_COLLAPSED_KEY);
+      if (storedState !== null) {
+        setIsWaitingPanelCollapsed(storedState === '1');
+      }
+    } catch {
+      // Ignore localStorage errors to avoid breaking page render.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      window.localStorage.setItem(WAITING_PANEL_COLLAPSED_KEY, isWaitingPanelCollapsed ? '1' : '0');
+    } catch {
+      // Ignore localStorage errors to keep interaction responsive.
+    }
+  }, [isWaitingPanelCollapsed]);
 
   // Nhận tham số từ FAB "Hồ sơ": /benh-nhan?search=...&focusId=...
   useEffect(() => {
@@ -194,6 +224,21 @@ export default function BenhNhanPage() {
   const initialAddFocusRef = useRef<'ten' | 'namsinh' | 'dienthoai' | 'diachi' | null>(null);
   const choKhamPanelRef = useRef<ChoKhamPanelRef>(null);
   const pendingFocusPatientIdRef = useRef<number | null>(null);
+
+  const buildActivityPatient = useCallback((bn: BenhNhan | undefined) => {
+    if (!bn?.id) return null;
+    return {
+      id: bn.id,
+      ten: bn.ten || `BN #${bn.id}`,
+      dienthoai: bn.dienthoai || undefined,
+      diachi: bn.diachi || undefined,
+      namsinh: bn.namsinh || undefined,
+    };
+  }, []);
+
+  const findPatientById = useCallback((benhNhanId: number) => {
+    return benhNhans.find((bn) => bn.id === benhNhanId);
+  }, [benhNhans]);
 
   const scheduleDragOffset = useCallback((offsetPx: number) => {
     pendingDragOffsetRef.current = offsetPx;
@@ -480,9 +525,18 @@ export default function BenhNhanPage() {
         setSelectedBenhNhanId(benhnhanid);
         setActiveTab("don-thuoc");
         fetchDonThuoc(benhnhanid);
+
+        const patient = buildActivityPatient(findPatientById(benhnhanid));
+        if (patient) {
+          pushRecentActivity({
+            action: 'quick_history_open',
+            patient,
+            source: 'benh-nhan_select',
+          });
+        }
       }
     },
-    [selectedBenhNhanId, fetchDonThuoc]
+    [selectedBenhNhanId, fetchDonThuoc, buildActivityPatient, findPatientById]
   );
 
   const extractPatientSeedFromSearch = useCallback((raw: string) => {
@@ -797,11 +851,39 @@ export default function BenhNhanPage() {
     }
 
     setOpenSwipePatientId(null);
+
+    const patient = buildActivityPatient(findPatientById(benhNhanId));
+    if (patient) {
+      pushRecentActivity({
+        action: type === 'thuoc' ? 'open_rx_drug' : 'open_rx_glasses',
+        patient,
+        source: 'benh-nhan_prescription',
+      });
+    }
+
     Promise.resolve(choKhamPanelRef.current?.addPatient(benhNhanId)).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Không thêm được vào chờ khám';
       toast.error(message);
     });
-  }, []);
+  }, [buildActivityPatient, findPatientById]);
+
+  const handleAddPatientToWaiting = useCallback((bn: BenhNhan) => {
+    if (!bn.id) return;
+
+    Promise.resolve(choKhamPanelRef.current?.addPatient(bn.id)).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Không thêm được vào chờ khám';
+      toast.error(message);
+    });
+
+    const patient = buildActivityPatient(bn);
+    if (patient) {
+      pushRecentActivity({
+        action: 'add_waiting',
+        patient,
+        source: 'benh-nhan_waiting',
+      });
+    }
+  }, [buildActivityPatient]);
 
   const filtered = useMemo(() => {
     const searchTerm = search.trim();
@@ -1317,8 +1399,26 @@ export default function BenhNhanPage() {
         {/* Desktop Layout - Keep original */}
   <div className="hidden md:flex gap-4">
           {/* Left: Danh sách chờ khám */}
-          <div className="w-72 shrink-0">
-            <ChoKhamPanel ref={choKhamPanelRef} />
+          <div className={`relative shrink-0 transition-all duration-300 ${isWaitingPanelCollapsed ? 'w-0' : 'w-72'}`}>
+            <div className={`${isWaitingPanelCollapsed ? 'pointer-events-none opacity-0' : 'opacity-100'} transition-opacity duration-200`}>
+              <ChoKhamPanel
+                ref={choKhamPanelRef}
+                onCollapse={() => setIsWaitingPanelCollapsed(true)}
+                canClearDoneCases={canClearDoneCases}
+              />
+            </div>
+            {isWaitingPanelCollapsed && (
+              <Button
+                type="button"
+                variant="outline"
+                className="fixed left-0 top-16 z-40 rounded-l-none rounded-r-md border-l-0 bg-white !px-1.5 !py-1 h-auto min-h-0 w-auto min-w-0 text-xs leading-none shadow-md"
+                onClick={() => setIsWaitingPanelCollapsed(false)}
+                title="Hiện danh sách chờ khám"
+                style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+              >
+                <PanelLeftOpen className="w-3.5 h-3.5 mb-0.5" /> Hiện chờ khám
+              </Button>
+            )}
           </div>
           {/* Right: Danh sách bệnh nhân */}
           <div className="flex-1 min-w-0">
@@ -1523,7 +1623,7 @@ export default function BenhNhanPage() {
                               <Button
                                 size="sm"
                                 className="h-7 w-7 p-0 bg-yellow-500 hover:bg-yellow-600 text-white"
-                                onClick={() => choKhamPanelRef.current?.addPatient(bn.id!)}
+                                onClick={() => handleAddPatientToWaiting(bn)}
                                 title="Thêm vào chờ khám"
                               >
                                 <Plus className="w-3 h-3" />

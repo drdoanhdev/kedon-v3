@@ -44,6 +44,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
         benhnhanid,
         thoigian,
         trangthai,
+        done_at,
         avatar_url,
         BenhNhan:benhnhanid (
           id,
@@ -129,6 +130,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
         benhnhanid: patient_id,
         thoigian: thoigianVN,
         trangthai: 'chờ',
+        done_at: null,
         avatar_url: avatar || null,
         tenant_id: tenantId,
         ...(branchId ? { branch_id: branchId } : {}),
@@ -165,9 +167,14 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: 
 
     if (id) {
       // Update by record ID
+      const updatePayload: Record<string, unknown> = {
+        trangthai,
+        done_at: trangthai === 'đã_xong' ? new Date().toISOString() : null,
+      };
+
       const { data, error } = await supabase
         .from('ChoKham')
-        .update({ trangthai })
+        .update(updatePayload)
         .eq('id', id)
         .eq('tenant_id', tenantId)
         .select()
@@ -178,10 +185,14 @@ async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: 
     } else {
       // Update by benhnhanid — tìm record hôm nay đang chờ/đang khám (theo giờ VN)
       const todayStart = getTodayStartVN();
+      const updatePayload: Record<string, unknown> = {
+        trangthai,
+        done_at: trangthai === 'đã_xong' ? new Date().toISOString() : null,
+      };
 
       const { data, error } = await supabase
         .from('ChoKham')
-        .update({ trangthai })
+        .update(updatePayload)
         .eq('benhnhanid', benhnhanid)
         .eq('tenant_id', tenantId)
         .gte('thoigian', todayStart)

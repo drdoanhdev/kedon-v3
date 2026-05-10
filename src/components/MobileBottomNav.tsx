@@ -46,6 +46,25 @@ import { useFeatureGate } from '../hooks/useFeatureGate';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { usePageTabsContext } from '../contexts/PageTabsContext';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
+import {
+  clearActivitySyncBackoffState,
+  getActivityLastSyncAt,
+  getActivitySyncBackoffState,
+  getMaxServerUpdatedAt,
+  getPendingActivityCount,
+  getPendingActivityPayload,
+  getRecentPatientsFromActivities,
+  loadRecentActivities,
+  markActivitiesSynced,
+  mergeRecentActivityFromServer,
+  pushRecentActivity,
+  setActivityLastSyncAt,
+  setActivitySyncBackoffState,
+  subscribeRecentActivityUpdates,
+  type RecentActivityAction,
+  type RecentActivityEvent,
+  type RecentActivityServerRow,
+} from '../lib/recentActivity';
 import type { FeatureKey } from '../lib/featureConfig';
 
 const HIDDEN_ON_PATHS = new Set<string>([
@@ -82,33 +101,54 @@ interface PatientResult {
 }
 
 type DefaultAction = 'kinh' | 'thuoc' | 'hoso';
+type ActivityFilter = 'all' | 'search' | 'history' | 'prescription' | 'dang_do';
 
-const RECENT_KEY = 'mbn:recent_patients';
 const LAST_ACTION_KEY = 'mbn:last_action';
 const CONTACT_SWIPE_HINT_KEY = 'mbn:contact_swipe_hint_seen';
-const MAX_RECENT = 8;
 
-function loadRecent(): PatientResult[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.slice(0, MAX_RECENT) : [];
-  } catch {
-    return [];
+function actionFromDefault(defaultAction: DefaultAction): RecentActivityAction {
+  if (defaultAction === 'kinh') return 'open_rx_glasses';
+  if (defaultAction === 'thuoc') return 'open_rx_drug';
+  return 'open_profile';
+}
+
+function actionLabel(action: RecentActivityAction): string {
+  switch (action) {
+    case 'search_hit':
+      return 'Vừa tìm kiếm';
+    case 'quick_history_open':
+      return 'Mở nhanh lịch sử';
+    case 'open_rx_drug':
+      return 'Mở kê đơn thuốc';
+    case 'open_rx_glasses':
+      return 'Mở kê đơn kính';
+    case 'add_waiting':
+      return 'Đưa vào chờ khám';
+    case 'open_profile':
+    default:
+      return 'Mở hồ sơ';
   }
 }
 
-function saveRecent(p: PatientResult) {
-  if (typeof window === 'undefined') return;
-  try {
-    const cur = loadRecent().filter((x) => x.id !== p.id);
-    const next = [p, ...cur].slice(0, MAX_RECENT);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore */
-  }
+function formatRelativeActivityTime(timestamp: number): string {
+  const diffMs = Math.max(0, Date.now() - timestamp);
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Vừa xong';
+  if (mins < 60) return `${mins} phút trước`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  return `${days} ngày trước`;
+}
+
+function actionCategory(action: RecentActivityAction): ActivityFilter {
+  if (action === 'search_hit') return 'search';
+  if (action === 'open_rx_drug' || action === 'open_rx_glasses') return 'prescription';
+  return 'history';
+}
+
+function isDangDoAction(action: RecentActivityAction): boolean {
+  return action === 'search_hit' || action === 'quick_history_open' || action === 'open_profile' || action === 'add_waiting';
 }
 
 function loadLastAction(): DefaultAction {
@@ -318,7 +358,11 @@ export default function MobileBottomNav() {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<PatientResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [recent, setRecent] = useState<PatientResult[]>([]);
+  const [recentActivities, setRecentActivities] = useState<RecentActivityEvent[]>([]);
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all');
+  const [syncingActivity, setSyncingActivity] = useState(false);
+  const [activityLastSyncAt, setActivityLastSyncAtState] = useState<number | null>(null);
+  const [activitySyncError, setActivitySyncError] = useState<string>('');
   const [showContactSwipeHint, setShowContactSwipeHint] = useState(false);
   const [openContactSwipeId, setOpenContactSwipeId] = useState<number | null>(null);
   const [defaultAction, setDefaultAction] = useState<DefaultAction>('kinh');
@@ -327,7 +371,52 @@ export default function MobileBottomNav() {
   const [showFabMenu, setShowFabMenu] = useState(false);
   const fabHoldTimerRef = useRef<number | null>(null);
   const fabLongPressTriggeredRef = useRef(false);
-  const zaloOaConnectedRef = useRef<boolean | null>(null);
+  const syncingActivityRef = useRef(false);
+
+  const recentPatients = useMemo(
+    () => getRecentPatientsFromActivities(recentActivities, 8) as PatientResult[],
+    [recentActivities]
+  );
+
+  const filteredActivities = useMemo(() => {
+    if (activityFilter === 'all') return recentActivities;
+    if (activityFilter === 'dang_do') {
+      return recentActivities.filter((activity) => isDangDoAction(activity.action));
+    }
+    return recentActivities.filter((activity) => actionCategory(activity.action) === activityFilter);
+  }, [activityFilter, recentActivities]);
+
+  const filteredPatients = useMemo(
+    () => getRecentPatientsFromActivities(filteredActivities, 8) as PatientResult[],
+    [filteredActivities]
+  );
+
+  const pendingSyncCount = useMemo(
+    () => recentActivities.reduce((count, item) => count + (item.pendingSync ? 1 : 0), 0),
+    [recentActivities]
+  );
+
+  const activitySyncMetaText = useMemo(() => {
+    if (syncingActivity) return 'Đang đồng bộ...';
+    if (activitySyncError) return activitySyncError;
+    if (pendingSyncCount > 0) return `Chờ đồng bộ: ${pendingSyncCount}`;
+    if (!activityLastSyncAt) return 'Chưa đồng bộ';
+
+    const diffMs = Math.max(0, Date.now() - activityLastSyncAt);
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Đã đồng bộ: vừa xong';
+    if (mins < 60) return `Đã đồng bộ: ${mins} phút trước`;
+    const hours = Math.floor(mins / 60);
+    return `Đã đồng bộ: ${hours} giờ trước`;
+  }, [activityLastSyncAt, activitySyncError, pendingSyncCount, syncingActivity]);
+
+  const latestActivityByPatientId = useMemo(() => {
+    const map = new Map<number, RecentActivityEvent>();
+    for (const activity of recentActivities) {
+      if (!map.has(activity.patient.id)) map.set(activity.patient.id, activity);
+    }
+    return map;
+  }, [recentActivities]);
 
   const clearFabHoldTimer = useCallback(() => {
     if (fabHoldTimerRef.current !== null) {
@@ -439,7 +528,10 @@ export default function MobileBottomNav() {
   // Autofocus khi mở search sheet + nạp dữ liệu cá nhân hoá
   useEffect(() => {
     if (showSearch) {
-      setRecent(loadRecent());
+      setRecentActivities(loadRecentActivities());
+      setActivityLastSyncAtState(getActivityLastSyncAt());
+      setActivitySyncError('');
+      setActivityFilter('all');
       setDefaultAction(loadLastAction());
       setShowContactSwipeHint(!hasSeenContactSwipeHint());
       const t = setTimeout(() => {
@@ -455,12 +547,136 @@ export default function MobileBottomNav() {
       setOpenContactSwipeId(null);
       setSearchTerm('');
       setSearchResults([]);
+      setActivityFilter('all');
     }
   }, [showSearch]);
 
   useEffect(() => {
-    zaloOaConnectedRef.current = null;
-  }, [currentTenantId]);
+    return subscribeRecentActivityUpdates((events) => {
+      setRecentActivities(events);
+      setActivityLastSyncAtState(getActivityLastSyncAt());
+    });
+  }, []);
+
+  const syncActivityWithServer = useCallback(async () => {
+    if (syncingActivityRef.current) return;
+
+    const backoffState = getActivitySyncBackoffState();
+    if (backoffState && backoffState.nextRetryAt > Date.now()) {
+      const remainSec = Math.max(1, Math.ceil((backoffState.nextRetryAt - Date.now()) / 1000));
+      setActivitySyncError(`Tạm hoãn đồng bộ ${remainSec}s`);
+      return;
+    }
+
+    syncingActivityRef.current = true;
+    setSyncingActivity(true);
+    setActivitySyncError('');
+
+    const scheduleBackoff = (reason: 'rate_limit' | 'network' | 'server', retryAfterSec?: number) => {
+      const current = getActivitySyncBackoffState();
+      const nextAttempt = current && current.reason === reason ? current.attempt + 1 : 1;
+
+      let waitMs = 0;
+      if (reason === 'rate_limit' && retryAfterSec && Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+        waitMs = Math.min(retryAfterSec * 1000, 120_000);
+      } else if (reason === 'network') {
+        waitMs = Math.min(5_000 * Math.pow(2, nextAttempt - 1), 120_000);
+      } else {
+        waitMs = Math.min(3_000 * Math.pow(2, nextAttempt - 1), 60_000);
+      }
+
+      const nextRetryAt = Date.now() + waitMs;
+      setActivitySyncBackoffState({ reason, attempt: nextAttempt, nextRetryAt });
+      const remainSec = Math.max(1, Math.ceil(waitMs / 1000));
+      setActivitySyncError(`Tạm hoãn đồng bộ ${remainSec}s`);
+    };
+
+    try {
+      const lastSyncAt = getActivityLastSyncAt();
+      const sinceQuery = lastSyncAt ? `&since=${lastSyncAt}` : '';
+      const pullRes = await fetchWithAuth(`/api/recent-activity?limit=120${sinceQuery}`);
+      if (pullRes.ok) {
+        const payload = await pullRes.json();
+        const rows = Array.isArray(payload?.data) ? payload.data as RecentActivityServerRow[] : [];
+        const merged = mergeRecentActivityFromServer(rows);
+        setRecentActivities(merged);
+
+        const maxPullSyncTs = getMaxServerUpdatedAt(rows);
+        if (maxPullSyncTs) {
+          setActivityLastSyncAt(maxPullSyncTs);
+          setActivityLastSyncAtState(maxPullSyncTs);
+        }
+      } else if (pullRes.status === 429) {
+        const retryAfter = Number(pullRes.headers.get('Retry-After') || '');
+        scheduleBackoff('rate_limit', Number.isFinite(retryAfter) ? retryAfter : undefined);
+        return;
+      } else {
+        scheduleBackoff('server');
+        return;
+      }
+
+      const pending = getPendingActivityPayload(40);
+      if (pending.length > 0) {
+        const pushRes = await fetchWithAuth('/api/recent-activity', {
+          method: 'POST',
+          body: JSON.stringify({ events: pending }),
+        });
+
+        if (pushRes.ok) {
+          const pushPayload = await pushRes.json();
+          const savedRows = Array.isArray(pushPayload?.data)
+            ? pushPayload.data as RecentActivityServerRow[]
+            : [];
+          const syncedIds = savedRows.map((row) => row.client_event_id).filter(Boolean);
+          const afterMark = markActivitiesSynced(syncedIds, Date.now());
+          const merged = mergeRecentActivityFromServer(savedRows);
+          setRecentActivities(merged.length > 0 ? merged : afterMark);
+
+          const maxPushSyncTs = getMaxServerUpdatedAt(savedRows);
+          if (maxPushSyncTs) {
+            setActivityLastSyncAt(maxPushSyncTs);
+            setActivityLastSyncAtState(maxPushSyncTs);
+          }
+        } else if (pushRes.status === 429) {
+          const retryAfter = Number(pushRes.headers.get('Retry-After') || '');
+          scheduleBackoff('rate_limit', Number.isFinite(retryAfter) ? retryAfter : undefined);
+          return;
+        } else {
+          scheduleBackoff('server');
+          return;
+        }
+      }
+
+      clearActivitySyncBackoffState();
+      setActivityLastSyncAtState(getActivityLastSyncAt());
+    } catch {
+      // ignore sync failures; local timeline still works offline.
+      scheduleBackoff('network');
+    } finally {
+      syncingActivityRef.current = false;
+      setSyncingActivity(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showSearch) return;
+
+    setActivityLastSyncAtState(getActivityLastSyncAt());
+    const backoff = getActivitySyncBackoffState();
+    if (backoff && backoff.nextRetryAt > Date.now()) {
+      const remainSec = Math.max(1, Math.ceil((backoff.nextRetryAt - Date.now()) / 1000));
+      setActivitySyncError(`Tạm hoãn đồng bộ ${remainSec}s`);
+    }
+    if (getPendingActivityCount() > 0) {
+      if (!(backoff && backoff.nextRetryAt > Date.now())) {
+        setActivitySyncError('');
+      }
+    }
+
+    syncActivityWithServer();
+    const interval = window.setInterval(syncActivityWithServer, 45000);
+    return () => window.clearInterval(interval);
+  }, [showSearch, syncActivityWithServer]);
 
   // Debounced search
   useEffect(() => {
@@ -552,8 +768,11 @@ export default function MobileBottomNav() {
   const totalNotif =
     (counts?.thongBao || 0) + (counts?.tinNhan || 0) + (counts?.tinNhanPlatform || 0);
 
-  const triggerAction = (p: PatientResult, action: DefaultAction) => {
-    saveRecent(p);
+  const triggerAction = (p: PatientResult, action: DefaultAction, origin: 'search' | 'activity' = 'activity') => {
+    if (origin === 'search') {
+      pushRecentActivity({ action: 'search_hit', patient: p, source: 'fab_search' });
+    }
+    pushRecentActivity({ action: actionFromDefault(action), patient: p, source: 'fab_action' });
     saveLastAction(action);
     setDefaultAction(action);
     setOpenContactSwipeId(null);
@@ -575,29 +794,6 @@ export default function MobileBottomNav() {
     setShowContactSwipeHint(false);
   };
 
-  const ensureZaloOaConnected = async (): Promise<boolean> => {
-    if (zaloOaConnectedRef.current !== null) return zaloOaConnectedRef.current;
-
-    try {
-      const res = await fetchWithAuth('/api/messaging/channels');
-      if (!res.ok) {
-        zaloOaConnectedRef.current = false;
-        return false;
-      }
-
-      const payload = await res.json();
-      const channels = Array.isArray(payload?.data) ? payload.data : [];
-      const connected = channels.some(
-        (c: any) => c?.provider === 'zalo_oa' && c?.status === 'connected'
-      );
-      zaloOaConnectedRef.current = connected;
-      return connected;
-    } catch {
-      zaloOaConnectedRef.current = false;
-      return false;
-    }
-  };
-
   const handlePatientZaloAction = async (p: PatientResult) => {
     const zaloNumber = toZaloNumber(digitsOnly(p.dienthoai));
     if (!zaloNumber) return;
@@ -605,27 +801,14 @@ export default function MobileBottomNav() {
     setOpenContactSwipeId(null);
     dismissContactSwipeHint();
 
-    if (!canAccessFeature('messaging_automation')) {
-      openZaloDeepLink(zaloNumber);
-      return;
-    }
-
-    const connected = await ensureZaloOaConnected();
-    if (connected) {
-      const params = new URLSearchParams();
-      params.set('quick_phone', zaloNumber);
-      if (p.ten) params.set('quick_name', p.ten);
-      router.push(`/cai-dat-nhan-tin?${params.toString()}`);
-      return;
-    }
-
+    // Mở thẳng chat nhanh để thao tác 1 chạm từ FAB.
     openZaloDeepLink(zaloNumber);
   };
 
   const handleEnterDefault = () => {
-    const list = searchTerm.trim() ? searchResults : recent;
+    const list = searchTerm.trim() ? searchResults : filteredPatients;
     if (list.length === 0) return;
-    triggerAction(list[0], defaultAction);
+    triggerAction(list[0], defaultAction, searchTerm.trim() ? 'search' : 'activity');
   };
 
   const handleAddNewPatient = (seedText?: string) => {
@@ -680,7 +863,7 @@ export default function MobileBottomNav() {
   const shouldShowSwipeHint =
     showContactSwipeHint &&
     !searching &&
-    (searchTerm.trim() ? searchResults.length > 0 : recent.length > 0);
+    (searchTerm.trim() ? searchResults.length > 0 : filteredPatients.length > 0);
 
   return (
     <>
@@ -701,7 +884,7 @@ export default function MobileBottomNav() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     ref={desktopSearchInputRef}
-                    type="search"
+                    type="text"
                     inputMode="search"
                     enterKeyHint="go"
                     autoComplete="off"
@@ -796,14 +979,50 @@ export default function MobileBottomNav() {
 
               {!searching && !searchTerm.trim() && (
                 <>
-                  {recent.length > 0 ? (
+                  <div className="px-5 pt-3 pb-1 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-gray-400">
+                      <History className="w-3 h-3" />
+                      Hoạt động gần đây
+                    </div>
+                    <span className={`text-[10px] ${activitySyncError ? 'text-amber-600' : 'text-blue-500'}`}>
+                      {activitySyncMetaText}
+                    </span>
+                  </div>
+
+                  <div className="px-5 pb-2 flex items-center gap-1.5 overflow-x-auto">
+                    <ActivityFilterPill
+                      label="Tất cả"
+                      active={activityFilter === 'all'}
+                      onClick={() => setActivityFilter('all')}
+                    />
+                    <ActivityFilterPill
+                      label="Tìm kiếm"
+                      active={activityFilter === 'search'}
+                      onClick={() => setActivityFilter('search')}
+                    />
+                    <ActivityFilterPill
+                      label="Lịch sử"
+                      active={activityFilter === 'history'}
+                      onClick={() => setActivityFilter('history')}
+                    />
+                    <ActivityFilterPill
+                      label="Kê đơn"
+                      active={activityFilter === 'prescription'}
+                      onClick={() => setActivityFilter('prescription')}
+                    />
+                    <ActivityFilterPill
+                      label="Đang dang dở"
+                      active={activityFilter === 'dang_do'}
+                      onClick={() => setActivityFilter('dang_do')}
+                    />
+                  </div>
+
+                  {filteredPatients.length > 0 ? (
                     <>
-                      <div className="px-5 pt-3 pb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-gray-400">
-                        <History className="w-3 h-3" />
-                        Khách gần đây
-                      </div>
                       <ul className="divide-y divide-gray-100">
-                        {recent.map((p) => (
+                        {filteredPatients.map((p) => {
+                          const latestActivity = latestActivityByPatientId.get(p.id);
+                          return (
                           <PatientRow
                             key={`rd-${p.id}`}
                             p={p}
@@ -813,15 +1032,17 @@ export default function MobileBottomNav() {
                             setOpenContactSwipeId={setOpenContactSwipeId}
                             onZaloAction={handlePatientZaloAction}
                             onSwipeHintSeen={dismissContactSwipeHint}
+                            activityLabel={latestActivity ? actionLabel(latestActivity.action) : undefined}
+                            activityRelativeTime={latestActivity ? formatRelativeActivityTime(latestActivity.timestamp) : undefined}
                           />
-                        ))}
+                        )})}
                       </ul>
                     </>
                   ) : (
                     <div className="px-5 py-10 text-center text-gray-400 text-sm">
                       <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                      <div className="font-medium text-gray-500 mb-1">Tìm khách hàng nhanh</div>
-                      <div>Gõ SĐT, tên hoặc mã bệnh nhân để bắt đầu</div>
+                      <div className="font-medium text-gray-500 mb-1">Chưa có hoạt động phù hợp</div>
+                      <div>Đổi bộ lọc hoặc thao tác thêm để làm đầy Activity Hub</div>
                     </div>
                   )}
                 </>
@@ -834,7 +1055,7 @@ export default function MobileBottomNav() {
                       key={`sd-${p.id}`}
                       p={p}
                       defaultAction={defaultAction}
-                      onAction={triggerAction}
+                      onAction={(patient, action) => triggerAction(patient, action, 'search')}
                       highlightFirst={idx === 0}
                       isContactSwipeOpen={openContactSwipeId === p.id}
                       setOpenContactSwipeId={setOpenContactSwipeId}
@@ -1023,7 +1244,7 @@ export default function MobileBottomNav() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     ref={searchInputRef}
-                    type="search"
+                    type="text"
                     inputMode="search"
                     enterKeyHint="go"
                     autoComplete="off"
@@ -1140,14 +1361,50 @@ export default function MobileBottomNav() {
               {/* Empty state — show RECENT patients */}
               {!searching && !searchTerm.trim() && (
                 <>
-                  {recent.length > 0 ? (
+                  <div className="px-4 pt-3 pb-1 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-gray-400">
+                      <History className="w-3 h-3" />
+                      Hoạt động gần đây
+                    </div>
+                    <span className={`text-[10px] ${activitySyncError ? 'text-amber-600' : 'text-blue-500'}`}>
+                      {activitySyncMetaText}
+                    </span>
+                  </div>
+
+                  <div className="px-4 pb-2 flex items-center gap-1.5 overflow-x-auto">
+                    <ActivityFilterPill
+                      label="Tất cả"
+                      active={activityFilter === 'all'}
+                      onClick={() => setActivityFilter('all')}
+                    />
+                    <ActivityFilterPill
+                      label="Tìm kiếm"
+                      active={activityFilter === 'search'}
+                      onClick={() => setActivityFilter('search')}
+                    />
+                    <ActivityFilterPill
+                      label="Lịch sử"
+                      active={activityFilter === 'history'}
+                      onClick={() => setActivityFilter('history')}
+                    />
+                    <ActivityFilterPill
+                      label="Kê đơn"
+                      active={activityFilter === 'prescription'}
+                      onClick={() => setActivityFilter('prescription')}
+                    />
+                    <ActivityFilterPill
+                      label="Đang dang dở"
+                      active={activityFilter === 'dang_do'}
+                      onClick={() => setActivityFilter('dang_do')}
+                    />
+                  </div>
+
+                  {filteredPatients.length > 0 ? (
                     <>
-                      <div className="px-4 pt-3 pb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-gray-400">
-                        <History className="w-3 h-3" />
-                        Khách gần đây
-                      </div>
                       <ul className="divide-y divide-gray-100">
-                        {recent.map((p) => (
+                        {filteredPatients.map((p) => {
+                          const latestActivity = latestActivityByPatientId.get(p.id);
+                          return (
                           <PatientRow
                             key={`r-${p.id}`}
                             p={p}
@@ -1157,15 +1414,17 @@ export default function MobileBottomNav() {
                             setOpenContactSwipeId={setOpenContactSwipeId}
                             onZaloAction={handlePatientZaloAction}
                             onSwipeHintSeen={dismissContactSwipeHint}
+                            activityLabel={latestActivity ? actionLabel(latestActivity.action) : undefined}
+                            activityRelativeTime={latestActivity ? formatRelativeActivityTime(latestActivity.timestamp) : undefined}
                           />
-                        ))}
+                        )})}
                       </ul>
                     </>
                   ) : (
                     <div className="px-4 py-10 text-center text-gray-400 text-sm">
                       <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                      <div className="font-medium text-gray-500 mb-1">Tìm khách hàng</div>
-                      <div>Gõ SĐT, tên hoặc mã bệnh nhân để bắt đầu</div>
+                      <div className="font-medium text-gray-500 mb-1">Chưa có hoạt động phù hợp</div>
+                      <div>Đổi bộ lọc hoặc thao tác thêm để làm đầy Activity Hub</div>
                     </div>
                   )}
                 </>
@@ -1178,7 +1437,7 @@ export default function MobileBottomNav() {
                       key={p.id}
                       p={p}
                       defaultAction={defaultAction}
-                      onAction={triggerAction}
+                      onAction={(patient, action) => triggerAction(patient, action, 'search')}
                       highlightFirst={idx === 0}
                       isContactSwipeOpen={openContactSwipeId === p.id}
                       setOpenContactSwipeId={setOpenContactSwipeId}
@@ -1435,6 +1694,30 @@ function DefaultActionPill({
   );
 }
 
+function ActivityFilterPill({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+        active
+          ? 'border-blue-600 bg-blue-600 text-white'
+          : 'border-gray-200 bg-white text-gray-600 active:bg-gray-100'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function PatientRow({
   p,
   defaultAction,
@@ -1444,6 +1727,8 @@ function PatientRow({
   setOpenContactSwipeId,
   onZaloAction,
   onSwipeHintSeen,
+  activityLabel,
+  activityRelativeTime,
 }: {
   p: PatientResult;
   defaultAction: DefaultAction;
@@ -1453,6 +1738,8 @@ function PatientRow({
   setOpenContactSwipeId: (id: number | null) => void;
   onZaloAction: (p: PatientResult) => void;
   onSwipeHintSeen?: () => void;
+  activityLabel?: string;
+  activityRelativeTime?: string;
 }) {
   const SWIPE_ACTION_WIDTH_PX = 132;
   const [dragging, setDragging] = useState(false);
@@ -1628,6 +1915,18 @@ function PatientRow({
                 )}
                 {p.dienthoai && p.diachi && <span className="text-gray-300">•</span>}
                 {p.diachi && <span className="truncate">{p.diachi}</span>}
+              </div>
+            )}
+            {(activityLabel || activityRelativeTime) && (
+              <div className="mt-1 flex items-center gap-1.5 min-w-0">
+                {activityLabel && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold truncate">
+                    {activityLabel}
+                  </span>
+                )}
+                {activityRelativeTime && (
+                  <span className="text-[10px] text-gray-400 shrink-0">{activityRelativeTime}</span>
+                )}
               </div>
             )}
           </div>

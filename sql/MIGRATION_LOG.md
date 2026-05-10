@@ -83,31 +83,67 @@ Theo dõi trạng thái migration trên từng database.
 
 | #    | File | Mô tả | Optigo | Sáng Mắt |
 |------|------|-------|:------:|:--------:|
-| V036 | V036_add_fk_columns_donkinh.sql | Thêm hang_trong_mp_id, hang_trong_mt_id, gong_kinh_id vào DonKinh | ✅ | ❌ |
+| V036 | V036_add_fk_columns_donkinh.sql | Thêm hang_trong_mp_id, hang_trong_mt_id, gong_kinh_id vào DonKinh | ✅ | ✅ |
 
 ## Phase 9: Pricing model v2
 
 | #    | File | Mô tả | Optigo | Sáng Mắt |
 |------|------|-------|:------:|:--------:|
-| V049 | V049_branch_pricing_and_cost_snapshots.sql | Nền tảng giá theo chi nhánh + snapshot giá/vốn chi tiết đơn thuốc | ✅ | ❌ |
+| V049 | V049_branch_pricing_and_cost_snapshots.sql | Nền tảng giá theo chi nhánh + snapshot giá/vốn chi tiết đơn thuốc | ✅ | ✅ |
 
 ## Phase 10: Branch transfer hardening
 
 | #    | File | Mô tả | Optigo | Sáng Mắt |
 |------|------|-------|:------:|:--------:|
-| V050 | V050_branch_transfer_inventory_audit_and_gong_unique.sql | Hoàn thiện điều chuyển thuốc/tròng/gọng: log audit điều chuyển + unique gọng theo chi nhánh | ✅ | ❌ |
+| V050 | V050_branch_transfer_inventory_audit_and_gong_unique.sql | Hoàn thiện điều chuyển thuốc/tròng/gọng: log audit điều chuyển + unique gọng theo chi nhánh | ✅ | ✅ |
 
 ## Phase 11: Lens transfer schema fix
 
 | #    | File | Mô tả | Optigo | Sáng Mắt |
 |------|------|-------|:------:|:--------:|
-| V051 | V051_fix_lens_stock_unique_per_branch.sql | Sửa unique lens_stock theo tenant + chi nhánh để tránh lỗi duplicate khi điều chuyển tròng | ✅ | ❌ |
+| V051 | V051_fix_lens_stock_unique_per_branch.sql | Sửa unique lens_stock theo tenant + chi nhánh để tránh lỗi duplicate khi điều chuyển tròng | ✅ | ✅ |
 
 ## Phase 12: Messaging automation (Zalo OA)
 
 | #    | File | Mô tả | Optigo | Sáng Mắt |
 |------|------|-------|:------:|:--------:|
-| V052 | V052_create_messaging_automation.sql | Tạo `clinic_messaging_channels`, `message_workflows`, `message_jobs`, `message_logs` + RLS + cleanup func | ❌ | ❌ |
+| V052 | V052_create_messaging_automation.sql | Tạo `clinic_messaging_channels`, `message_workflows`, `message_jobs`, `message_logs` + RLS + cleanup func |  ✅ |  ✅ |
+
+## Phase 13: FAB Activity Hub sync
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V057 | V057_create_recent_activity_events.sql | Tạo bảng đồng bộ Activity Hub đa thiết bị (`recent_activity_events`) + RLS + indexes |  ✅ |  ✅ |
+
+## Phase 14: Waiting room cleanup governance
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V058 | V058_add_waiting_cleanup_audit_and_done_at.sql | Thêm `done_at` cho `ChoKham` + bảng `waiting_cleanup_logs` (audit dọn ca) + RLS | ✅ | ✅ |
+
+## Phase 15: Waiting room cleanup hardening follow-up
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V059 | V059_waiting_room_cleanup_hardening.sql | Bản follow-up sau V058: index + trigger `done_at` + audit log dọn ca + RLS | ✅ | ✅ |
+
+## Phase 16: Waiting room cleanup cron backend
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V060 | V060_waiting_room_cleanup_cron_backend.sql | RPC dọn ca đã xong dùng cho cron backend + mở rộng `actor_role` cho `system` | ✅ | ✅ |
+
+## Phase 17: Waiting room cleanup optimization
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V061 | V061_waiting_room_cleanup_optimization.sql | Tối ưu RPC dọn ca, bỏ temp table, thêm index cho log theo role | ✅ | ✅ |
+
+## Phase 18: Waiting room cleanup log archival
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V062 | V062_waiting_room_cleanup_log_archival.sql | Lưu trữ log dọn ca cũ sang bảng archive + RPC archive + cron backend | ✅ | ✅ |
 
 ---
 
