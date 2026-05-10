@@ -2,7 +2,7 @@
 	"crons": [
 		{
 			"path": "/api/cho-kham/cleanup-cron",
-			"schedule": "*/10 * * * *"
+			"schedule": "10 3 * * *"
 		},
 		{
 			"path": "/api/cho-kham/archive-cron",
