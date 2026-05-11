@@ -3,10 +3,42 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, Send } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, Send, CheckSquare, Loader2, CheckCheck } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import type { FeatureKey } from '../lib/featureConfig';
+import { fetchWithAuth } from '../lib/fetchWithAuth';
+
+type QuickThongBao = {
+  id: number;
+  tieu_de: string;
+  noi_dung: string;
+  da_doc: boolean;
+  created_at: string;
+};
+
+type QuickTinNhan = {
+  id: number;
+  noi_dung: string;
+  da_doc: boolean;
+  created_at: string;
+  sender_name?: string;
+};
+
+function formatRelativeTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffMin < 1) return 'Vừa xong';
+  if (diffMin < 60) return `${diffMin} phút`;
+  if (diffHour < 24) return `${diffHour} giờ`;
+  if (diffDay < 7) return `${diffDay} ngày`;
+  return d.toLocaleDateString('vi-VN');
+}
 
 export default function Header() {
   const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole, userRole } = useAuth();
@@ -14,7 +46,17 @@ export default function Header() {
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAvatarOpen, setIsAvatarOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isMsgOpen, setIsMsgOpen] = useState(false);
+  const [quickNotifs, setQuickNotifs] = useState<QuickThongBao[]>([]);
+  const [quickMsgs, setQuickMsgs] = useState<QuickTinNhan[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [msgLoading, setMsgLoading] = useState(false);
+  const [quickReplyMsg, setQuickReplyMsg] = useState('');
+  const [msgSending, setMsgSending] = useState(false);
   const avatarRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const msgRef = useRef<HTMLDivElement>(null);
   const { counts } = useNotificationPolling();
   const { canAccessFeature } = useFeatureGate();
 
@@ -36,6 +78,7 @@ export default function Header() {
     { href: '/bao-cao-super', label: 'Báo cáo Pro', icon: BarChart, feature: 'advanced_reports' },
     { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
     { href: '/quan-ly-ghi-chu-khach-hang', label: 'Việc cần làm KH', icon: CalendarDays, feature: 'crm' },
+    { href: '/nhac-viec', label: 'Nhac viec noi bo', icon: CheckSquare },
     { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
     { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
     { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },
@@ -52,16 +95,93 @@ export default function Header() {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
 
-  // Close avatar dropdown when clicking outside
+  const fetchQuickNotifications = async () => {
+    setNotifLoading(true);
+    try {
+      const res = await fetchWithAuth('/api/thong-bao?limit=8');
+      if (!res.ok) throw new Error('Không tải được thông báo');
+      const json = await res.json();
+      setQuickNotifs(json.data || []);
+    } catch {
+      setQuickNotifs([]);
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  const fetchQuickMessages = async () => {
+    setMsgLoading(true);
+    try {
+      const res = await fetchWithAuth('/api/tin-nhan?limit=8');
+      if (!res.ok) throw new Error('Không tải được tin nhắn');
+      const json = await res.json();
+      const data = Array.isArray(json.data) ? json.data : [];
+      setQuickMsgs(data.slice(-8).reverse());
+    } catch {
+      setQuickMsgs([]);
+    } finally {
+      setMsgLoading(false);
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    await fetchWithAuth('/api/thong-bao', {
+      method: 'PATCH',
+      body: JSON.stringify({ mark_all_read: true }),
+    });
+    setQuickNotifs(prev => prev.map(n => ({ ...n, da_doc: true })));
+  };
+
+  const markAllMessagesRead = async () => {
+    await fetchWithAuth('/api/tin-nhan', {
+      method: 'PATCH',
+      body: JSON.stringify({ mark_all_read: true }),
+    });
+    setQuickMsgs(prev => prev.map(m => ({ ...m, da_doc: true })));
+  };
+
+  const sendQuickMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickReplyMsg.trim()) return;
+    setMsgSending(true);
+    try {
+      const res = await fetchWithAuth('/api/tin-nhan', {
+        method: 'POST',
+        body: JSON.stringify({ noi_dung: quickReplyMsg.trim() }),
+      });
+      if (!res.ok) throw new Error();
+      setQuickReplyMsg('');
+      toast.success('Đã gửi');
+      await fetchQuickMessages();
+    } catch {
+      toast.error('Lỗi gửi tin nhắn');
+    } finally {
+      setMsgSending(false);
+    }
+  };
+
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
         setIsAvatarOpen(false);
       }
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setIsNotifOpen(false);
+      }
+      if (msgRef.current && !msgRef.current.contains(e.target as Node)) {
+        setIsMsgOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    setIsAvatarOpen(false);
+    setIsNotifOpen(false);
+    setIsMsgOpen(false);
+  }, [router.pathname]);
 
   const userInitial = (user?.email?.[0] || 'U').toUpperCase();
 
@@ -111,30 +231,128 @@ export default function Header() {
 
           {/* Notification & Message icons */}
           <div className="flex items-center gap-1">
-            <Link
-              href="/thong-bao"
-              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/thong-bao') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
-              title="Thông báo"
-            >
-              <Bell className="w-4.5 h-4.5" />
-              {counts.thongBao > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                  {counts.thongBao > 9 ? '9+' : counts.thongBao}
-                </span>
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                className={`relative p-2 rounded-lg transition-colors ${isNotifOpen || isActivePage('/thong-bao') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
+                title="Thông báo"
+                onClick={async () => {
+                  const next = !isNotifOpen;
+                  setIsNotifOpen(next);
+                  setIsMsgOpen(false);
+                  if (next) await fetchQuickNotifications();
+                }}
+              >
+                <Bell className="w-4.5 h-4.5" />
+                {counts.thongBao > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                    {counts.thongBao > 9 ? '9+' : counts.thongBao}
+                  </span>
+                )}
+              </button>
+
+              {isNotifOpen && (
+                <div className="absolute right-0 top-full mt-2 w-[360px] bg-white rounded-xl border border-gray-100 shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <p className="font-semibold text-sm text-gray-800">Thông báo mới</p>
+                    <button onClick={markAllNotificationsRead} className="text-xs text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      Đọc tất cả
+                    </button>
+                  </div>
+                  <div className="max-h-[360px] overflow-y-auto">
+                    {notifLoading && (
+                      <div className="py-8 flex justify-center text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /></div>
+                    )}
+                    {!notifLoading && quickNotifs.length === 0 && (
+                      <div className="px-4 py-8 text-center text-sm text-gray-400">Chưa có thông báo</div>
+                    )}
+                    {!notifLoading && quickNotifs.map(item => (
+                      <Link key={item.id} href="/thong-bao" onClick={() => setIsNotifOpen(false)} className={`block px-4 py-3 border-b border-gray-50 hover:bg-gray-50 ${item.da_doc ? '' : 'bg-blue-50/40'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={`text-sm ${item.da_doc ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>{item.tieu_de}</p>
+                          {!item.da_doc && <span className="mt-1 w-2 h-2 rounded-full bg-blue-500" />}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.noi_dung}</p>
+                        <p className="text-[11px] text-gray-400 mt-1">{formatRelativeTime(item.created_at)} trước</p>
+                      </Link>
+                    ))}
+                  </div>
+                  <Link href="/thong-bao" onClick={() => setIsNotifOpen(false)} className="block text-center text-sm font-medium text-blue-700 hover:bg-blue-50 py-2.5">Xem tất cả</Link>
+                </div>
               )}
-            </Link>
-            <Link
-              href="/tin-nhan"
-              className={`relative p-2 rounded-lg transition-colors ${isActivePage('/tin-nhan') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
-              title="Tin nhắn"
-            >
-              <MessageCircle className="w-4.5 h-4.5" />
-              {(counts.tinNhan + counts.tinNhanPlatform) > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
-                  {(counts.tinNhan + counts.tinNhanPlatform) > 9 ? '9+' : (counts.tinNhan + counts.tinNhanPlatform)}
-                </span>
+            </div>
+
+            <div className="relative" ref={msgRef}>
+              <button
+                type="button"
+                className={`relative p-2 rounded-lg transition-colors ${isMsgOpen || isActivePage('/tin-nhan') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
+                title="Tin nhắn"
+                onClick={async () => {
+                  const next = !isMsgOpen;
+                  setIsMsgOpen(next);
+                  setIsNotifOpen(false);
+                  if (next) await fetchQuickMessages();
+                }}
+              >
+                <MessageCircle className="w-4.5 h-4.5" />
+                {(counts.tinNhan + counts.tinNhanPlatform) > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
+                    {(counts.tinNhan + counts.tinNhanPlatform) > 9 ? '9+' : (counts.tinNhan + counts.tinNhanPlatform)}
+                  </span>
+                )}
+              </button>
+
+              {isMsgOpen && (
+                <div className="absolute right-0 top-full mt-2 w-[360px] bg-white rounded-xl border border-gray-100 shadow-xl z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <p className="font-semibold text-sm text-gray-800">Tin nhắn gần đây</p>
+                    <button onClick={markAllMessagesRead} className="text-xs text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
+                      <CheckCheck className="w-3.5 h-3.5" />
+                      Đọc tất cả
+                    </button>
+                  </div>
+                  <div className="max-h-[360px] overflow-y-auto">
+                    {msgLoading && (
+                      <div className="py-8 flex justify-center text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /></div>
+                    )}
+                    {!msgLoading && quickMsgs.length === 0 && (
+                      <div className="px-4 py-8 text-center text-sm text-gray-400">Chưa có tin nhắn</div>
+                    )}
+                    {!msgLoading && quickMsgs.map(item => (
+                      <Link key={item.id} href="/tin-nhan" onClick={() => setIsMsgOpen(false)} className={`block px-4 py-3 border-b border-gray-50 hover:bg-gray-50 ${item.da_doc ? '' : 'bg-blue-50/40'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={`text-sm ${item.da_doc ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>{item.sender_name || 'Nội bộ phòng khám'}</p>
+                          {!item.da_doc && <span className="mt-1 w-2 h-2 rounded-full bg-blue-500" />}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.noi_dung}</p>
+                        <p className="text-[11px] text-gray-400 mt-1">{formatRelativeTime(item.created_at)} trước</p>
+                      </Link>
+                    ))}
+                  </div>
+                  <form onSubmit={sendQuickMessage} className="px-4 py-3 border-t border-gray-100 flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Trả lời..."
+                      value={quickReplyMsg}
+                      onChange={e => setQuickReplyMsg(e.target.value)}
+                      maxLength={500}
+                      className="flex-1 text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      disabled={msgSending}
+                    />
+                    <button
+                      type="submit"
+                      disabled={msgSending || !quickReplyMsg.trim()}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors flex items-center gap-1"
+                    >
+                      {msgSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    </button>
+                  </form>
+                  <Link href="/tin-nhan" onClick={() => setIsMsgOpen(false)} className="block text-center text-sm text-gray-500 hover:text-blue-700 hover:bg-blue-50 py-2 text-[13px]">Mở màn hình đầy đủ</Link>
+                </div>
               )}
-            </Link>
+            </div>
+          </div>
 
           {/* Avatar dropdown */}
           <div className="relative" ref={avatarRef}>
@@ -301,7 +519,6 @@ export default function Header() {
                 </div>
               </div>
             )}
-          </div>
           </div>
         </div>
 
