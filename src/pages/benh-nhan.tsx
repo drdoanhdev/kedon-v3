@@ -15,7 +15,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin, PanelLeftOpen } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin, PanelLeftOpen, BellRing, AlertTriangle } from "lucide-react";
 import axios from "axios";
 import Link from "next/link";
 import Head from "next/head";
@@ -35,10 +36,21 @@ interface BenhNhan {
   namsinh: string; // dd/mm/yyyy hoặc yyyy
   dienthoai: string;
   diachi: string;
+  ghichu?: string | null;
   tuoi?: number;
   created_at?: string;
   ngay_kham_gan_nhat?: string;
   branch?: { id: string; ten_chi_nhanh: string } | null;
+}
+
+interface PatientNote {
+  id: number;
+  benhnhan_id: number;
+  branch_id?: string | null;
+  content: string;
+  note_type: 'important' | 'normal';
+  deleted_at?: string | null;
+  created_at: string;
 }
 
 interface DonThuoc {
@@ -130,6 +142,21 @@ export default function BenhNhanPage() {
   const [chiTietDonThuocs, setChiTietDonThuocs] = useState<Record<number, ChiTietDonThuoc[]>>({});
   const [dienTiens, setDienTiens] = useState<Record<number, DienTien[]>>({});
   const [henKhams, setHenKhams] = useState<HenKham[]>([]);
+  const [openPatientNotesDialog, setOpenPatientNotesDialog] = useState<boolean>(false);
+  const [notesPatient, setNotesPatient] = useState<BenhNhan | null>(null);
+  const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
+  const [loadingPatientNotes, setLoadingPatientNotes] = useState<boolean>(false);
+  const [noteForm, setNoteForm] = useState<{ content: string; note_type: 'important' | 'normal' }>({
+    content: '',
+    note_type: 'normal',
+  });
+  const [includeDeletedNotes, setIncludeDeletedNotes] = useState<boolean>(false);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [noteEditForm, setNoteEditForm] = useState<{ content: string; note_type: 'important' | 'normal' }>({
+    content: '',
+    note_type: 'normal',
+  });
+  const [notesViewMode, setNotesViewMode] = useState<'active' | 'all' | 'trash'>('active');
   const [total, setTotal] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>("don-thuoc");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -538,6 +565,122 @@ export default function BenhNhanPage() {
     },
     [selectedBenhNhanId, fetchDonThuoc, buildActivityPatient, findPatientById]
   );
+
+  const loadPatientNotes = useCallback(async (benhnhanid: number, options?: { includeDeleted?: boolean }) => {
+    if (!benhnhanid) return;
+    const includeDeleted = options?.includeDeleted ?? includeDeletedNotes;
+    setLoadingPatientNotes(true);
+    try {
+      const notesRes = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=${includeDeleted ? 1 : 0}&_t=${Date.now()}`);
+      setPatientNotes(notesRes.data?.data || []);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`Lỗi tải ghi chú: ${message}`);
+      setPatientNotes([]);
+    } finally {
+      setLoadingPatientNotes(false);
+    }
+  }, [includeDeletedNotes]);
+
+  const openPatientNotesManager = useCallback((bn: BenhNhan) => {
+    if (!bn?.id) return;
+    setNotesPatient(bn);
+    setOpenPatientNotesDialog(true);
+    setNoteForm({ content: '', note_type: 'normal' });
+    setEditingNoteId(null);
+    loadPatientNotes(bn.id, { includeDeleted: includeDeletedNotes });
+  }, [includeDeletedNotes, loadPatientNotes]);
+
+  useEffect(() => {
+    if (!openPatientNotesDialog || !notesPatient?.id) return;
+    loadPatientNotes(notesPatient.id, { includeDeleted: includeDeletedNotes });
+  }, [includeDeletedNotes, openPatientNotesDialog, notesPatient?.id, loadPatientNotes]);
+
+  const createPatientNote = useCallback(async () => {
+    if (!notesPatient?.id) return;
+    if (!noteForm.content.trim()) {
+      toast.error('Vui lòng nhập nội dung ghi chú');
+      return;
+    }
+    try {
+      await axios.post('/api/benh-nhan/notes', {
+        benhnhanid: notesPatient.id,
+        content: noteForm.content,
+        note_type: noteForm.note_type,
+      });
+      toast.success('Đã thêm ghi chú');
+      setNoteForm({ content: '', note_type: 'normal' });
+      loadPatientNotes(notesPatient.id);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`Lỗi tạo ghi chú: ${message}`);
+    }
+  }, [noteForm, notesPatient, loadPatientNotes]);
+
+  const startEditNote = useCallback((note: PatientNote) => {
+    setEditingNoteId(note.id);
+    setNoteEditForm({
+      content: note.content || '',
+      note_type: note.note_type,
+    });
+  }, []);
+
+  const saveEditNote = useCallback(async () => {
+    if (!editingNoteId || !notesPatient?.id) return;
+    try {
+      await axios.put('/api/benh-nhan/notes', {
+        id: editingNoteId,
+        content: noteEditForm.content,
+        note_type: noteEditForm.note_type,
+      });
+      toast.success('Đã cập nhật ghi chú');
+      setEditingNoteId(null);
+      loadPatientNotes(notesPatient.id);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`Lỗi cập nhật ghi chú: ${message}`);
+    }
+  }, [editingNoteId, notesPatient, loadPatientNotes, noteEditForm]);
+
+  const deleteNote = useCallback(async (id: number) => {
+    if (!notesPatient?.id) return;
+    const ok = await confirm('Bạn có chắc muốn chuyển ghi chú này vào thùng rác?');
+    if (!ok) return;
+    try {
+      await axios.delete('/api/benh-nhan/notes', { data: { id } });
+      toast.success('Đã chuyển ghi chú vào thùng rác');
+      loadPatientNotes(notesPatient.id);
+    } catch {
+      toast.error('Lỗi xóa ghi chú');
+    }
+  }, [confirm, notesPatient, loadPatientNotes]);
+
+  const restoreNote = useCallback(async (id: number) => {
+    if (!notesPatient?.id) return;
+    try {
+      await axios.patch('/api/benh-nhan/notes', { id });
+      toast.success('Đã khôi phục ghi chú');
+      loadPatientNotes(notesPatient.id);
+    } catch {
+      toast.error('Lỗi khôi phục ghi chú');
+    }
+  }, [notesPatient, loadPatientNotes]);
+
+  const purgeNote = useCallback(async (id: number) => {
+    if (!notesPatient?.id) return;
+    const ok = await confirm('Bạn sắp xóa vĩnh viễn ghi chú này. Hành động không thể hoàn tác. Tiếp tục?');
+    if (!ok) return;
+    const verify = window.prompt('Nhập XOA VINH VIEN để xác nhận:', '');
+    if ((verify || '').trim().toUpperCase() !== 'XOA VINH VIEN') return;
+
+    try {
+      await axios.delete('/api/benh-nhan/notes?hard=1', { data: { id, hard: true } });
+      toast.success('Đã xóa vĩnh viễn ghi chú');
+      loadPatientNotes(notesPatient.id);
+    } catch {
+      toast.error('Lỗi xóa vĩnh viễn ghi chú');
+    }
+  }, [confirm, loadPatientNotes, notesPatient]);
 
   const extractPatientSeedFromSearch = useCallback((raw: string) => {
     const input = raw.trim();
@@ -1046,6 +1189,12 @@ export default function BenhNhanPage() {
     });
   }, [donThuocs, chiTietDonThuocs, dienTiens, selectedBenhNhanId]);
 
+  const visibleNotes = useMemo(() => {
+    if (notesViewMode === 'trash') return patientNotes.filter((a) => Boolean(a.deleted_at));
+    if (notesViewMode === 'all') return patientNotes;
+    return patientNotes.filter((a) => !a.deleted_at);
+  }, [notesViewMode, patientNotes]);
+
   return (
     <ProtectedRoute>
       <Head>
@@ -1215,7 +1364,12 @@ export default function BenhNhanPage() {
                     {/* Medical History Mobile */}
                     {selectedBenhNhanId === bn.id && (
                       <div className="mt-3 pt-3 border-t">
-                        <h3 className="font-medium text-sm mb-2">📋 Lịch sử khám bệnh</h3>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <h3 className="font-medium text-sm">📋 Lịch sử khám bệnh</h3>
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => openPatientNotesManager(bn)}>
+                            <BellRing className="w-3.5 h-3.5 mr-1" /> Ghi chú
+                          </Button>
+                        </div>
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                           <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="don-thuoc">Đơn thuốc ({filteredDonThuocs.length})</TabsTrigger>
@@ -1622,6 +1776,15 @@ export default function BenhNhanPage() {
                               </Button>
                               <Button
                                 size="sm"
+                                variant="outline"
+                                className="h-7 w-7 p-0"
+                                onClick={() => openPatientNotesManager(bn)}
+                                title="Ghi chú bệnh nhân"
+                              >
+                                <AlertTriangle className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
                                 className="h-7 w-7 p-0 bg-yellow-500 hover:bg-yellow-600 text-white"
                                 onClick={() => handleAddPatientToWaiting(bn)}
                                 title="Thêm vào chờ khám"
@@ -1959,6 +2122,130 @@ export default function BenhNhanPage() {
               </Button>
               <Button onClick={handleSubmit} disabled={isSubmitting} title="Ctrl+Enter để lưu" className="bg-blue-600 hover:bg-blue-700">
                 {isSubmitting ? 'Đang lưu...' : 'Lưu (Ctrl+Enter)'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={openPatientNotesDialog} onOpenChange={setOpenPatientNotesDialog}>
+          <DialogContent className="max-w-4xl p-0 overflow-hidden [&>button]:hidden">
+            <div className="border-b border-gray-200 bg-white px-5 py-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold text-gray-900 truncate">{notesPatient?.ten || ''}</p>
+                  <p className="text-sm text-gray-500">Ghi chú bệnh nhân</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={notesViewMode}
+                    onChange={(e) => {
+                      const mode = e.target.value as 'active' | 'all' | 'trash';
+                      setNotesViewMode(mode);
+                      if (mode === 'trash') setIncludeDeletedNotes(true);
+                    }}
+                    className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700"
+                  >
+                    <option value="active">Đang hoạt động</option>
+                    <option value="all">Tất cả</option>
+                    <option value="trash">Thùng rác</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="h-9 rounded-md border border-gray-300 px-3 text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => setOpenPatientNotesDialog(false)}
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {loadingPatientNotes ? (
+              <div className="px-5 py-8 text-sm text-gray-500">Đang tải dữ liệu...</div>
+            ) : (
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-700">Danh sách ghi chú</h3>
+                  <span className="text-xs text-gray-500">{visibleNotes.length} mục</span>
+                </div>
+
+                <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {visibleNotes.length === 0 && <p className="rounded-md border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500">Không có ghi chú trong bộ lọc hiện tại.</p>}
+                  {visibleNotes.map((a) => (
+                    <div key={a.id} className={`rounded-lg border px-3 py-3 ${a.deleted_at ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-200'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs text-gray-500">{new Date(a.created_at).toLocaleTimeString('vi-VN')} - {new Date(a.created_at).toLocaleDateString('vi-VN')}</p>
+                        <span className={`rounded px-2 py-0.5 text-xs font-medium ${a.note_type === 'important' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
+                          {a.note_type === 'important' ? 'Quan trọng' : 'Thông thường'}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{a.content}</p>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {!a.deleted_at ? (
+                          <>
+                            <Button type="button" variant="outline" size="sm" className="h-8 rounded-md px-3 text-xs" onClick={() => startEditNote(a)}>Sửa</Button>
+                            <Button type="button" variant="outline" size="sm" className="h-8 rounded-md px-3 text-xs text-red-700 border-red-300 hover:bg-red-50" onClick={() => deleteNote(a.id)}>Xóa</Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button type="button" variant="outline" size="sm" className="h-8 rounded-md px-3 text-xs" onClick={() => restoreNote(a.id)}>Khôi phục</Button>
+                            <Button type="button" variant="destructive" size="sm" className="h-8 rounded-md px-3 text-xs" onClick={() => purgeNote(a.id)}>Xóa hẳn</Button>
+                          </>
+                        )}
+                      </div>
+
+                      {editingNoteId === a.id && (
+                        <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
+                          <Textarea
+                            value={noteEditForm.content}
+                            onChange={(e) => setNoteEditForm((prev) => ({ ...prev, content: e.target.value }))}
+                            placeholder="Nội dung"
+                            className="min-h-[84px] rounded-md"
+                          />
+                          <select
+                            value={noteEditForm.note_type}
+                            onChange={(e) => setNoteEditForm((prev) => ({ ...prev, note_type: e.target.value as 'important' | 'normal' }))}
+                            className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                          >
+                            <option value="important">Quan trọng</option>
+                            <option value="normal">Thông thường</option>
+                          </select>
+                          <div className="flex gap-2">
+                            <Button type="button" size="sm" className="h-8 rounded-md px-3 text-xs" onClick={saveEditNote}>Lưu</Button>
+                            <Button type="button" size="sm" variant="outline" className="h-8 rounded-md px-3 text-xs" onClick={() => setEditingNoteId(null)}>Hủy</Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                  <p className="text-sm font-medium text-gray-800">Tạo ghi chú mới</p>
+                  <select
+                    value={noteForm.note_type}
+                    onChange={(e) => setNoteForm((prev) => ({ ...prev, note_type: e.target.value as 'important' | 'normal' }))}
+                    className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                  >
+                    <option value="important">Quan trọng</option>
+                    <option value="normal">Thông thường</option>
+                  </select>
+                  <Textarea
+                    value={noteForm.content}
+                    onChange={(e) => setNoteForm((prev) => ({ ...prev, content: e.target.value }))}
+                    placeholder="Nhập nội dung ghi chú"
+                    className="min-h-[110px] rounded-md"
+                  />
+                  <Button type="button" className="h-10 w-full rounded-md" onClick={createPatientNote}>Lưu ghi chú</Button>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter className="border-t border-gray-200 px-5 py-3">
+              <Button variant="outline" onClick={() => setOpenPatientNotesDialog(false)} className="rounded-md px-4">
+                Đóng
               </Button>
             </DialogFooter>
           </DialogContent>

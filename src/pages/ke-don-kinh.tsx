@@ -10,7 +10,7 @@ import { Textarea } from '../components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon } from 'lucide-react';
+import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
 import ThiLucInput from '../components/ThiLucInput';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -31,6 +31,13 @@ interface BenhNhan {
   dienthoai?: string;
   diachi?: string;
   tuoi?: number;
+  ghichu?: string | null;
+}
+
+interface PatientNote {
+  id: number;
+  content: string;
+  note_type: 'important' | 'normal';
 }
 
 interface HangTrong {
@@ -236,6 +243,7 @@ export default function KeDonKinh() {
   }, [benhnhanid]);
 
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
+  const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]); // lịch sử đơn kính
   const [highlightId, setHighlightId] = useState<number | null>(null); // id đơn kính mới / vừa cập nhật để highlight
@@ -498,13 +506,16 @@ export default function KeDonKinh() {
       try {
         // Thêm cache-busting parameters
         const timestamp = Date.now();
-        const res = await axios.get(`/api/benh-nhan?benhnhanid=${benhnhanid}&_t=${timestamp}`, {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        });
+        const cacheHeaders = {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        };
+
+        const [res, alertsRes] = await Promise.all([
+          axios.get(`/api/benh-nhan?benhnhanid=${benhnhanid}&_t=${timestamp}`, { headers: cacheHeaders }),
+          axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1&_t=${timestamp}`, { headers: cacheHeaders }).catch(() => ({ data: { data: [] } })),
+        ]);
         let benhNhanData: BenhNhan | undefined;
         if (res.data && res.data.data) {
           benhNhanData = res.data.data as BenhNhan;
@@ -519,9 +530,11 @@ export default function KeDonKinh() {
             diachi: benhNhanData.diachi || '',
             tuoi: benhNhanData.tuoi,
           });
+          setPatientNotes(alertsRes.data?.data || []);
         } else {
           toast.error('Bệnh nhân không tồn tại hoặc dữ liệu không hợp lệ');
           setBenhNhan(null);
+          setPatientNotes([]);
         }
       } catch (error: unknown) {
         let message: string;
@@ -534,6 +547,7 @@ export default function KeDonKinh() {
         }
         toast.error(`Lỗi khi tải thông tin bệnh nhân: ${message}`);
         setBenhNhan(null);
+        setPatientNotes([]);
       }
     };
 
@@ -1242,6 +1256,19 @@ export default function KeDonKinh() {
               </div>
             )}
 
+            {patientNotes.length > 0 && (
+              <div className="lg:hidden px-2 pt-2 space-y-1">
+                {patientNotes.slice(0, 3).map((note) => (
+                  <div key={note.id} className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-2">
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-700 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-red-700/90 whitespace-pre-wrap">{note.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Scrollable content area (chứa form, payment, history, lịch hẹn) */}
             <div
               ref={tabViewportRef}
@@ -1291,6 +1318,19 @@ export default function KeDonKinh() {
             ) : (
               <div className="hidden lg:block bg-white rounded-xl shadow-sm p-4 border border-gray-200">
                 <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
+              </div>
+            )}
+
+            {patientNotes.length > 0 && (
+              <div className="hidden lg:block space-y-2">
+                {patientNotes.map((note) => (
+                  <div key={note.id} className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-red-700 whitespace-pre-wrap">{note.content}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 

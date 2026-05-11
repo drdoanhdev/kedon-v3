@@ -10,6 +10,7 @@ interface BenhNhan {
   namsinh: string; // dd/mm/yyyy hoặc yyyy - keep as string for compatibility
   dienthoai: string;
   diachi: string;
+  ghichu?: string | null;
   tuoi?: number; // chỉ trả về khi xem danh sách
   created_at?: string; // ngày lập hồ sơ
   ngay_kham_gan_nhat?: string; // ngày khám gần nhất
@@ -21,6 +22,13 @@ interface SupabaseError {
   code?: string;
   details?: string;
   hint?: string;
+}
+
+function isMissingGhichuColumn(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const maybe = error as { message?: string; details?: string; hint?: string; code?: string };
+  const text = `${maybe.message || ''} ${maybe.details || ''} ${maybe.hint || ''}`.toLowerCase();
+  return text.includes('ghichu') && (text.includes('column') || maybe.code === '42703');
 }
 
 export default async function handler(
@@ -55,7 +63,7 @@ export default async function handler(
         // Fetch a specific patient
         let detailQuery = supabase
           .from("BenhNhan")
-          .select("id, ten, namsinh, dienthoai, diachi")
+          .select("id, ten, namsinh, dienthoai, diachi, ghichu")
           .eq("id", benhnhanid)
           .eq("tenant_id", tenantId);
 
@@ -63,7 +71,24 @@ export default async function handler(
           detailQuery = detailQuery.eq("branch_id", branchId);
         }
 
-        const { data, error } = await detailQuery.single();
+        let { data, error } = await detailQuery.single();
+
+        // Backward compatibility: some DBs may not have ghichu column yet.
+        if (error && isMissingGhichuColumn(error)) {
+          let fallbackQuery = supabase
+            .from("BenhNhan")
+            .select("id, ten, namsinh, dienthoai, diachi")
+            .eq("id", benhnhanid)
+            .eq("tenant_id", tenantId);
+
+          if (branchId) {
+            fallbackQuery = fallbackQuery.eq("branch_id", branchId);
+          }
+
+          const fallback = await fallbackQuery.single();
+          data = fallback.data as any;
+          error = fallback.error as any;
+        }
 
         if (error) {
           return res.status(400).json({ message: "Error fetching patient", error: error.message });
@@ -77,7 +102,7 @@ export default async function handler(
         // Fetch patient list with pagination and search
         let query = supabase
           .from("BenhNhan")
-          .select("id, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+          .select("id, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
           .eq("tenant_id", tenantId)
           .order("id", { ascending: false });
 
@@ -97,7 +122,35 @@ export default async function handler(
           }
         }
 
-        const { data, error, count } = await query.range(from, to);
+        let { data, error, count } = await query.range(from, to);
+
+        // Backward compatibility: some DBs may not have ghichu column yet.
+        if (error && isMissingGhichuColumn(error)) {
+          let fallbackQuery = supabase
+            .from("BenhNhan")
+            .select("id, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .eq("tenant_id", tenantId)
+            .order("id", { ascending: false });
+
+          if (branchId) {
+            fallbackQuery = fallbackQuery.eq("branch_id", branchId);
+          }
+
+          if (search) {
+            const isNumeric = /^\d+$/.test(search.replace(/[\s.-]/g, ''));
+            if (isNumeric) {
+              const digits = search.replace(/\D/g, '');
+              fallbackQuery = fallbackQuery.or(`dienthoai.ilike.%${digits}%,ten.ilike.%${search}%,id.eq.${digits}`);
+            } else {
+              fallbackQuery = fallbackQuery.or(`ten.ilike.%${search}%,dienthoai.ilike.%${search}%`);
+            }
+          }
+
+          const fallback = await fallbackQuery.range(from, to);
+          data = fallback.data as any;
+          error = fallback.error as any;
+          count = fallback.count as any;
+        }
 
         if (error) {
           return res.status(400).json({ message: "Error fetching patient list", error: error.message });
@@ -156,7 +209,7 @@ export default async function handler(
   if (req.method === "POST") {
     if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
-      const { ten, namsinh, dienthoai, diachi } = req.body as BenhNhan;
+      const { ten, namsinh, dienthoai, diachi, ghichu } = req.body as BenhNhan;
 
       if (!ten || !namsinh || !diachi) {
         return res.status(400).json({ message: "Name, birth date/year, and address are required" });
@@ -187,7 +240,7 @@ export default async function handler(
           const nextId = maxId + 1 + attempts; // Tăng dần để tránh conflict
 
           // Thử insert với ID cụ thể (id sẽ được dùng làm mã bệnh nhân)
-          const { data, error } = await supabase
+          let { data, error } = await supabase
             .from("BenhNhan")
             .insert([{ 
               id: nextId,
@@ -195,11 +248,30 @@ export default async function handler(
               namsinh: namsinhStr,
               dienthoai, 
               diachi,
+              ghichu: ghichu || null,
               tenant_id: tenantId,
               ...(branchId ? { branch_id: branchId } : {}),
             }])
             .select()
             .single();
+
+          if (error && isMissingGhichuColumn(error)) {
+            const fallback = await supabase
+              .from("BenhNhan")
+              .insert([{ 
+                id: nextId,
+                ten, 
+                namsinh: namsinhStr,
+                dienthoai, 
+                diachi,
+                tenant_id: tenantId,
+                ...(branchId ? { branch_id: branchId } : {}),
+              }])
+              .select()
+              .single();
+            data = fallback.data as any;
+            error = fallback.error as any;
+          }
 
           if (error) {
             lastError = error;
@@ -239,7 +311,7 @@ export default async function handler(
   if (req.method === "PUT") {
     if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
-      const { id, ten, namsinh, dienthoai, diachi } = req.body as BenhNhan;
+      const { id, ten, namsinh, dienthoai, diachi, ghichu } = req.body as BenhNhan;
 
       if (!id || !ten || !namsinh || !diachi) {
         return res.status(400).json({ message: "ID, name, birth date/year, and address are required" });
@@ -252,18 +324,36 @@ export default async function handler(
       // Xử lý namsinh: giữ nguyên string format vì DB thực tế lưu string  
       const namsinhStr = namsinh.trim();
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("BenhNhan")
         .update({ 
           ten, 
           namsinh: namsinhStr, // Lưu string thay vì int
           dienthoai, 
-          diachi 
+          diachi,
+          ghichu: ghichu || null,
         })
         .eq("id", id)
         .eq("tenant_id", tenantId)
         .select()
         .single();
+
+      if (error && isMissingGhichuColumn(error)) {
+        const fallback = await supabase
+          .from("BenhNhan")
+          .update({ 
+            ten,
+            namsinh: namsinhStr,
+            dienthoai,
+            diachi,
+          })
+          .eq("id", id)
+          .eq("tenant_id", tenantId)
+          .select()
+          .single();
+        data = fallback.data as any;
+        error = fallback.error as any;
+      }
 
       if (error) {
         return res.status(400).json({ message: "Error updating patient", error: error.message });

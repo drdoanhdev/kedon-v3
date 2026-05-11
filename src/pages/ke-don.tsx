@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin, Pill, History, Activity } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin, Pill, History, Activity, AlertTriangle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -72,6 +72,13 @@ interface BenhNhan {
   dienthoai: string;
   diachi: string;
   tuoi?: number;
+  ghichu?: string | null;
+}
+
+interface PatientNote {
+  id: number;
+  content: string;
+  note_type: 'important' | 'normal';
 }
 
 // Mobile swipeable row — vuốt sang trái để hiện nút − / + / 🗑 (giống KiotViet)
@@ -213,6 +220,7 @@ export default function KeDon() {
   const [dsChiTietDonCu, setDsChiTietDonCu] = useState<{ [donthuocid: number]: ChiTietDonThuoc[] }>({});
   const [dsDienTien, setDsDienTien] = useState<DienTien[]>([]);
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
+  const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
   const [dsChon, setDsChon] = useState<ChiTietDonThuoc[]>([]);
   const [newDienTien, setNewDienTien] = useState({ noidung: '', ngay: new Date().toISOString().slice(0, 10) });
   const [ngayKham, setNgayKham] = useState(() => {
@@ -413,9 +421,12 @@ export default function KeDon() {
           benhnhanid
             ? axios.get(`/api/benh-nhan?benhnhanid=${benhnhanid}&_t=${timestamp}&_r=${random}`, { headers: cacheHeaders }).catch((err: unknown) => ({ error: err, data: { data: null } }))
             : Promise.resolve({ data: { data: null } }),
+          benhnhanid
+            ? axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1&_t=${timestamp}&_r=${random}`, { headers: cacheHeaders }).catch((err: unknown) => ({ error: err, data: { data: [] } }))
+            : Promise.resolve({ data: { data: [] } }),
         ];
 
-        const [resThuoc, resDonCu, resDienTien, resBenhNhan] = await Promise.all(requests);
+        const [resThuoc, resDonCu, resDienTien, resBenhNhan, resAlerts] = await Promise.all(requests);
 
         if ('error' in resThuoc && resThuoc.error) {
           const error = resThuoc.error as any;
@@ -433,11 +444,16 @@ export default function KeDon() {
           const error = resBenhNhan.error as any;
           toast.error(`Lỗi tải thông tin bệnh nhân: ${error.response?.data?.message || error.message || 'Unknown error'}`);
         }
+        if ('error' in resAlerts && resAlerts.error) {
+          const error = resAlerts.error as any;
+          toast.error(`Lỗi tải cảnh báo bệnh nhân: ${error.response?.data?.message || error.message || 'Unknown error'}`);
+        }
 
         setDsThuoc(resThuoc.data.data || []);
         setDsDonCu(Array.isArray(resDonCu.data.data) ? resDonCu.data.data : []);
         setDsDienTien(resDienTien.data.data || []);
         setBenhNhan(resBenhNhan.data.data || null);
+        setPatientNotes(resAlerts.data.data || []);
 
         if (Array.isArray(resDonCu.data.data) && resDonCu.data.data.length > 0) {
           const chiTietPromises = resDonCu.data.data.map((don: DonThuocCu) =>
@@ -1070,6 +1086,19 @@ export default function KeDon() {
           ) : (
             <div className="sticky top-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5">
               <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
+            </div>
+          )}
+
+          {patientNotes.length > 0 && (
+            <div className="px-2 pt-2 space-y-1">
+              {patientNotes.slice(0, 3).map((note) => (
+                <div key={note.id} className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-2">
+                  <div className="flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-700 flex-shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-700/90 whitespace-pre-wrap">{note.content}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -1906,6 +1935,19 @@ export default function KeDon() {
       ) : (
         <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200">
           <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
+        </div>
+      )}
+
+      {patientNotes.length > 0 && (
+        <div className="space-y-2">
+          {patientNotes.map((note) => (
+            <div key={note.id} className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700 whitespace-pre-wrap">{note.content}</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

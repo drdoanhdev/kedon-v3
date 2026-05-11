@@ -145,6 +145,25 @@ Theo dõi trạng thái migration trên từng database.
 |------|------|-------|:------:|:--------:|
 | V062 | V062_waiting_room_cleanup_log_archival.sql | Lưu trữ log dọn ca cũ sang bảng archive + RPC archive + cron backend | ✅ | ✅ |
 
+## Phase 19: Patient notes governance
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V063 | V063_create_patient_alerts_and_contact_tasks.sql | Tạo bảng cảnh báo bệnh nhân và nhiệm vụ liên hệ | ✅ | ✅ |
+| V064 | V064_patient_notes_soft_delete_and_history.sql | Soft delete + lịch sử chỉnh sửa/xóa/khôi phục cho cảnh báo và nhiệm vụ liên hệ | ✅ | ✅ |
+
+## Phase 20: Patient notes simplification
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V065 | V065_simplify_patient_notes_single_table.sql | Đơn giản hóa về 1 bảng ghi chú bệnh nhân (`patient_notes_simple`) + migrate dữ liệu từ V063/V064 | ✅ | ✅ |
+
+## Phase 21: Patient notes legacy cleanup
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V066 | V066_drop_legacy_patient_notes_tables.sql | Xóa thẳng bảng ghi chú legacy (`patient_alerts`, `patient_contact_tasks` và history) sau khi đã chạy V065 | ✅ | ✅ |
+
 ---
 
 ## Files không phải migration (không đánh số)
