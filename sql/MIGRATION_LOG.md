@@ -164,6 +164,18 @@ Theo dõi trạng thái migration trên từng database.
 |------|------|-------|:------:|:--------:|
 | V066 | V066_drop_legacy_patient_notes_tables.sql | Xóa thẳng bảng ghi chú legacy (`patient_alerts`, `patient_contact_tasks` và history) sau khi đã chạy V065 | ✅ | ✅ |
 
+## Phase 22: DonKinh media storage foundation
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V067 | V067_don_kinh_media_storage_foundation.sql | Tạo bảng `don_kinh_media` + RLS + bucket private Supabase cho ảnh đơn kính/gọng/khúc xạ, sẵn sàng chuyển provider sang R2 |✅|  |
+
+## Phase 23: DonKinh media ordering MVP
+
+| #    | File | Mô tả | Optigo | Sáng Mắt |
+|------|------|-------|:------:|:--------:|
+| V068 | V068_add_sort_order_to_don_kinh_media.sql | Thêm `sort_order` cho `don_kinh_media`, backfill dữ liệu cũ và tạo index để hỗ trợ kéo-thả sắp xếp thumbnail |✅|  |
+
 ---
 
 ## Files không phải migration (không đánh số)

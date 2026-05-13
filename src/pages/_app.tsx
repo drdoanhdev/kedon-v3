@@ -42,13 +42,41 @@ export default function App({ Component, pageProps }: AppProps) {
       <ConfirmProvider>
       <div className="min-h-screen bg-[#f6faf7]">
         <Head>
-          {/* Favicon mặc định: con mắt màu xanh */}
+          {/* Viewport optimised for mobile / PWA standalone (notch-safe) */}
+          <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+          />
+
+          {/* App identity */}
+          <meta name="application-name" content="Optigo" />
+          <meta name="description" content="Optigo - Phần mềm quản lý phòng khám mắt & cửa hàng kính." />
+
+          {/* Favicon: con mắt màu xanh + PNG fallbacks */}
           <link rel="icon" href="/eye-blue.svg?v=2" type="image/svg+xml" />
-          {/* Tuỳ chọn: nếu bạn có favicon.ico hoặc PNG, thêm các dòng dưới và cập nhật đường dẫn */}
-          {/* <link rel="icon" href="/favicon.ico" sizes="any" /> */}
-          {/* <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" /> */}
-          {/* <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16" /> */}
+          <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+          <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+
+          {/* Web App Manifest */}
+          <link rel="manifest" href="/manifest.webmanifest" />
+
+          {/* Android / Chrome theme */}
           <meta name="theme-color" content={mobileThemeColor} />
+          <meta name="mobile-web-app-capable" content="yes" />
+
+          {/* iOS / Safari standalone */}
+          <meta name="apple-mobile-web-app-capable" content="yes" />
+          <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+          <meta name="apple-mobile-web-app-title" content="Optigo" />
+          <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+          <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+
+          {/* Windows tiles */}
+          <meta name="msapplication-TileColor" content="#0ea5e9" />
+          <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
+
+          {/* Format detection (prevent iOS auto-linking phone numbers) */}
+          <meta name="format-detection" content="telephone=no" />
         </Head>
         {showHeader && (
           <div className={hideGlobalHeaderOnMobile ? 'hidden md:block' : ''}>

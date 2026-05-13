@@ -22,6 +22,7 @@ import { isOwnerRole } from '../lib/tenantRoles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import PrintDonKinh from '../components/ke-don/PrintDonKinh';
+import DonKinhMediaPanel from '@/components/ke-don/DonKinhImageStripPanel';
 import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
 
 interface BenhNhan {
@@ -247,6 +248,7 @@ export default function KeDonKinh() {
   const [isEditing, setIsEditing] = useState(false);
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]); // lịch sử đơn kính
   const [highlightId, setHighlightId] = useState<number | null>(null); // id đơn kính mới / vừa cập nhật để highlight
+  const [activeDonKinhMediaId, setActiveDonKinhMediaId] = useState<number | null>(null);
   // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ (lịch sử), 2 = Lịch hẹn
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
   // Ref cho datetime-local trên mobile (để custom Calendar button mở picker)
@@ -856,6 +858,7 @@ export default function KeDonKinh() {
       });
     });
     if (don.id) {
+      setActiveDonKinhMediaId(don.id);
       setHighlightId(don.id);
       setTimeout(() => setHighlightId(current => current === don.id ? null : current), 3000);
     }
@@ -863,6 +866,7 @@ export default function KeDonKinh() {
   const updateHistory = (don: DonKinh) => {
     setDonKinhs(prev => prev.map(d => d.id === don.id ? { ...d, ...don } : d));
     if (don.id) {
+      setActiveDonKinhMediaId(don.id);
       setHighlightId(don.id);
       setTimeout(() => setHighlightId(current => current === don.id ? null : current), 3000);
     }
@@ -870,6 +874,7 @@ export default function KeDonKinh() {
   const removeHistory = (id?: number) => {
     if (!id) return;
     setDonKinhs(prev => prev.filter(d => d.id !== id));
+    setActiveDonKinhMediaId(prev => prev === id ? null : prev);
   };
 
   // Tính toán tổng tiền, số tiền nợ, và lãi (similar to ke-don.tsx)
@@ -1083,12 +1088,15 @@ export default function KeDonKinh() {
     setFrameStock(null);
     setLensStockMp(null);
     setLensStockMt(null);
+    // Reset media panel - bỏ liên kết với đơn vừa thao tác
+    setActiveDonKinhMediaId(null);
   };
 
   // Chọn đơn từ lịch sử
   const handleSelectDon = (don: DonKinh) => {
     // Mobile: chuyển sang tab Đơn kính (form) để xem/sửa
     setMobileTab(0);
+    setActiveDonKinhMediaId(don.id || null);
     // Xử lý ngày giờ - chuyển đổi sang múi giờ local để hiển thị đúng
     const ngayKhamValue = don.ngaykham || don.ngay_kham;
     let ngayKhamFormatted = '';
@@ -2067,6 +2075,8 @@ export default function KeDonKinh() {
                   ) : null}
                 </div>
 
+                <DonKinhMediaPanel donKinhId={activeDonKinhMediaId} className="mt-3" />
+
                 {/* Mobile History Section */}
                 <div className="hidden">
                   <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
@@ -2407,6 +2417,8 @@ export default function KeDonKinh() {
               </label>
             </div>
           </div>
+
+          <DonKinhMediaPanel donKinhId={activeDonKinhMediaId} />
 
           </div>
           {/* end scrollable zone */}
