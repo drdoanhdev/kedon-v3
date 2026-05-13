@@ -51,7 +51,11 @@ export default function QuanLyPhongKham() {
   const [tenantCode, setTenantCode] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
-  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging'>('info');
+  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax'>('info');
+
+  // VAT config state
+  const [vatConfig, setVatConfig] = useState({ ap_dung_vat: false, thue_suat: 8, gia_da_bao_gom_vat: true, ma_so_thue: '', ten_don_vi: '', dia_chi_don_vi: '' });
+  const [vatSaving, setVatSaving] = useState(false);
 
   const isOwnerOrAdmin = currentRole === 'owner' || currentRole === 'admin';
 
@@ -105,6 +109,10 @@ export default function QuanLyPhongKham() {
         setTenantCode(t.code || '');
         setTenantPhone(t.phone || '');
         setTenantAddress(t.address || '');
+        // Load VAT config from settings
+        if (settings?.vat) {
+          setVatConfig(prev => ({ ...prev, ...settings.vat }));
+        }
       } catch {}
     })();
   }, [currentTenantId]);
@@ -322,6 +330,165 @@ export default function QuanLyPhongKham() {
   );
 
   // ========================================================================
+  // Section: Khai thuế & hóa đơn
+  // ========================================================================
+  const handleSaveVat = async () => {
+    if (!tenantInfo) return;
+    setVatSaving(true);
+    try {
+      const newSettings = { ...(tenantInfo.settings || {}), vat: vatConfig };
+      const res = await fetchWithAuth('/api/tenants', {
+        method: 'PUT',
+        body: JSON.stringify({ id: tenantInfo.id, name: tenantName, code: tenantCode, phone: tenantPhone, address: tenantAddress, settings: newSettings }),
+      });
+      if (res.ok) {
+        setTenantInfo(prev => prev ? { ...prev, settings: newSettings } : prev);
+        toast.success('Đã lưu cài đặt thuế');
+      } else {
+        const d = await res.json();
+        toast.error(d.message || 'Lỗi lưu cài đặt');
+      }
+    } catch {
+      toast.error('Lỗi kết nối');
+    }
+    setVatSaving(false);
+  };
+
+  const taxSection = (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
+          <span className="text-base">🧾</span>
+          <h3 className="text-sm font-semibold text-gray-800">Cài đặt thuế GTGT</h3>
+        </div>
+        <div className="p-5 space-y-5">
+          {/* Toggle VAT */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Áp dụng thuế GTGT</p>
+              <p className="text-xs text-gray-500 mt-0.5">Hiển thị cột thuế trong báo cáo & xuất Excel</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVatConfig(v => ({ ...v, ap_dung_vat: !v.ap_dung_vat }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${vatConfig.ap_dung_vat ? 'bg-blue-600' : 'bg-gray-300'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${vatConfig.ap_dung_vat ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          {vatConfig.ap_dung_vat && (
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              {/* Thuế suất */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Thuế suất mặc định</label>
+                <div className="flex gap-2">
+                  {[0, 5, 8, 10].map(rate => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setVatConfig(v => ({ ...v, thue_suat: rate }))}
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${vatConfig.thue_suat === rate ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:border-blue-400'}`}
+                    >
+                      {rate}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cách tính giá */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Cách ghi nhận giá bán</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="radio" name="gia_vat" checked={vatConfig.gia_da_bao_gom_vat} onChange={() => setVatConfig(v => ({ ...v, gia_da_bao_gom_vat: true }))} className="text-blue-600" />
+                    <span className="text-sm text-gray-700">Giá bán <strong>đã bao gồm</strong> VAT — tiền hàng = giá / (1 + thuế suất)</span>
+                  </label>
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="radio" name="gia_vat" checked={!vatConfig.gia_da_bao_gom_vat} onChange={() => setVatConfig(v => ({ ...v, gia_da_bao_gom_vat: false }))} className="text-blue-600" />
+                    <span className="text-sm text-gray-700">Giá bán <strong>chưa bao gồm</strong> VAT — tiền thuế = giá × thuế suất</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Ví dụ tính */}
+              <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-800">
+                {(() => {
+                  const vd = 1000000;
+                  const ts = vatConfig.thue_suat / 100;
+                  const tienHang = vatConfig.gia_da_bao_gom_vat ? Math.round(vd / (1 + ts)) : vd;
+                  const tienThue = vatConfig.gia_da_bao_gom_vat ? vd - tienHang : Math.round(vd * ts);
+                  return (
+                    <>
+                      <p className="font-medium mb-1">Ví dụ: Đơn kính 1.000.000đ với thuế {vatConfig.thue_suat}%</p>
+                      <p>→ Tiền hàng: {tienHang.toLocaleString('vi-VN')}đ | Tiền thuế: {tienThue.toLocaleString('vi-VN')}đ | Tổng: {(tienHang + tienThue).toLocaleString('vi-VN')}đ</p>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Thông tin doanh nghiệp cho hóa đơn */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
+          <span className="text-base">🏢</span>
+          <h3 className="text-sm font-semibold text-gray-800">Thông tin xuất hóa đơn</h3>
+          <span className="ml-auto text-xs text-gray-400">Dùng khi xuất Excel / hóa đơn</span>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Mã số thuế</label>
+              <input
+                type="text"
+                value={vatConfig.ma_so_thue}
+                onChange={e => setVatConfig(v => ({ ...v, ma_so_thue: e.target.value }))}
+                placeholder="VD: 0123456789"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tên đơn vị</label>
+              <input
+                type="text"
+                value={vatConfig.ten_don_vi}
+                onChange={e => setVatConfig(v => ({ ...v, ten_don_vi: e.target.value }))}
+                placeholder="VD: Cửa hàng Kính ABC"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Địa chỉ</label>
+            <input
+              type="text"
+              value={vatConfig.dia_chi_don_vi}
+              onChange={e => setVatConfig(v => ({ ...v, dia_chi_don_vi: e.target.value }))}
+              placeholder="VD: 123 Nguyễn Huệ, Q.1, TP.HCM"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+          </div>
+          <p className="text-xs text-gray-400">Thông tin này sẽ xuất hiện trong file Excel báo cáo doanh thu.</p>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleSaveVat}
+          disabled={vatSaving}
+          className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {vatSaving ? 'Đang lưu...' : 'Lưu cài đặt thuế'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ========================================================================
   // Section: Tài khoản người dùng
   // ========================================================================
   const membersSection = <LoginSecurityCard />;
@@ -330,7 +497,7 @@ export default function QuanLyPhongKham() {
   // Sidebar (KiotViet-style settings layout)
   // ========================================================================
   type Section = {
-    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging';
+    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax';
     label: string;
     icon: string;
     group: string;
@@ -350,6 +517,7 @@ export default function QuanLyPhongKham() {
     { id: 'roles',     label: 'Quản lý vai trò & quyền',  icon: '🛡️', group: 'Cấu hình' },
     { id: 'print',     label: 'Cấu hình mẫu in',          icon: '🖨️', group: 'Cấu hình' },
     { id: 'messaging', label: 'Cài đặt nhắn tin tự động', icon: '💬', group: 'Cấu hình' },
+    { id: 'tax',       label: 'Khai thuế & hóa đơn',      icon: '🧾', group: 'Tài chính' },
   );
 
   // Map: id -> content
@@ -370,6 +538,7 @@ export default function QuanLyPhongKham() {
     roles:     <QuanLyVaiTroSection />,
     print:     <CauHinhInSection />,
     messaging: <CaiDatNhanTinSection />,
+    tax: taxSection,
   };
 
   // Group sections by `group`

@@ -26,6 +26,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute'
 import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
 import ChoKhamPanel, { ChoKhamPanelRef } from '@/components/ChoKhamPanel';
+import FamilyCard from '@/components/FamilyCard';
 import { useBranch } from '../contexts/BranchContext';
 import { pushRecentActivity } from '@/lib/recentActivity';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -564,6 +565,21 @@ export default function BenhNhanPage() {
       }
     },
     [selectedBenhNhanId, fetchDonThuoc, buildActivityPatient, findPatientById]
+  );
+
+  // Mở hồ sơ 1 thành viên khác trong nhóm gia đình.
+  // Điều hướng qua query string để dùng lại flow focusId hiện có
+  // (effect ở phía trên sẽ reset search + queue focus).
+  const handleOpenFamilyMember = useCallback(
+    (memberPatientId: number) => {
+      if (!memberPatientId || memberPatientId === selectedBenhNhanId) return;
+      router.push(
+        { pathname: '/benh-nhan', query: { search: '', focusId: memberPatientId } },
+        undefined,
+        { shallow: false }
+      );
+    },
+    [router, selectedBenhNhanId]
   );
 
   const handleHistoryTabChange = useCallback(
@@ -1380,6 +1396,12 @@ export default function BenhNhanPage() {
                     {/* Medical History Mobile */}
                     {selectedBenhNhanId === bn.id && (
                       <div className="mt-3 pt-3 border-t">
+                        <FamilyCard
+                          benhnhanId={bn.id!}
+                          patientName={bn.ten || ''}
+                          onSelectMember={handleOpenFamilyMember}
+                          className="mb-3"
+                        />
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <h3 className="font-medium text-sm">📋 Lịch sử khám bệnh</h3>
                           <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => openPatientNotesManager(bn)}>
@@ -1832,6 +1854,12 @@ export default function BenhNhanPage() {
                             <td colSpan={10} className="px-2 py-1">
                               <Card className="shadow-sm bg-gray-50 border-gray-200">
                                 <CardContent className="p-3">
+                                  <FamilyCard
+                                    benhnhanId={bn.id!}
+                                    patientName={bn.ten || ''}
+                                    onSelectMember={handleOpenFamilyMember}
+                                    className="mb-3"
+                                  />
                                   {/* Tab buttons */}
                                   <div className="flex gap-1 mb-3 border-b pb-2">
                                     <button

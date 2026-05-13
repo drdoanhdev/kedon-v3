@@ -11,6 +11,8 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { AxiosError } from 'axios';
+import * as XLSX from 'xlsx';
+import { fetchWithAuth } from '../lib/fetchWithAuth';
 
 interface BaoCaoItem {
   id: number;
@@ -77,6 +79,144 @@ export default function BaoCaoPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   const rowsPerPage = 10;
+
+  // VAT config (loaded from tenant settings)
+  const [vatConfig, setVatConfig] = useState<{ ap_dung_vat: boolean; thue_suat: number; gia_da_bao_gom_vat: boolean; ma_so_thue: string; ten_don_vi: string; dia_chi_don_vi: string }>({
+    ap_dung_vat: false, thue_suat: 8, gia_da_bao_gom_vat: true, ma_so_thue: '', ten_don_vi: '', dia_chi_don_vi: '',
+  });
+  const [exporting, setExporting] = useState(false);
+
+  // Load VAT config
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetchWithAuth('/api/tenants');
+        const data = await res.json();
+        const rows = data?.data || [];
+        const t = rows[0];
+        if (t?.settings?.vat) setVatConfig(prev => ({ ...prev, ...t.settings.vat }));
+      } catch {}
+    })();
+  }, []);
+
+  // Hàm tính VAT từ giá bán
+  const calcVat = useCallback((giaBan: number) => {
+    if (!vatConfig.ap_dung_vat || vatConfig.thue_suat === 0) return { tienHang: giaBan, tienThue: 0 };
+    const ts = vatConfig.thue_suat / 100;
+    if (vatConfig.gia_da_bao_gom_vat) {
+      const tienHang = Math.round(giaBan / (1 + ts));
+      return { tienHang, tienThue: giaBan - tienHang };
+    }
+    return { tienHang: giaBan, tienThue: Math.round(giaBan * ts) };
+  }, [vatConfig]);
+
+  const handleExportExcel = useCallback(async () => {
+    if (!baoCao) { toast.error('Vui lòng tải báo cáo trước'); return; }
+    setExporting(true);
+    try {
+      const wb = XLSX.utils.book_new();
+      const fmt = (n: number) => n; // số nguyên VND
+
+      // ---------- Sheet 1: Tổng hợp ----------
+      const tongDT_kinh = baoCao.kinh.doanhthu;
+      const tongDT_thuoc = baoCao.mat.doanhthu_thuoc + baoCao.tmh.doanhthu_thuoc;
+      const tongDT_tt = baoCao.mat.doanhthu_thuthuat + baoCao.tmh.doanhthu_thuthuat;
+      const tongDT = tongDT_kinh + tongDT_thuoc + tongDT_tt;
+      const tongLai = baoCao.kinh.lai + baoCao.mat.lai_thuoc + baoCao.mat.lai_thuthuat + baoCao.tmh.lai_thuoc + baoCao.tmh.lai_thuthuat;
+      const tongNo = baoCao.kinh.no + baoCao.mat.no_thuoc + baoCao.mat.no_thuthuat + baoCao.tmh.no_thuoc + baoCao.tmh.no_thuthuat;
+
+      const thongTinHeader = [
+        [vatConfig.ten_don_vi || 'Cửa hàng'],
+        vatConfig.dia_chi_don_vi ? [vatConfig.dia_chi_don_vi] : [],
+        vatConfig.ma_so_thue ? [`MST: ${vatConfig.ma_so_thue}`] : [],
+        [],
+        ['BÁO CÁO DOANH THU'],
+        [`Kỳ: ${fromDate} → ${toDate}`],
+        [],
+      ].filter(r => r.length > 0);
+
+      const tongHopRows: any[][] = [
+        ['Loại', 'Doanh thu', ...(vatConfig.ap_dung_vat ? ['Tiền hàng', `Tiền thuế ${vatConfig.thue_suat}%`] : []), 'Lợi nhuận', 'Công nợ'],
+      ];
+      const addRow = (label: string, dt: number, lai: number, no: number) => {
+        const v = calcVat(dt);
+        tongHopRows.push([label, fmt(dt), ...(vatConfig.ap_dung_vat ? [fmt(v.tienHang), fmt(v.tienThue)] : []), fmt(lai), fmt(no)]);
+      };
+      addRow('Thuốc Mắt', baoCao.mat.doanhthu_thuoc, baoCao.mat.lai_thuoc, baoCao.mat.no_thuoc);
+      addRow('Thủ thuật Mắt', baoCao.mat.doanhthu_thuthuat, baoCao.mat.lai_thuthuat, baoCao.mat.no_thuthuat);
+      addRow('Thuốc TMH', baoCao.tmh.doanhthu_thuoc, baoCao.tmh.lai_thuoc, baoCao.tmh.no_thuoc);
+      addRow('Thủ thuật TMH', baoCao.tmh.doanhthu_thuthuat, baoCao.tmh.lai_thuthuat, baoCao.tmh.no_thuthuat);
+      addRow('Kính', tongDT_kinh, baoCao.kinh.lai, baoCao.kinh.no);
+      const vatTong = calcVat(tongDT);
+      tongHopRows.push(['TỔNG CỘNG', fmt(tongDT), ...(vatConfig.ap_dung_vat ? [fmt(vatTong.tienHang), fmt(vatTong.tienThue)] : []), fmt(tongLai), fmt(tongNo)]);
+
+      const ws1Data = [...thongTinHeader, ...tongHopRows];
+      const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+      // Style header row
+      const titleRow = thongTinHeader.length;
+      ws1['!cols'] = [{ wch: 20 }, { wch: 16 }, ...(vatConfig.ap_dung_vat ? [{ wch: 16 }, { wch: 16 }] : []), { wch: 14 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Tổng hợp');
+
+      // ---------- Sheet 2: Theo ngày ----------
+      const chiTiet = [
+        ...baoCao.chi_tiet.mat.thuoc.map(i => ({ ...i, type: 'Thuốc Mắt' })),
+        ...baoCao.chi_tiet.mat.thuthuat.map(i => ({ ...i, type: 'Thủ thuật Mắt' })),
+        ...baoCao.chi_tiet.tmh.thuoc.map(i => ({ ...i, type: 'Thuốc TMH' })),
+        ...baoCao.chi_tiet.tmh.thuthuat.map(i => ({ ...i, type: 'Thủ thuật TMH' })),
+        ...baoCao.chi_tiet.kinh.map(i => ({ ...i, type: 'Kính' })),
+      ].sort((a, b) => a.ngay.localeCompare(b.ngay));
+
+      // Group by day
+      const byDay: Record<string, { dt: number; lai: number; no: number; count: number }> = {};
+      chiTiet.forEach(r => {
+        const d = r.ngay.split('T')[0];
+        if (!byDay[d]) byDay[d] = { dt: 0, lai: 0, no: 0, count: 0 };
+        byDay[d].dt += r.doanhthu; byDay[d].lai += r.lai; byDay[d].no += r.no; byDay[d].count += 1;
+      });
+      const ngayHeader = ['Ngày', 'Doanh thu', ...(vatConfig.ap_dung_vat ? ['Tiền hàng', `Thuế ${vatConfig.thue_suat}%`] : []), 'Lợi nhuận', 'Công nợ', 'Số giao dịch'];
+      const ngayRows = Object.entries(byDay).sort().map(([d, v]) => {
+        const vat = calcVat(v.dt);
+        return [d, fmt(v.dt), ...(vatConfig.ap_dung_vat ? [fmt(vat.tienHang), fmt(vat.tienThue)] : []), fmt(v.lai), fmt(v.no), v.count];
+      });
+      const ws2 = XLSX.utils.aoa_to_sheet([ngayHeader, ...ngayRows]);
+      ws2['!cols'] = [{ wch: 12 }, { wch: 14 }, ...(vatConfig.ap_dung_vat ? [{ wch: 14 }, { wch: 14 }] : []), { wch: 12 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Theo ngày');
+
+      // ---------- Sheet 3: Theo tháng ----------
+      const byMonth: Record<string, { dt: number; lai: number; no: number; count: number }> = {};
+      chiTiet.forEach(r => {
+        const m = r.ngay.substring(0, 7);
+        if (!byMonth[m]) byMonth[m] = { dt: 0, lai: 0, no: 0, count: 0 };
+        byMonth[m].dt += r.doanhthu; byMonth[m].lai += r.lai; byMonth[m].no += r.no; byMonth[m].count += 1;
+      });
+      const thangHeader = ['Tháng', 'Doanh thu', ...(vatConfig.ap_dung_vat ? ['Tiền hàng', `Thuế ${vatConfig.thue_suat}%`] : []), 'Lợi nhuận', 'Công nợ', 'Số giao dịch'];
+      const thangRows = Object.entries(byMonth).sort().map(([m, v]) => {
+        const vat = calcVat(v.dt);
+        return [m, fmt(v.dt), ...(vatConfig.ap_dung_vat ? [fmt(vat.tienHang), fmt(vat.tienThue)] : []), fmt(v.lai), fmt(v.no), v.count];
+      });
+      const ws3 = XLSX.utils.aoa_to_sheet([thangHeader, ...thangRows]);
+      ws3['!cols'] = [{ wch: 10 }, { wch: 14 }, ...(vatConfig.ap_dung_vat ? [{ wch: 14 }, { wch: 14 }] : []), { wch: 12 }, { wch: 12 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws3, 'Theo tháng');
+
+      // ---------- Sheet 4: Danh sách hóa đơn ----------
+      const hdHeader = ['Ngày', 'Loại', 'Mã đơn', 'Doanh thu', ...(vatConfig.ap_dung_vat ? ['Tiền hàng', `Thuế ${vatConfig.thue_suat}%`] : []), 'Lợi nhuận', 'Công nợ'];
+      const hdRows = chiTiet.map(r => {
+        const vat = calcVat(r.doanhthu);
+        return [r.ngay.split('T')[0], r.type, r.id, fmt(r.doanhthu), ...(vatConfig.ap_dung_vat ? [fmt(vat.tienHang), fmt(vat.tienThue)] : []), fmt(r.lai), fmt(r.no)];
+      });
+      const ws4 = XLSX.utils.aoa_to_sheet([hdHeader, ...hdRows]);
+      ws4['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 14 }, ...(vatConfig.ap_dung_vat ? [{ wch: 14 }, { wch: 14 }] : []), { wch: 12 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws4, 'Danh sách hóa đơn');
+
+      const fileName = `BaoCaoDoanhThu_${fromDate}_${toDate}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success(`Đã xuất ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Lỗi xuất Excel');
+    }
+    setExporting(false);
+  }, [baoCao, vatConfig, fromDate, toDate, calcVat]);
 
   // Đặt tiêu đề trang tĩnh
   useEffect(() => {
@@ -454,6 +594,18 @@ export default function BaoCaoPage() {
                   '📊 Tổng hợp báo cáo'
                 )}
               </Button>
+
+              {/* Nút xuất Excel - Mobile */}
+              {baoCao && (
+                <Button
+                  onClick={handleExportExcel}
+                  disabled={exporting}
+                  variant="outline"
+                  className="w-full h-10 border-green-500 text-green-700 hover:bg-green-50 font-medium"
+                >
+                  {exporting ? '⏳ Đang xuất...' : `📥 Xuất Excel${vatConfig.ap_dung_vat ? ` (VAT ${vatConfig.thue_suat}%)` : ''}`}
+                </Button>
+              )}
             </div>
 
             {/* Cảnh báo khoảng thời gian dài */}
@@ -529,6 +681,23 @@ export default function BaoCaoPage() {
                 )}
               </Button>
             </div>
+
+            {/* Nút xuất Excel - Desktop */}
+            {baoCao && (
+              <div className="flex flex-col justify-end">
+                <Button
+                  onClick={handleExportExcel}
+                  disabled={exporting}
+                  variant="outline"
+                  className="h-10 border-green-500 text-green-700 hover:bg-green-50 font-medium px-4"
+                >
+                  {exporting ? '⏳ Đang xuất...' : '📥 Xuất Excel'}
+                </Button>
+                {vatConfig.ap_dung_vat && (
+                  <p className="text-xs text-green-600 mt-1 text-center">VAT {vatConfig.thue_suat}% đã bật</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Cảnh báo khoảng thời gian dài - Desktop */}

@@ -176,6 +176,13 @@ Theo dõi trạng thái migration trên từng database.
 |------|------|-------|:------:|:--------:|
 | V068 | V068_add_sort_order_to_don_kinh_media.sql | Thêm `sort_order` cho `don_kinh_media`, backfill dữ liệu cũ và tạo index để hỗ trợ kéo-thả sắp xếp thumbnail |✅|  |
 
+## Phase 24: Family Group CRM (hồ sơ gia đình khách hàng)
+
+| #     | File | Mô tả | Optigo | Sáng Mắt |
+|-------|------|-------|:------:|:--------:|
+| V069  | V069_create_family_groups.sql | Tạo `family_groups` + `family_members` (UNIQUE benhnhan_id, partial UNIQUE 1-primary/group) + RLS pattern V067 + trigger đồng bộ tenant_id | | |
+| V069b | V069b_seed_family_groups_dev.sql | Seed dev: 1 gia đình 4 người từ 4 bệnh nhân đầu của tenant | | |
+
 ---
 
 ## Files không phải migration (không đánh số)
