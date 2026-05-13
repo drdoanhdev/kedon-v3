@@ -53,10 +53,11 @@ interface DonKinhMediaPanelProps {
 const MAX_MEDIA_ITEMS = 6;
 const PREVIEW_READ_TTL_SECONDS = 1200;
 // Nén ảnh client để tiết kiệm storage + bandwidth
-const COMPRESS_MAX_DIMENSION = 1600; // cạnh dài tối đa (px)
-const COMPRESS_QUALITY = 0.82; // chất lượng JPEG
+const COMPRESS_MAX_DIMENSION = 1280; // cạnh dài tối đa (px)
+const COMPRESS_QUALITY = 0.72; // chất lượng mặc định
 const COMPRESS_MIN_BYTES = 200 * 1024; // <200KB thì không nén
-const COMPRESS_MIME = 'image/jpeg';
+const COMPRESS_TARGET_MAX_BYTES = 350 * 1024; // mục tiêu dung lượng sau nén
+const COMPRESS_MIME = 'image/webp';
 
 async function compressImageFile(file: File): Promise<File> {
   // Chỉ nén ảnh raster phổ biến; bỏ qua GIF/SVG để không phá animation/vector
@@ -92,16 +93,32 @@ async function compressImageFile(file: File): Promise<File> {
     if (!ctx) return file;
     ctx.drawImage(img, 0, 0, targetW, targetH);
 
-    const blob: Blob | null = await new Promise((resolve) => {
-      canvas.toBlob((b) => resolve(b), COMPRESS_MIME, COMPRESS_QUALITY);
+    const encodeBlob = async (mime: string, quality: number): Promise<Blob | null> => new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), mime, quality);
     });
+
+    // Nén thích ứng để đưa ảnh về gần ngưỡng mục tiêu, giúp giảm chi phí lưu trữ/băng thông.
+    const qualitySteps = [COMPRESS_QUALITY, 0.64, 0.56, 0.48];
+    let blob: Blob | null = null;
+    for (const quality of qualitySteps) {
+      // eslint-disable-next-line no-await-in-loop
+      blob = await encodeBlob(COMPRESS_MIME, quality);
+      if (!blob) continue;
+      if (blob.size <= COMPRESS_TARGET_MAX_BYTES) break;
+    }
+
+    if (!blob) {
+      blob = await encodeBlob('image/jpeg', 0.68);
+    }
     if (!blob) return file;
 
     // Nếu nén ra to hơn file gốc thì giữ nguyên file gốc
     if (blob.size >= file.size) return file;
 
     const baseName = (file.name || 'image').replace(/\.[^.]+$/, '');
-    return new File([blob], `${baseName}.jpg`, { type: COMPRESS_MIME, lastModified: Date.now() });
+    const outputExt = blob.type === 'image/webp' ? 'webp' : 'jpg';
+    const outputType = blob.type || 'image/jpeg';
+    return new File([blob], `${baseName}.${outputExt}`, { type: outputType, lastModified: Date.now() });
   } catch {
     return file;
   } finally {
