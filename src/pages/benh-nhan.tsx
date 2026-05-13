@@ -566,6 +566,25 @@ export default function BenhNhanPage() {
     [selectedBenhNhanId, fetchDonThuoc, buildActivityPatient, findPatientById]
   );
 
+  const handleHistoryTabChange = useCallback(
+    (tab: string) => {
+      setActiveTab(tab);
+
+      if (!selectedBenhNhanId) return;
+      if (tab !== 'don-thuoc' && tab !== 'don-kinh') return;
+
+      const patient = buildActivityPatient(findPatientById(selectedBenhNhanId));
+      if (!patient) return;
+
+      pushRecentActivity({
+        action: tab === 'don-thuoc' ? 'open_rx_drug' : 'open_rx_glasses',
+        patient,
+        source: 'benh-nhan_history_tab',
+      });
+    },
+    [buildActivityPatient, findPatientById, selectedBenhNhanId]
+  );
+
   const loadPatientNotes = useCallback(async (benhnhanid: number, options?: { includeDeleted?: boolean }) => {
     if (!benhnhanid) return;
     const includeDeleted = options?.includeDeleted ?? includeDeletedNotes;
@@ -980,22 +999,17 @@ export default function BenhNhanPage() {
     }
   }, [selectedBenhNhanId]);
 
-  const openPrescriptionInNewTab = useCallback((benhNhanId: number, type: 'thuoc' | 'kinh') => {
+  const openPrescriptionFromList = useCallback((bn: BenhNhan, type: 'thuoc' | 'kinh') => {
+    const benhNhanId = Number(bn?.id);
     if (!benhNhanId || Number.isNaN(benhNhanId)) {
       toast.error('Mã bệnh nhân không hợp lệ');
       return;
     }
 
     const url = type === 'thuoc' ? `/ke-don?bn=${benhNhanId}` : `/ke-don-kinh?bn=${benhNhanId}`;
-    const newTab = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!newTab) {
-      toast.error('Không mở được tab mới. Vui lòng kiểm tra chặn pop-up của trình duyệt.');
-      return;
-    }
-
     setOpenSwipePatientId(null);
 
-    const patient = buildActivityPatient(findPatientById(benhNhanId));
+    const patient = buildActivityPatient(bn);
     if (patient) {
       pushRecentActivity({
         action: type === 'thuoc' ? 'open_rx_drug' : 'open_rx_glasses',
@@ -1008,7 +1022,9 @@ export default function BenhNhanPage() {
       const message = error instanceof Error ? error.message : 'Không thêm được vào chờ khám';
       toast.error(message);
     });
-  }, [buildActivityPatient, findPatientById]);
+
+    router.push(url);
+  }, [buildActivityPatient, router]);
 
   const handleAddPatientToWaiting = useCallback((bn: BenhNhan) => {
     if (!bn.id) return;
@@ -1287,7 +1303,7 @@ export default function BenhNhanPage() {
                         <button
                           type="button"
                           className="h-full bg-blue-600 text-white text-[11px] font-semibold leading-tight active:bg-blue-700 flex flex-col items-center justify-center gap-1 px-1"
-                          onClick={() => openPrescriptionInNewTab(bn.id!, 'thuoc')}
+                          onClick={() => openPrescriptionFromList(bn, 'thuoc')}
                         >
                           <Pill className="w-3.5 h-3.5" />
                           Đơn thuốc
@@ -1295,7 +1311,7 @@ export default function BenhNhanPage() {
                         <button
                           type="button"
                           className="h-full bg-emerald-600 text-white text-[11px] font-semibold leading-tight active:bg-emerald-700 flex flex-col items-center justify-center gap-1 px-1"
-                          onClick={() => openPrescriptionInNewTab(bn.id!, 'kinh')}
+                          onClick={() => openPrescriptionFromList(bn, 'kinh')}
                         >
                           <Eye className="w-3.5 h-3.5" />
                           Đơn kính
@@ -1370,7 +1386,7 @@ export default function BenhNhanPage() {
                             <BellRing className="w-3.5 h-3.5 mr-1" /> Ghi chú
                           </Button>
                         </div>
-                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <Tabs value={activeTab} onValueChange={handleHistoryTabChange} className="w-full">
                           <TabsList className="grid w-full grid-cols-3">
                             <TabsTrigger value="don-thuoc">Đơn thuốc ({filteredDonThuocs.length})</TabsTrigger>
                             <TabsTrigger value="don-kinh">Đơn kính ({donKinhs.length})</TabsTrigger>
@@ -1794,7 +1810,7 @@ export default function BenhNhanPage() {
                               <div className="flex items-center rounded-md overflow-hidden border border-blue-600 ml-0.5">
                                 <button
                                   className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
-                                  onClick={() => openPrescriptionInNewTab(bn.id!, 'thuoc')}
+                                  onClick={() => openPrescriptionFromList(bn, 'thuoc')}
                                   title="Kê đơn thuốc"
                                 >
                                   Thuốc
@@ -1802,7 +1818,7 @@ export default function BenhNhanPage() {
                                 <div className="w-px h-5 bg-blue-400" />
                                 <button
                                   className="h-7 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
-                                  onClick={() => openPrescriptionInNewTab(bn.id!, 'kinh')}
+                                  onClick={() => openPrescriptionFromList(bn, 'kinh')}
                                   title="Kê đơn kính"
                                 >
                                   Kính
@@ -1819,7 +1835,7 @@ export default function BenhNhanPage() {
                                   {/* Tab buttons */}
                                   <div className="flex gap-1 mb-3 border-b pb-2">
                                     <button
-                                      onClick={() => setActiveTab('don-thuoc')}
+                                      onClick={() => handleHistoryTabChange('don-thuoc')}
                                       className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
                                         activeTab === 'don-thuoc'
                                           ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
@@ -1829,7 +1845,7 @@ export default function BenhNhanPage() {
                                       📋 Đơn thuốc ({filteredDonThuocs.length})
                                     </button>
                                     <button
-                                      onClick={() => setActiveTab('don-kinh')}
+                                      onClick={() => handleHistoryTabChange('don-kinh')}
                                       className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
                                         activeTab === 'don-kinh'
                                           ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
@@ -1839,7 +1855,7 @@ export default function BenhNhanPage() {
                                       👓 Đơn kính ({donKinhs.length})
                                     </button>
                                     <button
-                                      onClick={() => setActiveTab('lich-hen')}
+                                      onClick={() => handleHistoryTabChange('lich-hen')}
                                       className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
                                         activeTab === 'lich-hen'
                                           ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'

@@ -31,6 +31,58 @@ function isMissingGhichuColumn(error: unknown): boolean {
   return text.includes('ghichu') && (text.includes('column') || maybe.code === '42703');
 }
 
+function escapePostgrestLikeValue(value: string): string {
+  return value.replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function buildSearchOrFilter(rawSearch: string): string {
+  const normalized = rawSearch.trim().replace(/\s+/g, ' ');
+  const escapedSearch = escapePostgrestLikeValue(normalized);
+  if (!escapedSearch) return '';
+
+  const numericCandidate = normalized.replace(/[\s.-]/g, '');
+  const isNumeric = /^\d+$/.test(numericCandidate);
+  if (isNumeric) {
+    const digits = numericCandidate.replace(/\D/g, '');
+    return `dienthoai.ilike.%${digits}%,ten.ilike.%${escapedSearch}%,id.eq.${digits},namsinh.ilike.%${digits}%`;
+  }
+
+  const yearMatch = normalized.match(/\b(19\d{2}|20\d{2})\b/);
+  const yearToken = yearMatch?.[1] || '';
+  const namePart = escapePostgrestLikeValue(
+    normalized
+      .replace(/\b(19\d{2}|20\d{2})\b/g, ' ')
+      .replace(/\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+
+  const clauses = new Set<string>();
+  clauses.add(`ten.ilike.%${escapedSearch}%`);
+  clauses.add(`dienthoai.ilike.%${escapedSearch}%`);
+  clauses.add(`namsinh.ilike.%${escapedSearch}%`);
+
+  if (yearToken) {
+    clauses.add(`namsinh.ilike.%${yearToken}%`);
+  }
+
+  if (namePart && yearToken) {
+    clauses.add(`and(ten.ilike.%${namePart}%,namsinh.ilike.%${yearToken}%)`);
+
+    const nameTokens = namePart.split(' ').filter(Boolean);
+    if (nameTokens.length > 1) {
+      const tokenParts = nameTokens.map((token) => `ten.ilike.%${escapePostgrestLikeValue(token)}%`);
+      clauses.add(`and(${[...tokenParts, `namsinh.ilike.%${yearToken}%`].join(',')})`);
+    }
+  }
+
+  if (namePart && namePart !== escapedSearch) {
+    clauses.add(`ten.ilike.%${namePart}%`);
+  }
+
+  return Array.from(clauses).join(',');
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<
@@ -55,7 +107,8 @@ export default async function handler(
       const benhnhanid = req.query.benhnhanid as string;
       const page = parseInt(req.query.page as string) || 1;
       const pageSize = parseInt(req.query.pageSize as string) || 100;
-      const search = (req.query.search as string)?.toLowerCase() || "";
+      const search = ((req.query.search as string) || '').trim();
+      const searchOrFilter = buildSearchOrFilter(search);
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
@@ -111,15 +164,8 @@ export default async function handler(
           query = query.eq("branch_id", branchId);
         }
 
-        if (search) {
-          // Tìm kiếm thông minh: số → SĐT + tên + mã BN, chữ → tên + SĐT
-          const isNumeric = /^\d+$/.test(search.replace(/[\s.-]/g, ''));
-          if (isNumeric) {
-            const digits = search.replace(/\D/g, '');
-            query = query.or(`dienthoai.ilike.%${digits}%,ten.ilike.%${search}%,id.eq.${digits}`);
-          } else {
-            query = query.or(`ten.ilike.%${search}%,dienthoai.ilike.%${search}%`);
-          }
+        if (searchOrFilter) {
+          query = query.or(searchOrFilter);
         }
 
         let { data, error, count } = await query.range(from, to);
@@ -136,14 +182,8 @@ export default async function handler(
             fallbackQuery = fallbackQuery.eq("branch_id", branchId);
           }
 
-          if (search) {
-            const isNumeric = /^\d+$/.test(search.replace(/[\s.-]/g, ''));
-            if (isNumeric) {
-              const digits = search.replace(/\D/g, '');
-              fallbackQuery = fallbackQuery.or(`dienthoai.ilike.%${digits}%,ten.ilike.%${search}%,id.eq.${digits}`);
-            } else {
-              fallbackQuery = fallbackQuery.or(`ten.ilike.%${search}%,dienthoai.ilike.%${search}%`);
-            }
+          if (searchOrFilter) {
+            fallbackQuery = fallbackQuery.or(searchOrFilter);
           }
 
           const fallback = await fallbackQuery.range(from, to);

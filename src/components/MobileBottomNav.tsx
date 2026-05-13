@@ -106,6 +106,9 @@ type ActivityFilter = 'all' | 'search' | 'history' | 'prescription' | 'dang_do';
 
 const LAST_ACTION_KEY = 'mbn:last_action';
 const CONTACT_SWIPE_HINT_KEY = 'mbn:contact_swipe_hint_seen';
+const FAB_SEARCH_PAGE_SIZE = 80;
+const FAB_SEARCH_INITIAL_VISIBLE = 30;
+const FAB_SEARCH_VISIBLE_STEP = 30;
 
 function actionFromDefault(defaultAction: DefaultAction): RecentActivityAction {
   if (defaultAction === 'kinh') return 'open_rx_glasses';
@@ -292,12 +295,27 @@ function rankResults(items: PatientResult[], term: string): PatientResult[] {
   const t = term.trim().toLowerCase();
   if (!t) return items;
   const isPhoneLike = /^\d{2,}$/.test(t);
-  return [...items].sort((a, b) => scoreItem(b, t, isPhoneLike) - scoreItem(a, t, isPhoneLike));
+  const birthYearMatch = t.match(/\b(19\d{2}|20\d{2})\b/);
+  const birthToken = birthYearMatch?.[1] || '';
+  const nameOnly = t.replace(/\b(19\d{2}|20\d{2})\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const nameTokens = nameOnly.split(' ').filter(Boolean);
+  return [...items].sort(
+    (a, b) =>
+      scoreItem(b, t, isPhoneLike, nameTokens, birthToken) -
+      scoreItem(a, t, isPhoneLike, nameTokens, birthToken)
+  );
 }
 
-function scoreItem(p: PatientResult, t: string, isPhoneLike: boolean): number {
+function scoreItem(
+  p: PatientResult,
+  t: string,
+  isPhoneLike: boolean,
+  nameTokens: string[],
+  birthToken: string
+): number {
   const phone = (p.dienthoai || '').toLowerCase();
   const name = (p.ten || '').toLowerCase();
+  const birth = (p.namsinh || '').toLowerCase();
   let s = 0;
   if (isPhoneLike) {
     if (phone === t) s += 100;
@@ -306,6 +324,19 @@ function scoreItem(p: PatientResult, t: string, isPhoneLike: boolean): number {
   }
   if (name.startsWith(t)) s += 20;
   else if (name.includes(t)) s += 10;
+
+  if (nameTokens.length > 0) {
+    const matchedTokens = nameTokens.reduce((count, token) => count + (name.includes(token) ? 1 : 0), 0);
+    s += matchedTokens * 8;
+    if (matchedTokens === nameTokens.length) s += 20;
+  }
+
+  if (birthToken) {
+    if (birth.includes(birthToken)) s += 18;
+    if (nameTokens.length > 0 && nameTokens.every((token) => name.includes(token)) && birth.includes(birthToken)) {
+      s += 30;
+    }
+  }
   return s;
 }
 
@@ -358,6 +389,7 @@ export default function MobileBottomNav() {
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<PatientResult[]>([]);
+  const [searchVisibleCount, setSearchVisibleCount] = useState(FAB_SEARCH_INITIAL_VISIBLE);
   const [searching, setSearching] = useState(false);
   const [recentActivities, setRecentActivities] = useState<RecentActivityEvent[]>([]);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all');
@@ -395,6 +427,21 @@ export default function MobileBottomNav() {
   const pendingSyncCount = useMemo(
     () => recentActivities.reduce((count, item) => count + (item.pendingSync ? 1 : 0), 0),
     [recentActivities]
+  );
+
+  const visibleSearchResults = useMemo(
+    () => searchResults.slice(0, searchVisibleCount),
+    [searchResults, searchVisibleCount]
+  );
+
+  const canLoadMoreSearchResults = useMemo(
+    () => searchResults.length > searchVisibleCount,
+    [searchResults.length, searchVisibleCount]
+  );
+
+  const shouldShowSearchContactHint = useMemo(
+    () => visibleSearchResults.some((item) => digitsOnly(item.dienthoai).length >= 8),
+    [visibleSearchResults]
   );
 
   const activitySyncMetaText = useMemo(() => {
@@ -548,9 +595,14 @@ export default function MobileBottomNav() {
       setOpenContactSwipeId(null);
       setSearchTerm('');
       setSearchResults([]);
+      setSearchVisibleCount(FAB_SEARCH_INITIAL_VISIBLE);
       setActivityFilter('all');
     }
   }, [showSearch]);
+
+  useEffect(() => {
+    setSearchVisibleCount(FAB_SEARCH_INITIAL_VISIBLE);
+  }, [searchTerm]);
 
   useEffect(() => {
     return subscribeRecentActivityUpdates((events) => {
@@ -693,7 +745,7 @@ export default function MobileBottomNav() {
     const timer = setTimeout(async () => {
       try {
         const res = await axios.get(
-          `/api/benh-nhan?search=${encodeURIComponent(term)}&pageSize=15&_t=${Date.now()}`
+          `/api/benh-nhan?search=${encodeURIComponent(term)}&pageSize=${FAB_SEARCH_PAGE_SIZE}&_t=${Date.now()}`
         );
         const data: PatientResult[] = res.data?.data || [];
         setSearchResults(rankResults(data, term));
@@ -1052,21 +1104,43 @@ export default function MobileBottomNav() {
               )}
 
               {!searching && searchResults.length > 0 && (
-                <ul className="divide-y divide-gray-100">
-                  {searchResults.map((p, idx) => (
-                    <PatientRow
-                      key={`sd-${p.id}`}
-                      p={p}
-                      defaultAction={defaultAction}
-                      onAction={(patient, action) => triggerAction(patient, action, 'search')}
-                      highlightFirst={idx === 0}
-                      isContactSwipeOpen={openContactSwipeId === p.id}
-                      setOpenContactSwipeId={setOpenContactSwipeId}
-                      onZaloAction={handlePatientZaloAction}
-                      onSwipeHintSeen={dismissContactSwipeHint}
-                    />
-                  ))}
-                </ul>
+                <>
+                  <ul className="divide-y divide-gray-100">
+                    {visibleSearchResults.map((p) => (
+                      <PatientRow
+                        key={`sd-${p.id}`}
+                        p={p}
+                        defaultAction={defaultAction}
+                        onAction={(patient, action) => triggerAction(patient, action, 'search')}
+                        isContactSwipeOpen={openContactSwipeId === p.id}
+                        setOpenContactSwipeId={setOpenContactSwipeId}
+                        onZaloAction={handlePatientZaloAction}
+                        onSwipeHintSeen={dismissContactSwipeHint}
+                      />
+                    ))}
+                  </ul>
+                  {canLoadMoreSearchResults && (
+                    <div className="px-5 py-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => setSearchVisibleCount((prev) => prev + FAB_SEARCH_VISIBLE_STEP)}
+                        className="w-full h-10 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100"
+                      >
+                        Xem thêm ({visibleSearchResults.length}/{searchResults.length})
+                      </button>
+                    </div>
+                  )}
+                  {shouldShowSearchContactHint && (
+                    <div className="px-5 pb-3">
+                      <div className="rounded-xl border border-blue-100 bg-blue-50 text-blue-900 px-3 py-2.5 flex items-start gap-2">
+                        <MessageCircle className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
+                        <div className="flex-1 text-xs leading-relaxed">
+                          Vuốt sang trái để gọi hoặc nhắn Zalo với khách hàng có số điện thoại.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -1434,21 +1508,43 @@ export default function MobileBottomNav() {
               )}
 
               {!searching && searchResults.length > 0 && (
-                <ul className="divide-y divide-gray-100">
-                  {searchResults.map((p, idx) => (
-                    <PatientRow
-                      key={p.id}
-                      p={p}
-                      defaultAction={defaultAction}
-                      onAction={(patient, action) => triggerAction(patient, action, 'search')}
-                      highlightFirst={idx === 0}
-                      isContactSwipeOpen={openContactSwipeId === p.id}
-                      setOpenContactSwipeId={setOpenContactSwipeId}
-                      onZaloAction={handlePatientZaloAction}
-                      onSwipeHintSeen={dismissContactSwipeHint}
-                    />
-                  ))}
-                </ul>
+                <>
+                  <ul className="divide-y divide-gray-100">
+                    {visibleSearchResults.map((p) => (
+                      <PatientRow
+                        key={p.id}
+                        p={p}
+                        defaultAction={defaultAction}
+                        onAction={(patient, action) => triggerAction(patient, action, 'search')}
+                        isContactSwipeOpen={openContactSwipeId === p.id}
+                        setOpenContactSwipeId={setOpenContactSwipeId}
+                        onZaloAction={handlePatientZaloAction}
+                        onSwipeHintSeen={dismissContactSwipeHint}
+                      />
+                    ))}
+                  </ul>
+                  {canLoadMoreSearchResults && (
+                    <div className="px-4 py-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => setSearchVisibleCount((prev) => prev + FAB_SEARCH_VISIBLE_STEP)}
+                        className="w-full h-10 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-medium active:scale-[0.99] transition-transform"
+                      >
+                        Xem thêm ({visibleSearchResults.length}/{searchResults.length})
+                      </button>
+                    </div>
+                  )}
+                  {shouldShowSearchContactHint && (
+                    <div className="px-4 pb-3">
+                      <div className="rounded-xl border border-blue-100 bg-blue-50 text-blue-900 px-3 py-2.5 flex items-start gap-2">
+                        <MessageCircle className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
+                        <div className="flex-1 text-xs leading-relaxed">
+                          Vuốt sang trái để gọi hoặc nhắn Zalo với khách hàng có số điện thoại.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -1725,7 +1821,6 @@ function PatientRow({
   p,
   defaultAction,
   onAction,
-  highlightFirst,
   isContactSwipeOpen,
   setOpenContactSwipeId,
   onZaloAction,
@@ -1736,7 +1831,6 @@ function PatientRow({
   p: PatientResult;
   defaultAction: DefaultAction;
   onAction: (p: PatientResult, action: DefaultAction) => void;
-  highlightFirst?: boolean;
   isContactSwipeOpen: boolean;
   setOpenContactSwipeId: (id: number | null) => void;
   onZaloAction: (p: PatientResult) => void;
@@ -1840,7 +1934,7 @@ function PatientRow({
 
   const cardTranslateX = dragging ? dragOffsetPx : (isContactSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0);
   return (
-    <li className={highlightFirst ? 'bg-blue-50/30' : ''}>
+    <li>
       <div className="relative overflow-hidden">
         <div className="absolute inset-y-0 right-0 w-[132px] grid grid-cols-2">
           <button
@@ -1874,9 +1968,7 @@ function PatientRow({
         </div>
 
         <div
-          className={`relative px-4 py-2.5 touch-pan-y ${dragging ? '' : 'transition-transform duration-200 ease-out'} ${
-            highlightFirst ? 'bg-blue-50/30' : 'bg-white'
-          }`}
+          className={`relative px-4 py-2.5 touch-pan-y ${dragging ? '' : 'transition-transform duration-200 ease-out'} bg-white`}
           style={{
             transform: `translateX(${cardTranslateX}px)`,
             willChange: 'transform',
@@ -1902,11 +1994,6 @@ function PatientRow({
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-sm font-semibold text-gray-800 truncate">{p.ten || '(không tên)'}</span>
               {p.namsinh && <span className="text-xs text-gray-500 shrink-0">• {p.namsinh}</span>}
-              {highlightFirst && (
-                <span className="ml-1.5 text-[9px] uppercase tracking-wider text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded font-bold">
-                  Enter
-                </span>
-              )}
             </div>
             {(p.dienthoai || p.diachi) && (
               <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5 min-w-0">
