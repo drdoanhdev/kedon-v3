@@ -273,6 +273,7 @@ export default function KeDon() {
   }, []);
   // Mobile tabs: 0 = Đơn thuốc, 1 = Đơn cũ, 2 = Diễn tiến
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
+  const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'dien_bien'>('don_cu');
   const [tabDragX, setTabDragX] = useState(0);
   const [tabDragging, setTabDragging] = useState(false);
   const tabStart = useRef<{ x: number; y: number; locked: 'h' | 'v' | null }>({ x: 0, y: 0, locked: null });
@@ -1782,120 +1783,139 @@ export default function KeDon() {
   {/* Desktop layout - Clinical 3-panel design (lg and up) */}
   <div className="hidden lg:flex h-[calc(100vh-76px)] overflow-hidden">
 
-    {/* ═══ LEFT SIDEBAR: Quá trình điều trị + Diễn tiến ═══ */}
+    {/* ═══ LEFT SIDEBAR: Tab Đơn cũ / Diễn biến ═══ */}
     <aside className="w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] flex flex-col overflow-hidden">
-      {/* Treatment History */}
       <div className="px-3 pt-3 pb-2">
-        <h2 className="font-bold text-gray-900 text-sm tracking-tight">Quá trình điều trị</h2>
-      </div>
-      <div className="flex-1 overflow-y-auto clinical-scrollbar px-1 pb-2">
-        {dsDonCu.length === 0 && (
-          <p className="text-xs text-gray-400 px-3">Chưa có đơn thuốc nào.</p>
-        )}
-        <div className="space-y-2 px-2">
-          {dsDonCu.map((don, idx) => (
-            <div
-              key={don.id}
-              className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
-              onClick={() => suaDon(don)}
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setDesktopLeftTab('don_cu')}
+              className={`px-2 py-1 text-xs font-bold rounded-md transition-colors ${desktopLeftTab === 'don_cu' ? 'text-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}
             >
-              <div className="flex items-baseline justify-between gap-1">
-                <p className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
-                  {new Date(don.ngay_kham).toLocaleString('vi-VN', {
-                    timeZone: 'Asia/Ho_Chi_Minh',
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false
-                  })}
-                </p>
-                <p className="text-xs font-bold text-gray-900 truncate flex-1">{don.chandoan || '—'}</p>
-                <p className="text-[11px] font-bold text-blue-600 whitespace-nowrap ml-1">{(don.tongtien / 1000).toFixed(0)}k</p>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-tight">
-                {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
-              </p>
-            </div>
-          ))}
+              Đơn cũ ({dsDonCu.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setDesktopLeftTab('dien_bien')}
+              className={`px-2 py-1 text-xs font-bold rounded-md transition-colors ${desktopLeftTab === 'dien_bien' ? 'text-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Diễn biến ({dsDienTien.length})
+            </button>
+          </div>
+          {desktopLeftTab === 'dien_bien' && (
+            <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+              <DialogTrigger asChild>
+                <button className="text-blue-600 hover:text-blue-800 text-xs font-bold px-2 py-1 rounded-md hover:bg-blue-50 transition-colors">
+                  + Thêm
+                </button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{editDienTien ? 'Sửa diễn tiến' : 'Thêm diễn tiến'}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Input
+                    type="date"
+                    value={editDienTien ? editDienTien.ngay.slice(0, 10) : newDienTien.ngay}
+                    onChange={(e) =>
+                      editDienTien
+                        ? setEditDienTien({ ...editDienTien, ngay: e.target.value })
+                        : setNewDienTien({ ...newDienTien, ngay: e.target.value })
+                    }
+                  />
+                  <Textarea
+                    rows={4}
+                    placeholder="Nhập diễn tiến bệnh..."
+                    value={editDienTien ? editDienTien.noidung : newDienTien.noidung}
+                    onChange={(e) =>
+                      editDienTien
+                        ? setEditDienTien({ ...editDienTien, noidung: e.target.value })
+                        : setNewDienTien({ ...newDienTien, noidung: e.target.value })
+                    }
+                  />
+                  <Button onClick={editDienTien ? suaDienTien : themDienTien}>
+                    {editDienTien ? 'Lưu' : 'Thêm'}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
-
-      {/* Divider */}
-      <div className="border-t border-gray-200 mx-3" />
-
-      {/* Diễn tiến bệnh */}
-      <div className="px-3 pt-2 flex justify-between items-center">
-        <h2 className="font-bold text-gray-900 text-sm tracking-tight">Diễn tiến bệnh</h2>
-        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-          <DialogTrigger asChild>
-            <button className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1 transition-colors">
-              + Thêm
-            </button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editDienTien ? 'Sửa diễn tiến' : 'Thêm diễn tiến'}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <Input
-                type="date"
-                value={editDienTien ? editDienTien.ngay.slice(0, 10) : newDienTien.ngay}
-                onChange={(e) =>
-                  editDienTien
-                    ? setEditDienTien({ ...editDienTien, ngay: e.target.value })
-                    : setNewDienTien({ ...newDienTien, ngay: e.target.value })
-                }
-              />
-              <Textarea
-                rows={4}
-                placeholder="Nhập diễn tiến bệnh..."
-                value={editDienTien ? editDienTien.noidung : newDienTien.noidung}
-                onChange={(e) =>
-                  editDienTien
-                    ? setEditDienTien({ ...editDienTien, noidung: e.target.value })
-                    : setNewDienTien({ ...newDienTien, noidung: e.target.value })
-                }
-              />
-              <Button onClick={editDienTien ? suaDienTien : themDienTien}>
-                {editDienTien ? 'Lưu' : 'Thêm'}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+      <div className="px-3 pb-2">
+        <div className="h-px bg-gradient-to-r from-transparent via-gray-300/80 to-transparent" />
       </div>
-      <div className="flex-1 overflow-y-auto clinical-scrollbar px-2 py-2 space-y-2 min-h-0 max-h-[50vh]">
-        {dsDienTien.length === 0 && (
-          <p className="text-xs text-gray-400">Chưa có diễn tiến nào.</p>
+
+      <div className="flex-1 overflow-y-auto clinical-scrollbar px-2 pb-2 space-y-1.5 min-h-0">
+        {desktopLeftTab === 'don_cu' && (
+          <>
+            {dsDonCu.length === 0 && (
+              <p className="text-xs text-gray-400 px-1">Chưa có đơn thuốc nào.</p>
+            )}
+            {dsDonCu.map((don) => (
+              <div
+                key={don.id}
+                className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border ${don.id === highlightId || don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-sm' : 'bg-transparent border-transparent hover:bg-white hover:border-blue-300 hover:shadow-sm'}`}
+                onClick={() => suaDon(don)}
+              >
+                <div className="flex items-baseline justify-between gap-1">
+                  <p className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
+                    {new Date(don.ngay_kham).toLocaleString('vi-VN', {
+                      timeZone: 'Asia/Ho_Chi_Minh',
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false
+                    })}
+                  </p>
+                  <p className="text-xs font-bold text-gray-900 truncate flex-1">{don.chandoan || '—'}</p>
+                  <p className="text-[11px] font-bold text-blue-600 whitespace-nowrap ml-1">{(don.tongtien / 1000).toFixed(0)}k</p>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-tight">
+                  {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
+                </p>
+              </div>
+            ))}
+          </>
         )}
-        {dsDienTien.map((d) => (
-          <div key={d.id} className="bg-white px-2.5 py-2 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md shadow-sm group transition-all">
-            <div className="flex justify-between items-start">
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-gray-500 uppercase">{format(new Date(d.ngay), 'dd/MM/yyyy')}</p>
-                <p className="text-xs text-gray-700 mt-0.5 line-clamp-2">{d.noidung}</p>
+
+        {desktopLeftTab === 'dien_bien' && (
+          <>
+            {dsDienTien.length === 0 && (
+              <p className="text-xs text-gray-400 px-1">Chưa có diễn tiến nào.</p>
+            )}
+            {dsDienTien.map((d) => (
+              <div key={d.id} className="px-2.5 py-2 rounded-xl border border-transparent bg-transparent hover:bg-white hover:border-blue-300 hover:shadow-sm group transition-all">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase">{format(new Date(d.ngay), 'dd/MM/yyyy')}</p>
+                    <p className="text-xs text-gray-700 mt-0.5 line-clamp-2">{d.noidung}</p>
+                  </div>
+                  <div className="flex gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                      onClick={() => {
+                        setEditDienTien(d);
+                        setOpenDialog(true);
+                      }}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button
+                      className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                      onClick={() => xoaDienTien(d.id)}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                  onClick={() => {
-                    setEditDienTien(d);
-                    setOpenDialog(true);
-                  }}
-                >
-                  <Pencil className="w-3 h-3" />
-                </button>
-                <button
-                  className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                  onClick={() => xoaDienTien(d.id)}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
+            ))}
+          </>
+        )}
       </div>
     </aside>
 
@@ -1966,9 +1986,6 @@ export default function KeDon() {
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setShowChandoanSuggestions(false);
-                } else if (e.key === 'Enter' && !showChandoanSuggestions) {
-                  e.preventDefault();
-                  searchDesktopRef.current?.focus();
                 } else if (e.key === 'ArrowDown' && showChandoanSuggestions) {
                   e.preventDefault();
                   setSelectedSuggestionIndex(prev =>
@@ -1977,9 +1994,16 @@ export default function KeDon() {
                 } else if (e.key === 'ArrowUp' && showChandoanSuggestions) {
                   e.preventDefault();
                   setSelectedSuggestionIndex(prev => prev > 0 ? prev - 1 : -1);
-                } else if (e.key === 'Enter' && showChandoanSuggestions && selectedSuggestionIndex >= 0) {
+                } else if (e.key === 'Enter') {
                   e.preventDefault();
-                  selectChandoanSuggestion(chandoanSuggestions[selectedSuggestionIndex]);
+                  if (showChandoanSuggestions && selectedSuggestionIndex >= 0) {
+                    selectChandoanSuggestion(chandoanSuggestions[selectedSuggestionIndex]);
+                  } else {
+                    // Keep the currently typed diagnosis even if suggestions are still visible.
+                    setShowChandoanSuggestions(false);
+                    setSelectedSuggestionIndex(-1);
+                    searchDesktopRef.current?.focus();
+                  }
                 }
               }}
               className="bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow"
@@ -2158,7 +2182,7 @@ export default function KeDon() {
                     <td className="px-2 py-1.5 border-b border-gray-200">
                       <Input
                         type="number"
-                        className="w-16 bg-white border border-gray-300 rounded-md px-2 py-0.5 h-7 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 with-spinner"
+                        className="w-16 h-7 text-sm text-center px-2 py-0.5 rounded-md border border-transparent bg-transparent shadow-none transition-all with-spinner hover:border-blue-200 hover:bg-white/80 group-hover:border-blue-200 group-hover:bg-white/80 focus-visible:bg-white focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500"
                         ref={(el) => { soluongRefs.current[idx] = el; }}
                         onFocus={(e) => { e.target.select(); setFocusedRowIdx(idx); }}
                         onBlurCapture={() => setFocusedRowIdx(-1)}
@@ -2205,7 +2229,7 @@ export default function KeDon() {
                     <td className="px-2 py-1.5 text-sm font-medium text-gray-900 border-b border-gray-200">{item.thuoc.donvitinh}</td>
                     <td className="px-2 py-1.5 border-b border-gray-200">
                       <Input
-                        className="bg-white border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 px-2 py-0.5 h-7 rounded-md text-sm text-gray-900 w-full transition-shadow"
+                        className="h-7 w-full text-sm text-gray-900 px-2 py-0.5 rounded-md border border-transparent bg-transparent shadow-none transition-all hover:border-blue-200 hover:bg-white/80 group-hover:border-blue-200 group-hover:bg-white/80 focus-visible:bg-white focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500"
                         ref={(el) => { cachdungRefs.current[idx] = el; }}
                         onFocus={(e) => { e.target.select(); setFocusedRowIdx(idx); }}
                         onBlurCapture={() => setFocusedRowIdx(-1)}
