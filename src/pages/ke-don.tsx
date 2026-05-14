@@ -281,8 +281,9 @@ export default function KeDon() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const onTabTouchStart = (e: React.TouchEvent) => {
     const t = e.target as HTMLElement;
-    // Bỏ qua nếu touch bắt đầu trong vùng không cho swipe-tab (dòng thuốc, input, textarea, button…)
-    if (t.closest('input,textarea,select,button,a,[data-no-tab-swipe]')) return;
+    // Chỉ chặn ở các vùng đã đánh dấu no-swipe hoặc các nút/link hành động.
+    // Cho phép vuốt tab ngay cả khi bắt đầu từ input/textarea để không bị "kẹt" ở vùng nhập liệu.
+    if (t.closest('button,a,[data-no-tab-swipe]')) return;
     tabActive.current = true;
     tabStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
@@ -297,6 +298,8 @@ export default function KeDon() {
       }
     }
     if (tabStart.current.locked === 'h') {
+      // Ưu tiên gesture ngang để chuyển tab thay vì scroll/select text.
+      e.preventDefault();
       let next = dx;
       if (mobileTab === 0 && next > 0) next = next * 0.3;
       if (mobileTab === 2 && next < 0) next = next * 0.3;
