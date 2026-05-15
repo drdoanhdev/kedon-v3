@@ -10,7 +10,7 @@ import { Textarea } from '../components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle } from 'lucide-react';
+import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle, ScanLine } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
 import ThiLucInput from '../components/ThiLucInput';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -51,6 +51,7 @@ interface HangTrong {
 interface GongKinh {
   id: number;
   ten_gong: string;
+  ma_gong?: string | null;
   gia_nhap: number;
   gia_ban: number;
 }
@@ -221,6 +222,10 @@ function getHenCountdown(dateStr: string, trangThai: string): { text: string; cl
   return { text: `Còn ${diff} ngày`, className: 'text-gray-500 bg-gray-50' };
 }
 
+type DetectedBarcodeValue = { rawValue?: string };
+type BarcodeDetectorLike = { detect: (source: HTMLVideoElement) => Promise<DetectedBarcodeValue[]> };
+type BarcodeDetectorCtorLike = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
+
 export default function KeDonKinh() {
   const { confirm } = useConfirm();
   const searchParams = useSearchParams();
@@ -258,6 +263,14 @@ export default function KeDonKinh() {
   // Edit patient dialog state
   const [openEditPatient, setOpenEditPatient] = useState(false);
   const [patientForm, setPatientForm] = useState<BenhNhan | null>(null);
+  const [openFrameBarcodeScanner, setOpenFrameBarcodeScanner] = useState(false);
+  const [barcodeScannerBusy, setBarcodeScannerBusy] = useState(false);
+  const [barcodeScannerError, setBarcodeScannerError] = useState('');
+  const [manualFrameBarcode, setManualFrameBarcode] = useState('');
+  const frameBarcodeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const frameBarcodeStreamRef = useRef<MediaStream | null>(null);
+  const frameBarcodeTimerRef = useRef<number | null>(null);
+  const frameBarcodeDebounceRef = useRef(0);
 
   const lyDoOptions = ['Lấy kính', 'Kiểm tra kính mới', 'Tái khám', 'Khác'];
   const addDaysToToday = (days: number) => {
@@ -337,6 +350,21 @@ export default function KeDonKinh() {
     setTabDragX(0);
     tabSwipeStart.current.locked = null;
   };
+
+  const stopFrameBarcodeScanner = useCallback(() => {
+    if (frameBarcodeTimerRef.current !== null) {
+      window.clearInterval(frameBarcodeTimerRef.current);
+      frameBarcodeTimerRef.current = null;
+    }
+    if (frameBarcodeStreamRef.current) {
+      frameBarcodeStreamRef.current.getTracks().forEach((track) => track.stop());
+      frameBarcodeStreamRef.current = null;
+    }
+    if (frameBarcodeVideoRef.current) {
+      frameBarcodeVideoRef.current.srcObject = null;
+    }
+    setBarcodeScannerBusy(false);
+  }, []);
 
   const fetchHenKham = useCallback(async () => {
     if (!benhnhanid) return;
@@ -809,26 +837,178 @@ export default function KeDonKinh() {
   };
 
   // Auto-populate lens prices when frame is selected
-  const handleFrameChange = (value: string) => {
+  const handleFrameChange = useCallback((value: string) => {
     const selectedFrame = gongKinhs.find(g => g.ten_gong === value);
     if (selectedFrame) {
-      setForm({
-        ...form,
+      setForm((prev) => ({
+        ...prev,
         ten_gong: value,
         ax_mt: selectedFrame.gia_nhap, // legacy
         gianhap_gong: selectedFrame.gia_nhap,
         giagong: selectedFrame.gia_ban // Giá bán gọng
-      });
+      }));
     } else {
-      setForm({
-        ...form,
+      setForm((prev) => ({
+        ...prev,
         ten_gong: value,
         ax_mt: 0,
         gianhap_gong: 0,
         giagong: 0
-      });
+      }));
     }
-  };
+  }, [gongKinhs]);
+
+  const applyFrameByBarcode = useCallback((rawValue: string): string | null => {
+    const normalized = rawValue.trim().toLowerCase();
+    if (!normalized) return null;
+
+    const matchedByCode = gongKinhs.find((g) => (g.ma_gong || '').trim().toLowerCase() === normalized);
+    const matchedByName = matchedByCode ? null : gongKinhs.find((g) => g.ten_gong.trim().toLowerCase() === normalized);
+    const matchedFrame = matchedByCode || matchedByName;
+    if (!matchedFrame) return null;
+
+    handleFrameChange(matchedFrame.ten_gong);
+    setFrameMode('gong_cu_the');
+    return matchedFrame.ten_gong;
+  }, [gongKinhs, handleFrameChange]);
+
+  const openFrameBarcodeDialog = useCallback(() => {
+    setFrameMode('gong_cu_the');
+    setManualFrameBarcode('');
+    setBarcodeScannerError('');
+    frameBarcodeDebounceRef.current = 0;
+    setOpenFrameBarcodeScanner(true);
+  }, []);
+
+  const submitManualFrameBarcode = useCallback(() => {
+    const value = manualFrameBarcode.trim();
+    if (!value) {
+      toast.error('Vui lòng nhập mã gọng');
+      return;
+    }
+
+    const matchedName = applyFrameByBarcode(value);
+    if (!matchedName) {
+      setBarcodeScannerError(`Không tìm thấy gọng có mã: ${value}`);
+      toast.error(`Không tìm thấy gọng có mã: ${value}`);
+      return;
+    }
+
+    toast.success(`Đã chọn gọng: ${matchedName}`);
+    setOpenFrameBarcodeScanner(false);
+  }, [manualFrameBarcode, applyFrameByBarcode]);
+
+  useEffect(() => {
+    if (!openFrameBarcodeScanner) {
+      stopFrameBarcodeScanner();
+      return;
+    }
+
+    let cancelled = false;
+
+    const waitForVideoElement = async (): Promise<HTMLVideoElement | null> => {
+      for (let i = 0; i < 20; i += 1) {
+        if (frameBarcodeVideoRef.current) return frameBarcodeVideoRef.current;
+        // Dialog mount có thể đến trễ 1-2 frame sau khi set open=true.
+        // Chờ ngắn để chắc chắn ref đã sẵn sàng rồi mới gắn stream.
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+      }
+      return null;
+    };
+
+    const startScanner = async () => {
+      setBarcodeScannerError('');
+      setBarcodeScannerBusy(true);
+
+      const videoEl = await waitForVideoElement();
+      if (!videoEl) {
+        setBarcodeScannerError('Không khởi tạo được khung camera. Vui lòng đóng và mở lại hộp quét.');
+        setBarcodeScannerBusy(false);
+        return;
+      }
+
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Thiết bị không hỗ trợ camera để quét mã.');
+        }
+
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false,
+          });
+        } catch {
+          // Fallback camera bất kỳ nếu camera sau không khả dụng trên thiết bị.
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        frameBarcodeStreamRef.current = stream;
+        videoEl.setAttribute('playsinline', 'true');
+        videoEl.muted = true;
+        videoEl.autoplay = true;
+        videoEl.srcObject = stream;
+        try {
+          await videoEl.play();
+        } catch {
+          setBarcodeScannerError('Camera đã cấp quyền nhưng preview chưa chạy. Hãy chạm vào khung camera để tiếp tục.');
+        }
+
+        const BarcodeDetectorCtor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtorLike }).BarcodeDetector;
+        if (!BarcodeDetectorCtor) {
+          setBarcodeScannerError('Thiết bị chưa hỗ trợ quét tự động. Bạn có thể nhập mã thủ công bên dưới.');
+          return;
+        }
+
+        const detector = new BarcodeDetectorCtor({
+          formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code'],
+        });
+
+        frameBarcodeTimerRef.current = window.setInterval(async () => {
+          try {
+            if (!frameBarcodeVideoRef.current || frameBarcodeVideoRef.current.readyState < 2) return;
+            const detected = await detector.detect(frameBarcodeVideoRef.current);
+            const rawValue = typeof detected?.[0]?.rawValue === 'string' ? detected[0].rawValue.trim() : '';
+            if (!rawValue) return;
+
+            const now = Date.now();
+            if (now - frameBarcodeDebounceRef.current < 1200) return;
+            frameBarcodeDebounceRef.current = now;
+
+            setManualFrameBarcode(rawValue);
+            const matchedName = applyFrameByBarcode(rawValue);
+            if (matchedName) {
+              toast.success(`Đã chọn gọng: ${matchedName}`);
+              setOpenFrameBarcodeScanner(false);
+              return;
+            }
+
+            setBarcodeScannerError(`Không tìm thấy gọng có mã: ${rawValue}`);
+          } catch {
+            // Ignore transient detect errors while camera frame is initializing.
+          }
+        }, 320);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        setBarcodeScannerError(message || 'Không mở được camera quét mã.');
+      } finally {
+        if (!cancelled) setBarcodeScannerBusy(false);
+      }
+    };
+
+    void startScanner();
+
+    return () => {
+      cancelled = true;
+      stopFrameBarcodeScanner();
+    };
+  }, [openFrameBarcodeScanner, applyFrameByBarcode, stopFrameBarcodeScanner]);
 
   // Xử lý chọn nhóm giá gọng
   const handleNhomGiaChange = (nhomId: string) => {
@@ -1760,15 +1940,24 @@ export default function KeDonKinh() {
                         {frameMode === 'nhom_gia' ? 'Nhóm' : 'Gọng'}
                       </label>
                       {frameMode === 'gong_cu_the' ? (
-                        <input
-                          list="gongkinh-list"
-                          value={form.ten_gong || ''}
-                          onChange={(e) => handleFrameChange(e.target.value)}
-                          className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Chọn loại gọng"
-                          data-nav="presc"
-                          data-order="11"
-                        />
+                        <>
+                          <input
+                            list="gongkinh-list"
+                            value={form.ten_gong || ''}
+                            onChange={(e) => handleFrameChange(e.target.value)}
+                            className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Chọn loại gọng"
+                            data-nav="presc"
+                            data-order="11"
+                          />
+                          <button
+                            type="button"
+                            onClick={openFrameBarcodeDialog}
+                            className="h-9 px-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-bold inline-flex items-center gap-1 shrink-0"
+                          >
+                            <ScanLine className="w-3.5 h-3.5" /> Quét
+                          </button>
+                        </>
                       ) : (
                         <select
                           className="h-9 bg-white border border-gray-300 rounded-lg px-2 text-sm font-medium flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -2513,6 +2702,69 @@ export default function KeDonKinh() {
           </div>
         </aside>
       </div>
+
+      <Dialog
+        open={openFrameBarcodeScanner}
+        onOpenChange={(open) => {
+          setOpenFrameBarcodeScanner(open);
+          if (!open) stopFrameBarcodeScanner();
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Quét mã vạch gọng</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative aspect-video overflow-hidden rounded-lg border border-gray-200 bg-black">
+              <video
+                ref={frameBarcodeVideoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+                autoPlay
+                onClick={() => {
+                  frameBarcodeVideoRef.current?.play().catch(() => {});
+                }}
+              />
+              {barcodeScannerBusy && (
+                <div className="absolute inset-0 flex items-center justify-center text-xs text-white/90 bg-black/40">
+                  Đang mở camera...
+                </div>
+              )}
+            </div>
+
+            {barcodeScannerError && (
+              <p className="text-xs text-red-600">{barcodeScannerError}</p>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-frame-barcode">Nhập mã thủ công</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="manual-frame-barcode"
+                  value={manualFrameBarcode}
+                  onChange={(e) => setManualFrameBarcode(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      submitManualFrameBarcode();
+                    }
+                  }}
+                  placeholder="VD: GK001"
+                />
+                <Button type="button" onClick={submitManualFrameBarcode} className="shrink-0">
+                  Áp dụng
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-500">
+              Quét hoặc nhập mã gọng để tự điền loại gọng vào đơn.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Patient Dialog */}
       <Dialog open={openEditPatient} onOpenChange={setOpenEditPatient}>
         <DialogContent>
