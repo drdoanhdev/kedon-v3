@@ -281,9 +281,9 @@ export default function KeDon() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const onTabTouchStart = (e: React.TouchEvent) => {
     const t = e.target as HTMLElement;
-    // Chỉ chặn ở các vùng đã đánh dấu no-swipe hoặc các nút/link hành động.
-    // Cho phép vuốt tab ngay cả khi bắt đầu từ input/textarea để không bị "kẹt" ở vùng nhập liệu.
-    if (t.closest('button,a,[data-no-tab-swipe]')) return;
+    // Chỉ chặn ở các vùng đã đánh dấu rõ ràng là no-swipe (vd: dòng thuốc có swipe riêng).
+    // Cho phép bắt đầu vuốt tab từ mọi vùng còn lại, kể cả trên các nút hành động.
+    if (t.closest('[data-no-tab-swipe]')) return;
     tabActive.current = true;
     tabStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, locked: null };
   };
@@ -1640,7 +1640,7 @@ export default function KeDon() {
           </div>
 
           {/* === Panel 1: Đơn cũ — mỗi đơn là 1 card độc lập === */}
-          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-2">
+          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-0.5">
             {dsDonCu.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">Chưa có đơn thuốc nào.</div>
             ) : (
@@ -1658,18 +1658,20 @@ export default function KeDon() {
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-blue-600" />
                         <p className="text-sm font-bold text-gray-800">
-                          {new Date(don.ngay_kham).toLocaleString('vi-VN', {
+                          {new Date(don.ngay_kham).toLocaleDateString('vi-VN', {
                             timeZone: 'Asia/Ho_Chi_Minh',
                             day: '2-digit',
                             month: '2-digit',
                             year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: false,
                           })}
                         </p>
                       </div>
-                      <p className="text-sm font-extrabold text-blue-700 tabular-nums">{don.tongtien.toLocaleString()}đ</p>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <p className="text-sm font-extrabold text-blue-700 tabular-nums">{don.tongtien.toLocaleString()}đ</p>
+                        {(don.tongtien - (don.sotien_da_thanh_toan || 0)) > 0 && (
+                          <p className="text-xs font-semibold text-red-600">Nợ {((don.tongtien - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</p>
+                        )}
+                      </div>
                     </div>
                     {/* Chẩn đoán */}
                     {don.chandoan && (
@@ -1856,32 +1858,36 @@ export default function KeDon() {
             {dsDonCu.length === 0 && (
               <p className="text-xs text-gray-400 px-1">Chưa có đơn thuốc nào.</p>
             )}
+            <div className="space-y-0.5">
             {dsDonCu.map((don) => (
               <div
                 key={don.id}
                 className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border ${don.id === highlightId || don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-sm' : 'bg-transparent border-transparent hover:bg-white hover:border-blue-300 hover:shadow-sm'}`}
                 onClick={() => suaDon(don)}
               >
-                <div className="flex items-baseline justify-between gap-1">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
                   <p className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
-                    {new Date(don.ngay_kham).toLocaleString('vi-VN', {
+                    {new Date(don.ngay_kham).toLocaleDateString('vi-VN', {
                       timeZone: 'Asia/Ho_Chi_Minh',
                       day: '2-digit',
                       month: '2-digit',
                       year: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false
                     })}
                   </p>
                   <p className="text-xs font-bold text-gray-900 truncate flex-1">{don.chandoan || '—'}</p>
-                  <p className="text-[11px] font-bold text-blue-600 whitespace-nowrap ml-1">{(don.tongtien / 1000).toFixed(0)}k</p>
+                  <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                    <p className="text-[11px] font-bold text-blue-600">{(don.tongtien / 1000).toFixed(0)}k</p>
+                    {(don.tongtien - (don.sotien_da_thanh_toan || 0)) > 0 && (
+                      <p className="text-[10px] font-semibold text-red-600">Nợ {(((don.tongtien - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0))}k</p>
+                    )}
+                  </div>
                 </div>
                 <p className="text-[11px] text-gray-500 leading-tight">
                   {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
                 </p>
               </div>
             ))}
+            </div>
           </>
         )}
 

@@ -119,7 +119,7 @@ const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
     {items.length === 0 ? (
       <p className="text-xs text-gray-500 px-1 lg:px-3">Chưa có đơn kính nào</p>
     ) : (
-      <div className="space-y-2 lg:overflow-y-auto lg:flex-1 lg:min-h-0 lg:px-3 lg:pb-3">
+      <div className="space-y-0.5 lg:overflow-y-auto lg:flex-1 lg:min-h-0 lg:px-3 lg:pb-3">
         {items.map((don) => (
           <div
             key={don.id}
@@ -251,6 +251,8 @@ export default function KeDonKinh() {
   const [activeDonKinhMediaId, setActiveDonKinhMediaId] = useState<number | null>(null);
   // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ (lịch sử), 2 = Lịch hẹn
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
+  // Desktop left sidebar tab: 'don_cu' or 'lich_hen'
+  const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'lich_hen'>('don_cu');
   // Ref cho datetime-local trên mobile (để custom Calendar button mở picker)
   const mobileNgayKhamRef = useRef<HTMLInputElement | null>(null);
   // Edit patient dialog state
@@ -289,8 +291,9 @@ export default function KeDonKinh() {
   const tabViewportRef = useRef<HTMLDivElement | null>(null);
   const onTabTouchStart = (e: React.TouchEvent) => {
     const t = e.target as HTMLElement;
-    // Bỏ qua nếu touch bắt đầu trong vùng input/textarea/select/button/link/[data-no-tab-swipe]
-    if (t.closest('input,textarea,select,button,a,[data-no-tab-swipe]')) return;
+    // Chỉ chặn ở vùng đã đánh dấu no-swipe (nếu có vùng có gesture riêng).
+    // Cho phép bắt đầu vuốt tab ngay cả khi chạm vào input/button để trải nghiệm đồng nhất với kê đơn thuốc.
+    if (t.closest('[data-no-tab-swipe]')) return;
     tabSwipeActive.current = true;
     setTabDragging(false);
     setTabDragX(0);
@@ -307,6 +310,8 @@ export default function KeDonKinh() {
       }
     }
     if (tabSwipeStart.current.locked === 'h') {
+      // Ưu tiên gesture ngang chuyển tab thay vì scroll/chọn text.
+      e.preventDefault();
       let next = dx;
       if (mobileTab === 0 && next > 0) next = next * 0.3;
       if (mobileTab === 2 && next < 0) next = next * 0.3;
@@ -1139,87 +1144,115 @@ export default function KeDonKinh() {
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
       <div className="flex flex-col -mt-10 h-[calc(100dvh-68px)] overflow-hidden lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
         
-        {/* History sidebar - Hidden on mobile, shown on desktop */}
+        {/* Left sidebar - Hidden on mobile, shown on desktop (tab layout) */}
         <aside className="hidden lg:flex lg:flex-col w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
-          {/* Lịch sử đơn kính: 4/7 chiều cao */}
-          <div className="min-h-0 flex flex-col" style={{ flex: '4 1 0%' }}>
-            <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
-          </div>
-            
-          {/* Lịch hẹn: 3/7 chiều cao */}
-          <div className="min-h-0 flex flex-col border-t border-gray-200" style={{ flex: '3 1 0%' }}>
-            <div className="px-3 pt-2 flex-shrink-0">
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1">
-                  <CalendarDays className="w-4 h-4 text-blue-600" /> Lịch hẹn
-                  {henKhamStats.cho > 0 && <span className="ml-1 text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-bold">{henKhamStats.cho}</span>}
-                  {henKhamStats.qua_han > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">{henKhamStats.qua_han}</span>}
-                </h2>
+          <div className="px-3 pt-3 pb-2 border-b border-gray-200 bg-white/60">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
                 <button
-                  className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-0.5 transition-colors"
-                  onClick={() => { setEditHenForm(null); setAddHenForm({ ngay_hen: addDaysToToday(7), gio_hen: '', ly_do: 'Lấy kính', ghichu: '' }); setOpenHenDialog(true); }}
+                  type="button"
+                  onClick={() => setDesktopLeftTab('don_cu')}
+                  className={`relative h-8 px-0 text-xs font-bold transition-colors ${desktopLeftTab === 'don_cu' ? 'text-blue-700' : 'text-gray-600 hover:text-gray-800'}`}
                 >
-                  + Thêm
+                  Đơn cũ
+                  {donKinhs.length > 0 && (
+                    <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">{donKinhs.length}</span>
+                  )}
+                  <span className={`absolute bottom-0 left-0 right-0 h-[2px] rounded-full transition-colors ${desktopLeftTab === 'don_cu' ? 'bg-blue-500/45' : 'bg-transparent'}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesktopLeftTab('lich_hen')}
+                  className={`relative h-8 px-0 text-xs font-bold transition-colors ${desktopLeftTab === 'lich_hen' ? 'text-blue-700' : 'text-gray-600 hover:text-gray-800'}`}
+                >
+                  Lịch hẹn
+                  {(henKhamStats.cho > 0 || henKhamStats.qua_han > 0) && (
+                    <span className="ml-1 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] text-yellow-700">{henKhamStats.cho + henKhamStats.qua_han}</span>
+                  )}
+                  <span className={`absolute bottom-0 left-0 right-0 h-[2px] rounded-full transition-colors ${desktopLeftTab === 'lich_hen' ? 'bg-blue-500/45' : 'bg-transparent'}`} />
                 </button>
               </div>
-            </div>
-            <div className="overflow-y-auto flex-1 min-h-0 px-3 pb-2">
-              {dsHenKham.length === 0 ? (
-                <p className="text-xs text-gray-400 pb-3">Chưa có lịch hẹn nào</p>
-              ) : (
-                <div className="space-y-1.5 pb-3">
-                  {dsHenKham.map(hen => {
-                    const st = TRANG_THAI_HEN[hen.trang_thai] || TRANG_THAI_HEN.cho;
-                    const countdown = getHenCountdown(hen.ngay_hen, hen.trang_thai);
-                    return (
-                      <div key={hen.id} className={`bg-white px-2.5 py-2 rounded-xl border shadow-sm group transition-all hover:border-blue-300 hover:shadow-md ${hen.trang_thai === 'qua_han' ? 'border-red-200' : 'border-gray-200'}`}>
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1 flex-wrap mb-0.5">
-                              <span className="text-[11px] font-bold text-gray-700">{formatNgayHen(hen.ngay_hen)}</span>
-                              {hen.gio_hen && <span className="text-[10px] text-gray-400">{hen.gio_hen.substring(0, 5)}</span>}
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>{st.label}</span>
-                            </div>
-                            {countdown && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium inline-block mb-0.5 ${countdown.className}`}>{countdown.text}</span>}
-                            <p className="text-[11px] text-gray-600 truncate">{hen.ly_do || ''}{hen.ghichu ? ` · ${hen.ghichu}` : ''}</p>
-                          </div>
-                          <div className="flex gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                            {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
-                              <button className="p-1 text-green-500 hover:text-green-700 transition-colors" title="Đã đến" onClick={() => updateHenTrangThai(hen.id, 'da_den')}>
-                                <Check className="w-3 h-3" />
-                              </button>
-                            )}
-                            <button className="p-1 text-gray-400 hover:text-blue-600 transition-colors" title="Sửa" onClick={() => { setEditHenForm({ id: hen.id, ngay_hen: hen.ngay_hen, gio_hen: hen.gio_hen?.substring(0, 5) || '', ly_do: hen.ly_do || '', ghichu: hen.ghichu || '' }); setOpenHenDialog(true); }}>
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Xóa" onClick={() => deleteHenKham(hen.id)}>
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        {/* Quick reschedule for pending/overdue */}
-                        {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
-                          <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-[9px] text-gray-400">Dời:</span>
-                            {[7, 14, 30].map(d => (
-                              <button key={d} onClick={() => rescheduleHen(hen.id, d)} className="px-1 py-0.5 text-[9px] bg-purple-50 text-purple-600 rounded hover:bg-purple-100 font-medium">
-                                +{d < 30 ? `${d}d` : '1th'}
-                              </button>
-                            ))}
-                            {hen.trang_thai === 'cho' && (
-                              <button className="px-1 py-0.5 text-[9px] bg-red-50 text-red-500 rounded hover:bg-red-100 font-medium" onClick={() => updateHenTrangThai(hen.id, 'huy')}>
-                                Hủy
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <button
+                className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-0.5 transition-colors"
+                onClick={() => { setDesktopLeftTab('lich_hen'); setEditHenForm(null); setAddHenForm({ ngay_hen: addDaysToToday(7), gio_hen: '', ly_do: 'Lấy kính', ghichu: '' }); setOpenHenDialog(true); }}
+              >
+                + Thêm
+              </button>
             </div>
           </div>
+
+          {desktopLeftTab === 'don_cu' ? (
+            <div className="min-h-0 flex-1">
+              <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 flex flex-col">
+              <div className="px-3 pt-2 flex-shrink-0">
+                <div className="flex items-center gap-1 mb-2">
+                  <h2 className="font-bold text-gray-900 text-sm tracking-tight flex items-center gap-1">
+                    <CalendarDays className="w-4 h-4 text-blue-600" /> Lịch hẹn
+                    {henKhamStats.cho > 0 && <span className="ml-1 text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-bold">{henKhamStats.cho}</span>}
+                    {henKhamStats.qua_han > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">{henKhamStats.qua_han}</span>}
+                  </h2>
+                </div>
+              </div>
+              <div className="overflow-y-auto flex-1 min-h-0 px-3 pb-3">
+                {dsHenKham.length === 0 ? (
+                  <p className="text-xs text-gray-400 pb-3">Chưa có lịch hẹn nào</p>
+                ) : (
+                  <div className="space-y-1.5 pb-3">
+                    {dsHenKham.map(hen => {
+                      const st = TRANG_THAI_HEN[hen.trang_thai] || TRANG_THAI_HEN.cho;
+                      const countdown = getHenCountdown(hen.ngay_hen, hen.trang_thai);
+                      return (
+                        <div key={hen.id} className={`bg-white px-2.5 py-2 rounded-xl border shadow-sm group transition-all hover:border-blue-300 hover:shadow-md ${hen.trang_thai === 'qua_han' ? 'border-red-200' : 'border-gray-200'}`}>
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1 flex-wrap mb-0.5">
+                                <span className="text-[11px] font-bold text-gray-700">{formatNgayHen(hen.ngay_hen)}</span>
+                                {hen.gio_hen && <span className="text-[10px] text-gray-400">{hen.gio_hen.substring(0, 5)}</span>}
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>{st.label}</span>
+                              </div>
+                              {countdown && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium inline-block mb-0.5 ${countdown.className}`}>{countdown.text}</span>}
+                              <p className="text-[11px] text-gray-600 truncate">{hen.ly_do || ''}{hen.ghichu ? ` · ${hen.ghichu}` : ''}</p>
+                            </div>
+                            <div className="flex gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                              {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
+                                <button className="p-1 text-green-500 hover:text-green-700 transition-colors" title="Đã đến" onClick={() => updateHenTrangThai(hen.id, 'da_den')}>
+                                  <Check className="w-3 h-3" />
+                                </button>
+                              )}
+                              <button className="p-1 text-gray-400 hover:text-blue-600 transition-colors" title="Sửa" onClick={() => { setEditHenForm({ id: hen.id, ngay_hen: hen.ngay_hen, gio_hen: hen.gio_hen?.substring(0, 5) || '', ly_do: hen.ly_do || '', ghichu: hen.ghichu || '' }); setOpenHenDialog(true); }}>
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Xóa" onClick={() => deleteHenKham(hen.id)}>
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                          {(hen.trang_thai === 'cho' || hen.trang_thai === 'qua_han') && (
+                            <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="text-[9px] text-gray-400">Dời:</span>
+                              {[7, 14, 30].map(d => (
+                                <button key={d} onClick={() => rescheduleHen(hen.id, d)} className="px-1 py-0.5 text-[9px] bg-purple-50 text-purple-600 rounded hover:bg-purple-100 font-medium">
+                                  +{d < 30 ? `${d}d` : '1th'}
+                                </button>
+                              ))}
+                              {hen.trang_thai === 'cho' && (
+                                <button className="px-1 py-0.5 text-[9px] bg-red-50 text-red-500 rounded hover:bg-red-100 font-medium" onClick={() => updateHenTrangThai(hen.id, 'huy')}>
+                                  Hủy
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </aside>
 
         {/* Main content area */}

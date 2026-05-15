@@ -11,6 +11,7 @@ import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Build
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
+import GongKinhMediaPanel from '@/components/GongKinhMediaPanel';
 
 // Interfaces
 interface Thuoc {
@@ -2060,6 +2061,9 @@ function DanhMucPage() {
                   rows={2}
                 />
               </div>
+              {isEditingGongKinh && gongKinhForm.id && (
+                <GongKinhMediaPanel gongKinhId={gongKinhForm.id} className="mt-4" />
+              )}
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setOpenGongKinhDialog(false)}>
