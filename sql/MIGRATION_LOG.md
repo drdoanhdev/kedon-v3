@@ -188,6 +188,7 @@ Theo dõi trạng thái migration trên từng database.
 | #     | File | Mô tả | Optigo | Sáng Mắt |
 |-------|------|-------|:------:|:--------:|
 | V070  | V070_gong_kinh_media.sql | Tạo `gong_kinh_media` (max 3 loại ảnh: mặt trước, trái, phải) + RLS + bucket Supabase | | |
+| V071  | V071_gong_kinh_media_bucket_and_trigger.sql | Bổ sung trigger `updated_at` + đảm bảo bucket `gong-kinh-media` tồn tại (upsert) cho các DB đã chạy V070 | | |
 
 ---
 

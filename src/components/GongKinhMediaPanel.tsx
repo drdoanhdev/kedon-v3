@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
@@ -8,7 +8,6 @@ import {
   ImagePlus,
   Loader2,
   Trash2,
-  X,
 } from 'lucide-react';
 
 type ImageKind = 'mat_truoc' | 'mat_trai' | 'mat_phai';
@@ -50,12 +49,6 @@ const COMPRESS_QUALITY = 0.72;
 const COMPRESS_MIN_BYTES = 200 * 1024;
 const COMPRESS_TARGET_MAX_BYTES = 350 * 1024;
 const COMPRESS_MIME = 'image/webp';
-
-const IMAGE_KINDS: { key: ImageKind; label: string }[] = [
-  { key: 'mat_truoc', label: 'Mặt trước' },
-  { key: 'mat_trai', label: 'Mặt trái' },
-  { key: 'mat_phai', label: 'Mặt phải' },
-];
 
 async function compressImageFile(file: File): Promise<File> {
   if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') {
@@ -160,15 +153,22 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
   const captureInputRef = useRef<HTMLInputElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  const itemsByKind = useCallback(() => {
-    const map: Partial<Record<ImageKind, GongKinhMediaItem>> = {};
-    for (const item of items) {
-      if (item.status === 'uploaded') {
-        map[item.loai_anh] = item;
-      }
-    }
-    return map;
-  }, [items]);
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => {
+      const tA = new Date(a.created_at).getTime();
+      const tB = new Date(b.created_at).getTime();
+      if (Number.isFinite(tA) && Number.isFinite(tB) && tA !== tB) return tA - tB;
+      return a.id - b.id;
+    }),
+    [items]
+  );
+
+  const activeCount = useMemo(
+    () => items.filter((item) => item.status !== 'failed').length,
+    [items]
+  );
+
+  const canAddMore = Boolean(gongKinhId) && activeCount < MAX_MEDIA_ITEMS;
 
   const refreshMedia = useCallback(async () => {
     if (!gongKinhId) {
@@ -204,7 +204,7 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
     setBusyCount((prev) => Math.max(0, prev + delta));
   };
 
-  const uploadSingleFile = async (file: File, imageKind: ImageKind, sourceDevice: 'camera' | 'file_picker') => {
+  const uploadSingleFile = async (file: File, sourceDevice: 'camera' | 'file_picker') => {
     if (!gongKinhId) {
       toast.error('Cần chọn gọng trước khi tải ảnh');
       return;
@@ -216,7 +216,6 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
     try {
       const createRes = await axios.post<CreateMediaResponse>('/api/gong-kinh/media', {
         gong_kinh_id: gongKinhId,
-        loai_anh: imageKind,
         mime_type: uploadFile.type || 'image/jpeg',
         size_bytes: uploadFile.size,
         original_filename: uploadFile.name,
@@ -254,7 +253,7 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
         });
       }
 
-      toast.success(`Đã tải ảnh ${imageKind}`);
+      toast.success('Đã tải ảnh');
     } catch (error: unknown) {
       if (mediaId) {
         await axios.patch('/api/gong-kinh/media', { id: mediaId, status: 'failed' }).catch(() => {});
@@ -263,33 +262,22 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
       const message = axios.isAxiosError(error)
         ? (error.response?.data?.message || error.message)
         : (error instanceof Error ? error.message : String(error));
-      
-      if (message.includes('Đã có ảnh')) {
-        toast.error(`Đã có ảnh ${imageKind}. Xóa cũ trước khi thêm cái mới.`);
-      } else {
-        toast.error(`Không tải được ảnh: ${message}`);
-      }
+
+      toast.error(`Không tải được ảnh: ${message}`);
     }
   };
 
-  const handleCapture = (imageKind: ImageKind) => {
+  const handleCapture = () => {
     if (!gongKinhId || busyCount > 0) return;
     captureInputRef.current?.click();
-    // Lưu imageKind vào dataset để dùng trong onChange
-    if (captureInputRef.current) {
-      (captureInputRef.current as any).dataset.imageKind = imageKind;
-    }
   };
 
-  const handleUpload = (imageKind: ImageKind) => {
+  const handleUpload = () => {
     if (!gongKinhId || busyCount > 0) return;
     uploadInputRef.current?.click();
-    if (uploadInputRef.current) {
-      (uploadInputRef.current as any).dataset.imageKind = imageKind;
-    }
   };
 
-  const handleFiles = async (fileList: FileList | null, sourceDevice: 'camera' | 'file_picker', imageKind: ImageKind) => {
+  const handleFiles = async (fileList: FileList | null, sourceDevice: 'camera' | 'file_picker') => {
     if (!fileList || fileList.length === 0) return;
     if (!gongKinhId) {
       toast.error('Cần chọn gọng trước khi tải ảnh');
@@ -302,10 +290,24 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
       return;
     }
 
-    const file = imageFiles[0];
-    bumpBusyCount(1);
-    await uploadSingleFile(file, imageKind, sourceDevice);
-    bumpBusyCount(-1);
+    const remaining = Math.max(0, MAX_MEDIA_ITEMS - activeCount);
+    if (remaining <= 0) {
+      toast.error(`Mỗi gọng chỉ tối đa ${MAX_MEDIA_ITEMS} ảnh`);
+      return;
+    }
+
+    const files = imageFiles.slice(0, remaining);
+    if (files.length < imageFiles.length) {
+      toast(`Chỉ tải ${remaining} ảnh đầu tiên để đảm bảo giới hạn ${MAX_MEDIA_ITEMS}`);
+    }
+
+    bumpBusyCount(files.length);
+    for (const file of files) {
+      // eslint-disable-next-line no-await-in-loop
+      await uploadSingleFile(file, sourceDevice);
+      bumpBusyCount(-1);
+    }
+
     setRefreshTick((prev) => prev + 1);
   };
 
@@ -327,15 +329,13 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
     }
   };
 
-  const imagemap = itemsByKind();
-
   return (
     <>
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 py-3 px-3 space-y-3 ${className}`} data-no-tab-swipe>
         <div className="flex items-center justify-between gap-2">
           <h3 className="font-bold text-gray-900 text-sm tracking-tight">Ảnh gọng kính</h3>
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-semibold">
-            {Object.keys(imagemap).length}/{MAX_MEDIA_ITEMS}
+            {activeCount}/{MAX_MEDIA_ITEMS}
           </span>
         </div>
 
@@ -344,10 +344,10 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
           type="file"
           accept="image/*"
           capture="environment"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const imageKind = (captureInputRef.current as any)?.dataset?.imageKind as ImageKind;
-            void handleFiles(e.target.files, 'camera', imageKind);
+            void handleFiles(e.target.files, 'camera');
             e.currentTarget.value = '';
           }}
         />
@@ -355,10 +355,10 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
           ref={uploadInputRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const imageKind = (uploadInputRef.current as any)?.dataset?.imageKind as ImageKind;
-            void handleFiles(e.target.files, 'file_picker', imageKind);
+            void handleFiles(e.target.files, 'file_picker');
             e.currentTarget.value = '';
           }}
         />
@@ -369,49 +369,81 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
           </div>
         ) : (
           <div className="space-y-2">
-            {IMAGE_KINDS.map(({ key, label }) => {
-              const media = imagemap[key];
-              return (
-                <div key={key} className="border border-gray-200 rounded-lg p-2.5">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <label className="text-xs font-semibold text-gray-700">{label}</label>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                      media?.status === 'uploaded'
-                        ? 'bg-green-100 text-green-700'
-                        : media?.status === 'pending'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : media?.status === 'failed'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {media?.status === 'uploaded' ? 'Có' : media?.status === 'pending' ? 'Đang tải...' : media?.status === 'failed' ? 'Lỗi' : 'Không có'}
-                    </span>
-                  </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="h-8 px-3 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium inline-flex items-center gap-1 hover:bg-blue-100 disabled:opacity-60"
+                onClick={handleCapture}
+                disabled={!gongKinhId || busyCount > 0 || !canAddMore}
+                data-no-tab-swipe
+              >
+                {busyCount > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                Chụp ảnh
+              </button>
+              <button
+                type="button"
+                className="h-8 px-3 border border-gray-300 bg-white text-gray-700 rounded-lg text-xs font-medium inline-flex items-center gap-1 hover:bg-gray-50 disabled:opacity-60"
+                onClick={handleUpload}
+                disabled={!gongKinhId || busyCount > 0 || !canAddMore}
+                data-no-tab-swipe
+              >
+                {busyCount > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                Tải ảnh
+              </button>
+            </div>
 
-                  {media && media.read_url ? (
+            {loading && (
+              <div className="text-xs text-gray-500">Đang tải danh sách ảnh...</div>
+            )}
+
+            {sortedItems.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-2.5 py-2 text-xs text-gray-500">
+                Chưa có ảnh nào.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {sortedItems.map((media, index) => (
+                  <div key={media.id} className="border border-gray-200 rounded-lg p-2.5">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <label className="text-xs font-semibold text-gray-700">Ảnh {index + 1}</label>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                        media.status === 'uploaded'
+                          ? 'bg-green-100 text-green-700'
+                          : media.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {media.status === 'uploaded' ? 'Đã tải' : media.status === 'pending' ? 'Đang tải...' : 'Lỗi'}
+                      </span>
+                    </div>
+
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-16 rounded-lg border border-gray-200 overflow-hidden bg-gray-100 flex-shrink-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={media.read_url}
-                          alt={label}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] text-gray-600 truncate" title={media.original_filename || label}>
-                          {media.original_filename || 'Ảnh ' + label}
-                        </p>
-                        <p className="text-[10px] text-gray-500">
-                          {formatDateTime(media.created_at)}
-                        </p>
-                        {media.width && media.height && (
-                          <p className="text-[10px] text-gray-500">
-                            {media.width}×{media.height}px
-                          </p>
+                        {media.read_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={media.read_url}
+                            alt={`Ảnh gọng ${index + 1}`}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">
+                            Không xem trước
+                          </div>
                         )}
                       </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] text-gray-600 truncate" title={media.original_filename || `Ảnh ${index + 1}`}>
+                          {media.original_filename || `Ảnh ${index + 1}`}
+                        </p>
+                        <p className="text-[10px] text-gray-500">{formatDateTime(media.created_at)}</p>
+                        {media.width && media.height && (
+                          <p className="text-[10px] text-gray-500">{media.width}×{media.height}px</p>
+                        )}
+                      </div>
+
                       <button
                         type="button"
                         className="h-8 w-8 rounded-lg bg-red-50 text-red-600 inline-flex items-center justify-center hover:bg-red-100 disabled:opacity-60 flex-shrink-0"
@@ -423,33 +455,10 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
                         {deletingId === media.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                       </button>
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="flex-1 h-8 px-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1 hover:bg-blue-100 disabled:opacity-60"
-                        onClick={() => handleCapture(key)}
-                        disabled={!gongKinhId || busyCount > 0}
-                        data-no-tab-swipe
-                      >
-                        {busyCount > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
-                        Chụp
-                      </button>
-                      <button
-                        type="button"
-                        className="flex-1 h-8 px-2 border border-gray-300 bg-white text-gray-700 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1 hover:bg-gray-50 disabled:opacity-60"
-                        onClick={() => handleUpload(key)}
-                        disabled={!gongKinhId || busyCount > 0}
-                        data-no-tab-swipe
-                      >
-                        {busyCount > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
-                        Tải
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

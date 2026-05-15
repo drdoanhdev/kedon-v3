@@ -1,5 +1,3 @@
-'use client';
-
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requirePermission } from '../../../lib/permissions';
 import {
@@ -20,6 +18,7 @@ import {
 const MIN_READ_URL_TTL_SECONDS = 60;
 const MAX_READ_URL_TTL_SECONDS = 60 * 60;
 const MAX_MEDIA_PER_FRAME = 3;
+const FRAME_MEDIA_WRITE_PERMISSIONS = ['manage_categories', 'manage_inventory'];
 const ALLOWED_IMAGE_KINDS = ['mat_truoc', 'mat_trai', 'mat_phai'] as const;
 
 type FrameImageKind = typeof ALLOWED_IMAGE_KINDS[number];
@@ -150,17 +149,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      if (!(await requirePermission(ctx, res, 'write_inventory'))) return;
+      if (!(await requirePermission(ctx, res, FRAME_MEDIA_WRITE_PERMISSIONS))) return;
       return await handlePost(req, res, tenantId, userId);
     }
 
     if (req.method === 'PATCH') {
-      if (!(await requirePermission(ctx, res, 'write_inventory'))) return;
+      if (!(await requirePermission(ctx, res, FRAME_MEDIA_WRITE_PERMISSIONS))) return;
       return await handlePatch(req, res, tenantId);
     }
 
     if (req.method === 'DELETE') {
-      if (!(await requirePermission(ctx, res, 'write_inventory'))) return;
+      if (!(await requirePermission(ctx, res, FRAME_MEDIA_WRITE_PERMISSIONS))) return;
       return await handleDelete(req, res, tenantId);
     }
 
@@ -247,8 +246,9 @@ async function handlePost(
     return res.status(400).json({ message: 'gong_kinh_id khong hop le' });
   }
 
-  const loaiAnh = normalizeFrameImageKind(hasOwn(body, 'loai_anh') ? body.loai_anh : 'mat_truoc');
-  if (!loaiAnh) {
+  const hasLoaiAnh = hasOwn(body, 'loai_anh');
+  const requestedLoaiAnh = hasLoaiAnh ? normalizeFrameImageKind(body.loai_anh) : null;
+  if (hasLoaiAnh && !requestedLoaiAnh) {
     return res.status(400).json({ message: 'loai_anh khong hop le' });
   }
 
@@ -287,23 +287,44 @@ async function handlePost(
 
   const gongKinh = gongKinhRaw as unknown as GongKinhLookupRow;
 
-  // Check xem loại ảnh này đã có chưa (chỉ cho phép 1 loại ảnh mỗi loại)
+  // Dùng 3 slot cố định ở DB, nhưng UI không cần user chọn loại ảnh.
   const { data: existingMedia, error: existingError } = await supabase
     .from('gong_kinh_media')
-    .select('id, status')
+    .select('id, loai_anh, status')
     .eq('tenant_id', tenantId)
     .eq('gong_kinh_id', gongKinhId)
-    .eq('loai_anh', loaiAnh)
     .in('status', ['pending', 'uploaded']);
 
   if (existingError) {
     return res.status(400).json({ message: 'Loi kiem tra media ton tai', details: existingError.message });
   }
 
-  if (existingMedia && existingMedia.length > 0) {
+  const occupiedKindMap = new Map<FrameImageKind, number>();
+  for (const row of (existingMedia || []) as Array<{ id: number; loai_anh: FrameImageKind }>) {
+    if ((ALLOWED_IMAGE_KINDS as readonly string[]).includes(row.loai_anh)) {
+      occupiedKindMap.set(row.loai_anh, row.id);
+    }
+  }
+
+  if (occupiedKindMap.size >= MAX_MEDIA_PER_FRAME) {
+    return res.status(400).json({
+      message: `Da dat gioi han ${MAX_MEDIA_PER_FRAME} anh cho gọng này`,
+      max_items_per_frame: MAX_MEDIA_PER_FRAME,
+    });
+  }
+
+  if (requestedLoaiAnh && occupiedKindMap.has(requestedLoaiAnh)) {
     return res.status(409).json({
-      message: `Đã có ảnh ${loaiAnh} cho gọng này. Xóa cũ trước khi thêm cái mới.`,
-      existing_media_id: (existingMedia[0] as { id: number }).id,
+      message: 'Da co anh o slot nay. Hay xoa anh cu truoc khi them moi.',
+      existing_media_id: occupiedKindMap.get(requestedLoaiAnh),
+    });
+  }
+
+  const resolvedLoaiAnh = requestedLoaiAnh || ALLOWED_IMAGE_KINDS.find((kind) => !occupiedKindMap.has(kind));
+  if (!resolvedLoaiAnh) {
+    return res.status(400).json({
+      message: `Da dat gioi han ${MAX_MEDIA_PER_FRAME} anh cho gọng này`,
+      max_items_per_frame: MAX_MEDIA_PER_FRAME,
     });
   }
 
@@ -317,7 +338,7 @@ async function handlePost(
     branchId: null,
     benhnhanId: gongKinhId, // Sử dụng gong_kinh_id thay benhnhanId
     donKinhId: 0, // Không dùng
-    kind: loaiAnh as any,
+    kind: resolvedLoaiAnh as any,
     mimeType,
     originalFilename,
     capturedAt: capturedAt || undefined,
@@ -329,9 +350,9 @@ async function handlePost(
   const insertPayload: Record<string, unknown> = {
     tenant_id: tenantId,
     gong_kinh_id: gongKinhId,
-    loai_anh: loaiAnh,
+    loai_anh: resolvedLoaiAnh,
     storage_driver: uploadTarget.driver,
-    bucket: 'gong-kinh-media',
+    bucket: uploadTarget.bucket,
     object_path: uploadTarget.path,
     original_filename: originalFilename,
     mime_type: mimeType,
