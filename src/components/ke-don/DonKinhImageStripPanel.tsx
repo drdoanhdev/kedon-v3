@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -7,10 +8,8 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
-  GripVertical,
   ImagePlus,
   Loader2,
-  Maximize2,
   Save,
   Trash2,
   X,
@@ -48,6 +47,26 @@ interface CreateMediaResponse {
 interface DonKinhMediaPanelProps {
   donKinhId: number | null;
   className?: string;
+  mediaOwnerId?: number | null;
+  apiBasePath?: string;
+  ownerIdField?: 'don_kinh_id' | 'don_thuoc_id';
+  ownerLabel?: string;
+  missingOwnerMessage?: string;
+  mediaKind?: string;
+  enableDraftWhenNoDonKinhId?: boolean;
+  draftQueueResetToken?: number;
+  onDraftQueueChange?: (items: DraftDonKinhUploadItem[]) => void;
+}
+
+export interface DraftDonKinhUploadItem {
+  file: File;
+  sourceDevice: 'camera' | 'file_picker';
+}
+
+interface DraftDonKinhPreviewItem extends DraftDonKinhUploadItem {
+  tempId: string;
+  previewUrl: string;
+  createdAt: string;
 }
 
 const MAX_MEDIA_ITEMS = 6;
@@ -133,18 +152,6 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function formatDateTime(value: string): string {
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return value;
-  return dt.toLocaleString('vi-VN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 function normalizeSortOrder(value: number | null | undefined): number {
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
     return Math.floor(value);
@@ -168,14 +175,6 @@ function sortMediaItems(items: DonKinhMediaItem[]): DonKinhMediaItem[] {
   });
 }
 
-function moveArrayItem<T>(array: T[], fromIndex: number, toIndex: number): T[] {
-  if (fromIndex === toIndex) return array;
-  const next = [...array];
-  const [moved] = next.splice(fromIndex, 1);
-  next.splice(toIndex, 0, moved);
-  return next;
-}
-
 async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -193,27 +192,45 @@ async function readImageDimensions(file: File): Promise<{ width: number; height:
   }
 }
 
-export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinhMediaPanelProps) {
+export default function DonKinhMediaPanel({
+  donKinhId,
+  className = '',
+  mediaOwnerId,
+  apiBasePath = '/api/don-kinh/media',
+  ownerIdField = 'don_kinh_id',
+  ownerLabel = 'đơn kính',
+  missingOwnerMessage = 'Chưa có đơn đang chọn.',
+  mediaKind = 'don_kinh',
+  enableDraftWhenNoDonKinhId = true,
+  draftQueueResetToken,
+  onDraftQueueChange,
+}: DonKinhMediaPanelProps) {
   const [items, setItems] = useState<DonKinhMediaItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [draftItems, setDraftItems] = useState<DraftDonKinhPreviewItem[]>([]);
+  const [, setLoading] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const [busyCount, setBusyCount] = useState(0);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
-  const [draggingId, setDraggingId] = useState<number | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const captureInputRef = useRef<HTMLInputElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const draftCounterRef = useRef(0);
+  const draftItemsRef = useRef<DraftDonKinhPreviewItem[]>([]);
 
-  const activeCount = useMemo(
-    () => items.filter((item) => item.status !== 'failed').length,
-    [items]
-  );
-  const canAddMore = Boolean(donKinhId) && activeCount < MAX_MEDIA_ITEMS;
+  const resolvedOwnerId = mediaOwnerId ?? donKinhId;
+  const isDraftMode = !resolvedOwnerId && enableDraftWhenNoDonKinhId;
+
+  const activeCount = useMemo(() => {
+    if (isDraftMode) return draftItems.length;
+    return items.filter((item) => item.status !== 'failed').length;
+  }, [isDraftMode, draftItems, items]);
+
+  const canAddMore = activeCount < MAX_MEDIA_ITEMS;
 
   const previewItem = previewIndex !== null ? (items[previewIndex] || null) : null;
 
@@ -228,7 +245,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
   }, [previewItem]);
 
   const refreshMedia = async () => {
-    if (!donKinhId) {
+    if (!resolvedOwnerId) {
       setItems([]);
       setPreviewIndex(null);
       return;
@@ -236,9 +253,9 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
 
     setLoading(true);
     try {
-      const res = await axios.get('/api/don-kinh/media', {
+      const res = await axios.get(apiBasePath, {
         params: {
-          don_kinh_id: donKinhId,
+          [ownerIdField]: resolvedOwnerId,
           read_url_ttl_seconds: PREVIEW_READ_TTL_SECONDS,
         },
       });
@@ -258,15 +275,38 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
   useEffect(() => {
     void refreshMedia();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [donKinhId, refreshTick]);
+  }, [resolvedOwnerId, refreshTick, apiBasePath, ownerIdField]);
+
+  useEffect(() => {
+    onDraftQueueChange?.(draftItems.map((item) => ({
+      file: item.file,
+      sourceDevice: item.sourceDevice,
+    })));
+  }, [draftItems, onDraftQueueChange]);
+
+  useEffect(() => {
+    draftItemsRef.current = draftItems;
+  }, [draftItems]);
+
+  useEffect(() => {
+    if (typeof draftQueueResetToken === 'undefined') return;
+    setDraftItems((prev) => {
+      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+  }, [draftQueueResetToken]);
+
+  useEffect(() => () => {
+    draftItemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  }, []);
 
   const bumpBusyCount = (delta: number) => {
     setBusyCount((prev) => Math.max(0, prev + delta));
   };
 
   const uploadSingleFile = async (file: File, sourceDevice: 'camera' | 'file_picker') => {
-    if (!donKinhId) {
-      toast.error('Cần lưu/chọn đơn kính trước khi tải ảnh');
+    if (!resolvedOwnerId) {
+      toast.error(`Cần lưu/chọn ${ownerLabel} trước khi tải ảnh`);
       return;
     }
 
@@ -276,9 +316,9 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
     let mediaId: number | null = null;
 
     try {
-      const createRes = await axios.post<CreateMediaResponse>('/api/don-kinh/media', {
-        don_kinh_id: donKinhId,
-        loai_anh: 'don_kinh',
+      const createRes = await axios.post<CreateMediaResponse>(apiBasePath, {
+        [ownerIdField]: resolvedOwnerId,
+        loai_anh: mediaKind,
         mime_type: uploadFile.type || 'image/jpeg',
         size_bytes: uploadFile.size,
         original_filename: uploadFile.name,
@@ -337,10 +377,6 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
 
   const handleFiles = async (fileList: FileList | null, sourceDevice: 'camera' | 'file_picker') => {
     if (!fileList || fileList.length === 0) return;
-    if (!donKinhId) {
-      toast.error('Cần lưu/chọn đơn kính trước khi tải ảnh');
-      return;
-    }
 
     const imageFiles = Array.from(fileList).filter((file) => file.type.startsWith('image/'));
     if (imageFiles.length === 0) {
@@ -359,6 +395,35 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
       toast(`Chỉ tải ${slots} ảnh đầu tiên để đảm bảo giới hạn ${MAX_MEDIA_ITEMS}`);
     }
 
+    if (isDraftMode) {
+      bumpBusyCount(files.length);
+      const nextDraftItems: DraftDonKinhPreviewItem[] = [];
+
+      for (const file of files) {
+        // eslint-disable-next-line no-await-in-loop
+        const compressed = await compressImageFile(file);
+        const previewUrl = URL.createObjectURL(compressed);
+        draftCounterRef.current += 1;
+        nextDraftItems.push({
+          tempId: `draft-${Date.now()}-${draftCounterRef.current}`,
+          file: compressed,
+          sourceDevice,
+          previewUrl,
+          createdAt: new Date().toISOString(),
+        });
+        bumpBusyCount(-1);
+      }
+
+      setDraftItems((prev) => [...prev, ...nextDraftItems]);
+      toast.success(`Đã thêm ${nextDraftItems.length} ảnh tạm. Ảnh sẽ được tải khi lưu đơn.`);
+      return;
+    }
+
+    if (!resolvedOwnerId) {
+      toast.error(`Cần lưu/chọn ${ownerLabel} trước khi tải ảnh`);
+      return;
+    }
+
     bumpBusyCount(files.length);
     for (const file of files) {
       // eslint-disable-next-line no-await-in-loop
@@ -370,6 +435,17 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
   };
 
   const handleDeleteMedia = async (id: number) => {
+    if (isDraftMode) {
+      setDraftItems((prev) => {
+        const target = prev.find((item) => item.tempId === String(id));
+        if (target) {
+          URL.revokeObjectURL(target.previewUrl);
+        }
+        return prev.filter((item) => item.tempId !== String(id));
+      });
+      return;
+    }
+
     if (!window.confirm('Xóa ảnh này?')) return;
 
     const removedIndex = items.findIndex((item) => item.id === id);
@@ -397,55 +473,14 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
     }
   };
 
-  const persistSortOrder = async (orderedItems: DonKinhMediaItem[]) => {
-    const orders = orderedItems.map((item, index) => ({
-      id: item.id,
-      sort_order: index,
-    }));
-    await axios.patch('/api/don-kinh/media', { orders });
-  };
-
-  const reorderByIndex = async (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    if (fromIndex < 0 || toIndex < 0) return;
-    if (fromIndex >= items.length || toIndex >= items.length) return;
-
-    const selectedPreviewId = previewItem?.id ?? null;
-    const moved = moveArrayItem(items, fromIndex, toIndex)
-      .map((item, index) => ({ ...item, sort_order: index }));
-
-    setItems(moved);
-
-    if (selectedPreviewId) {
-      const nextPreviewIndex = moved.findIndex((item) => item.id === selectedPreviewId);
-      setPreviewIndex(nextPreviewIndex >= 0 ? nextPreviewIndex : null);
-    }
-
-    try {
-      await persistSortOrder(moved);
-    } catch (error: unknown) {
-      const message = axios.isAxiosError(error)
-        ? (error.response?.data?.message || error.message)
-        : (error instanceof Error ? error.message : String(error));
-      toast.error(`Không lưu được thứ tự ảnh: ${message}`);
-      void refreshMedia();
-    }
-  };
-
-  const reorderById = async (sourceId: number, targetId: number) => {
-    if (sourceId === targetId) return;
-    const sourceIndex = items.findIndex((item) => item.id === sourceId);
-    const targetIndex = items.findIndex((item) => item.id === targetId);
-    if (sourceIndex < 0 || targetIndex < 0) return;
-    await reorderByIndex(sourceIndex, targetIndex);
-  };
-
-  const handleMoveByStep = async (id: number, direction: -1 | 1) => {
-    const sourceIndex = items.findIndex((item) => item.id === id);
-    if (sourceIndex < 0) return;
-    const targetIndex = sourceIndex + direction;
-    if (targetIndex < 0 || targetIndex >= items.length) return;
-    await reorderByIndex(sourceIndex, targetIndex);
+  const handleDeleteDraftMedia = (tempId: string) => {
+    setDraftItems((prev) => {
+      const target = prev.find((item) => item.tempId === tempId);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((item) => item.tempId !== tempId);
+    });
   };
 
   const closePreview = () => {
@@ -502,7 +537,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 py-2 px-0 space-y-2 ${className}`} data-no-tab-swipe>
         <div className="flex items-center justify-between gap-2 px-3">
           <div className="min-w-0 flex items-center gap-2">
-            <h3 className="font-bold text-gray-900 text-sm tracking-tight">Ảnh đơn kính</h3>
+            <h3 className="font-bold text-gray-900 text-sm tracking-tight">Ảnh {ownerLabel}</h3>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-semibold">
               {activeCount}/{MAX_MEDIA_ITEMS}
             </span>
@@ -538,7 +573,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
             type="button"
             className="h-8 px-2.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium inline-flex items-center gap-1 hover:bg-blue-100 disabled:opacity-60"
             onClick={() => captureInputRef.current?.click()}
-            disabled={!donKinhId || busyCount > 0 || !canAddMore}
+            disabled={busyCount > 0 || !canAddMore || (!resolvedOwnerId && !isDraftMode)}
             data-no-tab-swipe
           >
             {busyCount > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
@@ -548,7 +583,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
             type="button"
             className="h-8 px-2.5 border border-gray-300 bg-white text-gray-700 rounded-lg text-xs font-medium inline-flex items-center gap-1 hover:bg-gray-50 disabled:opacity-60"
             onClick={() => uploadInputRef.current?.click()}
-            disabled={!donKinhId || busyCount > 0 || !canAddMore}
+            disabled={busyCount > 0 || !canAddMore || (!resolvedOwnerId && !isDraftMode)}
             data-no-tab-swipe
           >
             {busyCount > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
@@ -556,48 +591,56 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
           </button>
         </div>
 
-        {!donKinhId ? (
+        {isDraftMode ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-1 px-0" data-no-tab-swipe>
+              {draftItems.map((item, index) => (
+                <div
+                  key={item.tempId}
+                  className="relative aspect-square w-full rounded-xl border overflow-hidden bg-gray-100 border-gray-200"
+                  data-no-tab-swipe
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.previewUrl}
+                    alt={item.file.name || `draft-${index + 1}`}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+
+                  <div className="absolute top-1 right-1 flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="h-5 w-5 rounded bg-red-600/80 text-white inline-flex items-center justify-center hover:bg-red-600"
+                      onClick={() => handleDeleteDraftMedia(item.tempId)}
+                      title="Xóa"
+                      data-no-tab-swipe
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                </div>
+              ))}
+            </div>
+
+            {draftItems.length > 0 && (
+              <p className="px-3 text-[11px] text-gray-500">
+                Ảnh tạm chỉ lưu trong phiên hiện tại. Bấm Lưu đơn để tải ảnh lên hệ thống.
+              </p>
+            )}
+          </div>
+        ) : !resolvedOwnerId ? (
           <div className="mx-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-2.5 py-2 text-xs text-gray-500">
-            Chưa có đơn đang chọn.
+            {missingOwnerMessage}
           </div>
         ) : (
           <div className="space-y-2">
-            {items.length === 0 && (
-              <div className="mx-3 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 flex items-center justify-between gap-2">
-                <span>Chưa có ảnh. Bấm Tải ảnh hoặc Chụp để thêm nhanh.</span>
-                <button
-                  type="button"
-                  className="h-7 px-2 rounded-lg border border-gray-300 bg-white text-[11px] hover:bg-gray-100 shrink-0"
-                  onClick={() => uploadInputRef.current?.click()}
-                  data-no-tab-swipe
-                >
-                  + Tải ảnh
-                </button>
-              </div>
-            )}
-
             <div className="grid grid-cols-2 gap-1 px-0" data-no-tab-swipe>
               {items.map((item, index) => (
                 <div
                   key={item.id}
-                  className={`relative aspect-square w-full rounded-xl border overflow-hidden bg-gray-100 ${draggingId === item.id ? 'opacity-60 border-blue-400' : 'border-gray-200'}`}
-                  draggable
-                  onDragStart={(e) => {
-                    setDraggingId(item.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('text/plain', String(item.id));
-                  }}
-                  onDragEnd={() => setDraggingId(null)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const sourceIdRaw = e.dataTransfer.getData('text/plain');
-                    const sourceId = Number.parseInt(sourceIdRaw, 10);
-                    setDraggingId(null);
-                    if (Number.isFinite(sourceId) && sourceId > 0) {
-                      void reorderById(sourceId, item.id);
-                    }
-                  }}
+                  className="relative aspect-square w-full rounded-xl border overflow-hidden bg-gray-100 border-gray-200"
                   data-no-tab-swipe
                 >
                   <button
@@ -621,23 +664,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
                     )}
                   </button>
 
-                  <div className="absolute top-1 left-1 text-[10px] px-1 py-0.5 rounded bg-black/60 text-white font-semibold">
-                    {index + 1}
-                  </div>
-
                   <div className="absolute top-1 right-1 flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="h-5 w-5 rounded bg-black/55 text-white inline-flex items-center justify-center hover:bg-black/70"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPreviewIndex(index);
-                      }}
-                      title="Xem lớn"
-                      data-no-tab-swipe
-                    >
-                      <Maximize2 className="w-3 h-3" />
-                    </button>
                     <button
                       type="button"
                       className="h-5 w-5 rounded bg-red-600/80 text-white inline-flex items-center justify-center hover:bg-red-600 disabled:opacity-60"
@@ -653,78 +680,22 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
                     </button>
                   </div>
 
-                  <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between gap-1">
-                    <div className="h-5 px-1 rounded bg-black/55 text-white text-[9px] inline-flex items-center">
-                      {item.status === 'uploaded' ? 'OK' : item.status === 'pending' ? 'UP' : 'FAIL'}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="h-5 w-5 rounded bg-black/55 text-white inline-flex items-center justify-center hover:bg-black/70 disabled:opacity-40"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleMoveByStep(item.id, -1);
-                        }}
-                        disabled={index === 0}
-                        title="Lên trước"
-                        data-no-tab-swipe
-                      >
-                        <ChevronLeft className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        className="h-5 w-5 rounded bg-black/55 text-white inline-flex items-center justify-center hover:bg-black/70 disabled:opacity-40"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleMoveByStep(item.id, 1);
-                        }}
-                        disabled={index === items.length - 1}
-                        title="Lùi sau"
-                        data-no-tab-swipe
-                      >
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
-                      <span className="h-5 w-5 rounded bg-black/55 text-white inline-flex items-center justify-center">
-                        <GripVertical className="w-3 h-3" />
-                      </span>
-                    </div>
-                  </div>
                 </div>
               ))}
-
-              {canAddMore && (
-                <button
-                  type="button"
-                  className="aspect-square w-full rounded-xl border-2 border-dashed border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 inline-flex flex-col items-center justify-center"
-                  onClick={() => uploadInputRef.current?.click()}
-                  title="Thêm ảnh"
-                  data-no-tab-swipe
-                >
-                  <span className="text-xl leading-none">+</span>
-                  <span className="text-[11px] font-medium">Thêm</span>
-                </button>
-              )}
             </div>
 
-            {items.length > 0 && (
-              <p className="px-3 text-[11px] text-gray-500">
-                Kéo thả để sắp xếp. Ảnh đầu tiên là ảnh đại diện đơn kính.
-              </p>
-            )}
           </div>
         )}
       </div>
 
-      {previewItem && (
-        <div className="fixed inset-0 z-[90] p-2 sm:p-4 flex items-center justify-center" data-no-tab-swipe>
+      {previewItem && typeof document !== 'undefined' ? createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4" data-no-tab-swipe>
           <div className="absolute inset-0 bg-black/80" onClick={closePreview} />
 
           <div className="relative z-10 w-full max-w-5xl">
             <div className="flex items-center justify-between text-white mb-2">
               <div className="text-xs sm:text-sm">
-                Ảnh {previewIndex !== null ? previewIndex + 1 : 1}/{items.length}
-                {'  '}|{'  '}
-                {formatDateTime(previewItem.created_at)}
+                {previewItem.original_filename || 'Ảnh xem trước'}
               </div>
               <button
                 type="button"
@@ -736,7 +707,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
               </button>
             </div>
 
-            <div className="relative rounded-xl overflow-hidden bg-black">
+            <div className="relative rounded-xl overflow-hidden bg-black shadow-2xl">
               {items.length > 1 && (
                 <>
                   <button
@@ -759,7 +730,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
               )}
 
               <div
-                className="h-[62vh] sm:h-[70vh] flex items-center justify-center overflow-auto bg-black"
+                className="min-h-[52vh] sm:min-h-[70vh] max-h-[80vh] flex items-center justify-center overflow-auto bg-black"
                 onTouchStart={(e) => setTouchStartX(e.touches[0]?.clientX ?? null)}
                 onTouchEnd={(e) => {
                   if (touchStartX === null) return;
@@ -777,7 +748,7 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
                   <img
                     src={previewItem.read_url}
                     alt={previewItem.original_filename || `preview-${previewItem.id}`}
-                    className={`max-w-full max-h-full object-contain transition-transform duration-200 ${zoomed ? 'scale-150 cursor-zoom-out' : 'scale-100 cursor-zoom-in'}`}
+                    className={`max-w-full max-h-[80vh] object-contain transition-transform duration-200 ${zoomed ? 'scale-150 cursor-zoom-out' : 'scale-100 cursor-zoom-in'}`}
                     onClick={() => setZoomed((prev) => !prev)}
                   />
                 ) : (
@@ -813,8 +784,9 @@ export default function DonKinhMediaPanel({ donKinhId, className = '' }: DonKinh
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body,
+      ) : null}
     </>
   );
 }

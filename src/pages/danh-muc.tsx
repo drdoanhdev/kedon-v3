@@ -7,11 +7,14 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2, Tags } from 'lucide-react';
+import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2, Tags, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
 import GongKinhMediaPanel from '@/components/GongKinhMediaPanel';
+import { printResolvedTemTemplate } from '../lib/temKinhClientPrint';
+import QRCode from 'qrcode';
+import JsBarcode from 'jsbarcode';
 
 // Interfaces
 interface Thuoc {
@@ -59,6 +62,7 @@ interface GongKinh {
   id: number;
   ten_gong: string;
   chat_lieu?: string;
+  hang_san_xuat?: string;
   gia_nhap: number;
   gia_ban: number;
   mo_ta?: string;
@@ -68,6 +72,7 @@ interface GongKinh {
   nha_cung_cap_id?: number | null;
   ton_kho?: number;
   muc_ton_can_co?: number;
+  hinh_anh_url?: string | null;
   NhaCungCap?: { id: number; ten: string } | null;
 }
 
@@ -103,6 +108,281 @@ interface NhomGiaGong {
   so_luong_ton: number;
   mo_ta?: string;
   trang_thai: string;
+}
+
+type TemTemplateListItem = {
+  id: number | null;
+  name: string;
+  is_default?: boolean;
+  copies?: number;
+  widthMm: number;
+  heightMm: number;
+  background: string;
+  elements: any[];
+};
+
+type TemDataResponse = {
+  resolved_template: {
+    copies?: number;
+    widthMm: number;
+    heightMm: number;
+    dpi?: number;
+    gapMm?: number;
+    speed?: number;
+    density?: number;
+    bitmapInvert?: boolean;
+    bitmapRotate180?: boolean;
+    bitmapOffsetXmm?: number;
+    bitmapOffsetYmm?: number;
+    background: string;
+    elements: any[];
+  };
+};
+
+const QUICK_TEM_TEMPLATE_ID_KEY = 'tem-kinh:quick-template-id';
+const QUICK_TEM_COPIES_KEY = 'tem-kinh:quick-copies';
+const QUICK_TEM_PRINTER_KEY = 'tem-kinh:quick-printer-name';
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function mmToDots(mm: number, dpi: number): number {
+  return Math.round((mm * dpi) / 25.4);
+}
+
+function rotationRad(deg: number): number {
+  return (deg * Math.PI) / 180;
+}
+
+function isLightColor(color?: string): boolean {
+  if (!color) return true;
+  const hex = color.trim();
+  const full = /^#([0-9a-fA-F]{6})$/.exec(hex);
+  if (!full) return true;
+
+  const rgb = full[1];
+  const r = parseInt(rgb.slice(0, 2), 16);
+  const g = parseInt(rgb.slice(2, 4), 16);
+  const b = parseInt(rgb.slice(4, 6), 16);
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 170;
+}
+
+function isDarkColor(color?: string): boolean {
+  return !isLightColor(color);
+}
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function loadImageFromDataUrl(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('load image failed'));
+    image.src = src;
+  });
+}
+
+function buildIntegral(values: Float32Array, width: number, height: number): Float64Array {
+  const integral = new Float64Array((width + 1) * (height + 1));
+  for (let y = 1; y <= height; y += 1) {
+    let rowSum = 0;
+    for (let x = 1; x <= width; x += 1) {
+      rowSum += values[(y - 1) * width + (x - 1)];
+      integral[y * (width + 1) + x] = integral[(y - 1) * (width + 1) + x] + rowSum;
+    }
+  }
+  return integral;
+}
+
+function localMean(integral: Float64Array, width: number, x0: number, y0: number, x1: number, y1: number): number {
+  const stride = width + 1;
+  const ax = x0;
+  const ay = y0;
+  const bx = x1 + 1;
+  const by = y1 + 1;
+  const sum = integral[by * stride + bx] - integral[ay * stride + bx] - integral[by * stride + ax] + integral[ay * stride + ax];
+  const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+  return sum / Math.max(1, area);
+}
+
+function adaptiveBinaryLuminance(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  dpi: number,
+  gamma: number,
+  localBias: number
+): Uint8Array {
+  const corrected = new Float32Array(width * height);
+
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    const lum = (0.299 * rgba[offset] + 0.587 * rgba[offset + 1] + 0.114 * rgba[offset + 2]) / 255;
+    corrected[index] = Math.pow(lum, gamma);
+  }
+
+  const integral = buildIntegral(corrected, width, height);
+  const radius = Math.max(2, Math.round((dpi / 25.4) * 1.2));
+  const out = new Uint8Array(width * height);
+
+  for (let y = 0; y < height; y += 1) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width - 1, x + radius);
+      const mean = localMean(integral, width, x0, y0, x1, y1);
+      const threshold = Math.max(0, Math.min(1, mean - localBias));
+      const idx = y * width + x;
+      out[idx] = corrected[idx] < threshold ? 1 : 0;
+    }
+  }
+
+  return out;
+}
+
+async function buildQrDataUrl(value: string, widthDots: number): Promise<string> {
+  return QRCode.toDataURL(value || ' ', {
+    margin: 0,
+    width: Math.max(36, widthDots),
+    color: { dark: '#111111', light: '#ffffff' },
+  });
+}
+
+function buildBarcodeDataUrl(value: string, heightDots: number): string {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  JsBarcode(svg, value || '0', {
+    format: 'CODE128',
+    width: 1.25,
+    height: Math.max(24, Math.round(heightDots)),
+    margin: 0,
+    displayValue: false,
+    background: '#ffffff',
+  });
+  const xml = new XMLSerializer().serializeToString(svg);
+  return `data:image/svg+xml;utf8,${encodeURIComponent(xml)}`;
+}
+
+async function buildBitmapPayloadFromTemplate(resolvedTemplate: TemDataResponse['resolved_template']) {
+  const dpi = clamp(Math.round(Number(resolvedTemplate.dpi || 203)), 200, 600);
+  const widthDots = Math.max(1, mmToDots(resolvedTemplate.widthMm, dpi));
+  const heightDots = Math.max(1, mmToDots(resolvedTemplate.heightMm, dpi));
+  const widthBytes = Math.ceil(widthDots / 8);
+  const sorted = [...resolvedTemplate.elements].sort((a, b) => (a.z || 0) - (b.z || 0));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = widthDots;
+  canvas.height = heightDots;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Không khởi tạo được canvas để raster tem');
+  }
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, widthDots, heightDots);
+
+  for (const item of sorted) {
+    const x = mmToDots(Number(item.x || 0), dpi);
+    const y = mmToDots(Number(item.y || 0), dpi);
+    const w = Math.max(1, mmToDots(Number(item.w || 0.1), dpi));
+    const h = Math.max(1, mmToDots(Number(item.h || 0.1), dpi));
+
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.rotate(rotationRad(Number(item.rotate || 0)));
+    ctx.translate(-w / 2, -h / 2);
+
+    if (item.kind === 'box') {
+      if (isDarkColor(item.bgColor)) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+      continue;
+    }
+
+    if (item.kind === 'text') {
+      ctx.fillStyle = '#000000';
+      const px = Math.max(8, Math.round(((Number(item.fontSize || 2.5) || 2.5) * dpi) / 25.4));
+      ctx.font = `${Number(item.fontWeight || 600) || 600} ${px}px Arial`;
+      ctx.textBaseline = 'middle';
+
+      if (item.align === 'left') {
+        ctx.textAlign = 'left';
+        ctx.fillText(String(item.text || ''), 0, h / 2);
+      } else if (item.align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(String(item.text || ''), w, h / 2);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(String(item.text || ''), w / 2, h / 2);
+      }
+
+      ctx.restore();
+      continue;
+    }
+
+    let src = '';
+    if (item.kind === 'qr') {
+      src = await buildQrDataUrl(String(item.value || ' '), Math.max(36, Math.round(w)));
+    } else if (item.kind === 'barcode') {
+      src = buildBarcodeDataUrl(String(item.value || '0'), Math.max(24, Math.round(h * 0.95)));
+    }
+
+    if (src) {
+      try {
+        const image = await loadImageFromDataUrl(src);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(image, 0, 0, w, h);
+      } catch {
+        // Skip broken asset in quick print.
+      }
+    }
+
+    ctx.restore();
+  }
+
+  const imageData = ctx.getImageData(0, 0, widthDots, heightDots).data;
+  const packed = new Uint8Array(widthBytes * heightDots);
+  if (resolvedTemplate.bitmapInvert) packed.fill(0xff);
+
+  const binary = adaptiveBinaryLuminance(imageData, widthDots, heightDots, dpi, 1.2, 0.055);
+
+  for (let yy = 0; yy < heightDots; yy += 1) {
+    for (let xx = 0; xx < widthDots; xx += 1) {
+      const isDark = binary[yy * widthDots + xx] === 1;
+      if (!isDark) continue;
+
+      const tx = resolvedTemplate.bitmapRotate180 ? widthDots - 1 - xx : xx;
+      const ty = resolvedTemplate.bitmapRotate180 ? heightDots - 1 - yy : yy;
+      const byteIndex = ty * widthBytes + Math.floor(tx / 8);
+      const bitMask = 1 << (7 - (tx % 8));
+
+      if (resolvedTemplate.bitmapInvert) {
+        packed[byteIndex] &= ~bitMask;
+      } else {
+        packed[byteIndex] |= bitMask;
+      }
+    }
+  }
+
+  return {
+    dpi,
+    widthBytes,
+    heightDots,
+    bitmapBase64: uint8ToBase64(packed),
+  };
 }
 
 function DanhMucPage() {
@@ -183,6 +463,15 @@ function DanhMucPage() {
   const [openGongKinhDialog, setOpenGongKinhDialog] = useState(false);
   const [isEditingGongKinh, setIsEditingGongKinh] = useState(false);
   const [searchGongKinh, setSearchGongKinh] = useState('');
+  const [openQuickTemPrintDialog, setOpenQuickTemPrintDialog] = useState(false);
+  const [quickTemFrame, setQuickTemFrame] = useState<GongKinh | null>(null);
+  const [selectedFrameImage, setSelectedFrameImage] = useState<{ src: string; title: string } | null>(null);
+  const [quickTemTemplates, setQuickTemTemplates] = useState<TemTemplateListItem[]>([]);
+  const [quickTemTemplateId, setQuickTemTemplateId] = useState<number | null>(null);
+  const [quickTemCopies, setQuickTemCopies] = useState(1);
+  const [quickTemPrinters, setQuickTemPrinters] = useState<string[]>([]);
+  const [quickTemPrinterName, setQuickTemPrinterName] = useState('');
+  const [quickTemLoading, setQuickTemLoading] = useState(false);
   const [gongKinhForm, setGongKinhForm] = useState<GongKinh>({
     id: 0,
     ten_gong: '',
@@ -1308,6 +1597,190 @@ function DanhMucPage() {
   };
 
   const renderGongKinhTab = () => {
+    const openQuickTemPrint = (frame: GongKinh) => {
+      setQuickTemFrame(frame);
+      setOpenQuickTemPrintDialog(true);
+
+      const storedTemplateId =
+        typeof window !== 'undefined' ? Number(window.localStorage.getItem(QUICK_TEM_TEMPLATE_ID_KEY)) : NaN;
+      const storedCopies =
+        typeof window !== 'undefined' ? Number(window.localStorage.getItem(QUICK_TEM_COPIES_KEY)) : NaN;
+      const storedPrinterName = typeof window !== 'undefined' ? window.localStorage.getItem(QUICK_TEM_PRINTER_KEY) || '' : '';
+
+      setQuickTemCopies(Number.isFinite(storedCopies) ? clamp(Math.round(storedCopies), 1, 500) : 1);
+      setQuickTemTemplateId(Number.isInteger(storedTemplateId) && storedTemplateId > 0 ? storedTemplateId : null);
+      setQuickTemPrinterName(storedPrinterName.trim());
+
+      void (async () => {
+        try {
+          const [templateResponse, printerResponse] = await Promise.allSettled([
+            axios.get('/api/tem-kinh/templates?scope=all'),
+            axios.get('/api/print-tspl'),
+          ]);
+
+          const items =
+            templateResponse.status === 'fulfilled' && Array.isArray(templateResponse.value.data?.items)
+              ? (templateResponse.value.data.items as TemTemplateListItem[])
+              : [];
+
+          setQuickTemTemplates(items.filter((item) => item.id != null));
+
+          const preferred =
+            items.find((item) => item.is_default && item.id != null) || items.find((item) => item.id != null) || null;
+
+          const nextTemplateId =
+            Number.isInteger(storedTemplateId) && items.some((item) => item.id === storedTemplateId)
+              ? storedTemplateId
+              : (preferred?.id ?? null);
+
+          setQuickTemTemplateId(nextTemplateId);
+
+          if (printerResponse.status === 'fulfilled') {
+            const printers = Array.isArray(printerResponse.value.data?.printers)
+              ? (printerResponse.value.data.printers as string[]).filter((item) => typeof item === 'string' && item.trim())
+              : [];
+
+            const defaultPrinter = typeof printerResponse.value.data?.defaultPrinter === 'string'
+              ? printerResponse.value.data.defaultPrinter.trim()
+              : '';
+
+            const nextPrinter =
+              (storedPrinterName && printers.includes(storedPrinterName) ? storedPrinterName : '') ||
+              (defaultPrinter && printers.includes(defaultPrinter) ? defaultPrinter : '') ||
+              printers[0] ||
+              '';
+
+            setQuickTemPrinters(printers);
+            setQuickTemPrinterName(nextPrinter);
+          } else {
+            setQuickTemPrinters([]);
+            setQuickTemPrinterName('');
+          }
+        } catch (error) {
+          console.error('load quick tem templates error:', error);
+          setQuickTemTemplates([]);
+          setQuickTemTemplateId(null);
+          setQuickTemPrinters([]);
+          setQuickTemPrinterName('');
+        }
+      })();
+    };
+
+    const saveQuickPrintPreferences = (templateId: number | null, copies: number, printerName: string) => {
+      if (typeof window === 'undefined') return;
+
+      if (templateId && templateId > 0) {
+        window.localStorage.setItem(QUICK_TEM_TEMPLATE_ID_KEY, String(templateId));
+      } else {
+        window.localStorage.removeItem(QUICK_TEM_TEMPLATE_ID_KEY);
+      }
+
+      window.localStorage.setItem(QUICK_TEM_COPIES_KEY, String(copies));
+
+      if (printerName.trim()) {
+        window.localStorage.setItem(QUICK_TEM_PRINTER_KEY, printerName.trim());
+      } else {
+        window.localStorage.removeItem(QUICK_TEM_PRINTER_KEY);
+      }
+    };
+
+    const getResolvedQuickPrintPayload = async (): Promise<{ data: TemDataResponse; copies: number } | null> => {
+      if (!quickTemFrame?.id) {
+        toast.error('Không xác định được gọng kính để in tem');
+        return null;
+      }
+
+      try {
+        const response = await axios.get('/api/tem-kinh/data', {
+          params: {
+            gong_kinh_id: quickTemFrame.id,
+            template_id: quickTemTemplateId || undefined,
+          },
+        });
+
+        const data = response.data as TemDataResponse;
+        const copies = Math.min(500, Math.max(1, Math.round(Number(quickTemCopies) || 1)));
+        saveQuickPrintPreferences(quickTemTemplateId, copies, quickTemPrinterName);
+        return { data, copies };
+      } catch (error: any) {
+        console.error('load quick print payload error:', error);
+        toast.error(error?.response?.data?.error || error?.message || 'Không tải được dữ liệu tem để in');
+        return null;
+      }
+    };
+
+    const submitQuickTemBrowserPrint = async () => {
+      setQuickTemLoading(true);
+      try {
+        const loaded = await getResolvedQuickPrintPayload();
+        if (!loaded) return;
+
+        const { data, copies } = loaded;
+        const popup = printResolvedTemTemplate({
+          template: {
+            ...data.resolved_template,
+            copies,
+          },
+          copies,
+        });
+
+        if (!popup) {
+          toast.error('Không mở được cửa sổ in. Hãy cho phép pop-up.');
+          return;
+        }
+
+        toast.success('Đã mở hộp thoại in nhanh');
+        setOpenQuickTemPrintDialog(false);
+      } catch (error: any) {
+        console.error('submitQuickTemBrowserPrint error:', error);
+        toast.error(error?.response?.data?.error || error?.message || 'In nhanh thất bại');
+      } finally {
+        setQuickTemLoading(false);
+      }
+    };
+
+    const submitQuickTemDirectPrint = async () => {
+      if (!quickTemPrinterName.trim()) {
+        toast.error('Vui lòng chọn máy in trực tiếp');
+        return;
+      }
+
+      setQuickTemLoading(true);
+      try {
+        const loaded = await getResolvedQuickPrintPayload();
+        if (!loaded) return;
+
+        const { data, copies } = loaded;
+        const resolved = data.resolved_template;
+        const bitmap = await buildBitmapPayloadFromTemplate(resolved);
+
+        const response = await axios.post('/api/print-tspl', {
+          mode: 'bitmap',
+          printerName: quickTemPrinterName.trim(),
+          widthMm: resolved.widthMm,
+          heightMm: resolved.heightMm,
+          dpi: bitmap.dpi,
+          gapMm: resolved.gapMm,
+          speed: resolved.speed,
+          density: resolved.density,
+          copies,
+          bitmapOffsetXmm: resolved.bitmapOffsetXmm,
+          bitmapOffsetYmm: resolved.bitmapOffsetYmm,
+          widthBytes: bitmap.widthBytes,
+          heightDots: bitmap.heightDots,
+          bitmapBase64: bitmap.bitmapBase64,
+        });
+
+        toast.success(response.data?.message || `Đã gửi in trực tiếp tới ${quickTemPrinterName.trim()}`);
+        setOpenQuickTemPrintDialog(false);
+      } catch (error: any) {
+        console.error('submitQuickTemDirectPrint error:', error);
+        toast.error(error?.response?.data?.error || error?.message || 'In trực tiếp thất bại');
+      } finally {
+        setQuickTemLoading(false);
+      }
+    };
+
     const filtered = dsGongKinh.filter((gong) => {
       const s = searchGongKinh.toLowerCase();
       return gong.ten_gong.toLowerCase().includes(s) ||
@@ -1339,6 +1812,7 @@ function DanhMucPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-100 border-b">
                 <tr>
+                  <th className="px-4 py-2 text-left">Ảnh</th>
                   <th className="px-4 py-2 text-left">Tên gọng</th>
                   <th className="px-4 py-2 text-left hidden sm:table-cell">Mã</th>
                   <th className="px-4 py-2 text-left hidden md:table-cell">Màu / Kích cỡ</th>
@@ -1353,6 +1827,30 @@ function DanhMucPage() {
                 {filtered.map((gong) => (
                   <tr key={gong.id} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        className="w-12 h-12 rounded-md overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center disabled:cursor-not-allowed"
+                        disabled={!gong.hinh_anh_url}
+                        onClick={() => {
+                          if (!gong.hinh_anh_url) return;
+                          const label = gong.ma_gong ? `${gong.ten_gong} (${gong.ma_gong})` : gong.ten_gong;
+                          setSelectedFrameImage({ src: gong.hinh_anh_url, title: label });
+                        }}
+                        title={gong.hinh_anh_url ? 'Xem ảnh lớn' : 'Chưa có ảnh'}
+                      >
+                        {gong.hinh_anh_url ? (
+                          <img
+                            src={gong.hinh_anh_url}
+                            alt={`Ảnh gọng ${gong.ten_gong}`}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="text-[10px] text-gray-400">No img</span>
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2">
                       <div className="font-medium">{gong.ten_gong}</div>
                       {gong.NhaCungCap && <div className="text-xs text-gray-400">NCC: {gong.NhaCungCap.ten}</div>}
                     </td>
@@ -1366,6 +1864,14 @@ function DanhMucPage() {
                     <td className="px-4 py-2 text-center font-bold">{gong.ton_kho ?? 0}</td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex items-center justify-center space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openQuickTemPrint(gong)}
+                          title="In nhanh tem gọng"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -1388,6 +1894,113 @@ function DanhMucPage() {
             </table>
           </CardContent>
         </Card>
+
+        <Dialog open={openQuickTemPrintDialog} onOpenChange={setOpenQuickTemPrintDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>In nhanh tem gọng</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="text-sm text-gray-600">
+                <strong>Gọng:</strong> {quickTemFrame?.ten_gong || '-'} {quickTemFrame?.ma_gong ? `(${quickTemFrame.ma_gong})` : ''}
+              </div>
+
+              <div>
+                <Label>Mẫu in</Label>
+                <select
+                  className="mt-1 w-full border rounded-md px-3 py-2 text-sm"
+                  value={quickTemTemplateId ?? ''}
+                  onChange={(e) => setQuickTemTemplateId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Mặc định hệ thống</option>
+                  {quickTemTemplates.map((item) => (
+                    <option key={item.id!} value={item.id!}>
+                      {item.name}
+                      {item.is_default ? ' (mặc định)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label>Số bản in</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  step={1}
+                  value={quickTemCopies}
+                  onChange={(e) => setQuickTemCopies(Math.min(500, Math.max(1, Number(e.target.value) || 1)))}
+                />
+              </div>
+
+              <div>
+                <Label>Máy in trực tiếp</Label>
+                <select
+                  className="mt-1 w-full border rounded-md px-3 py-2 text-sm"
+                  value={quickTemPrinterName}
+                  onChange={(e) => setQuickTemPrinterName(e.target.value)}
+                >
+                  {!quickTemPrinters.length ? <option value="">(Không có dữ liệu máy in)</option> : null}
+                  {quickTemPrinters.map((printer) => (
+                    <option key={printer} value={printer}>
+                      {printer}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">Nếu không chọn máy in, vẫn có thể in qua trình duyệt.</p>
+              </div>
+
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:underline"
+                onClick={() => window.open(`/tem-kinh?gong_kinh_id=${quickTemFrame?.id || ''}`, '_blank', 'noopener,noreferrer')}
+              >
+                Mở cài đặt tem in (nâng cao)
+              </button>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpenQuickTemPrintDialog(false)} disabled={quickTemLoading}>
+                Hủy
+              </Button>
+              <Button variant="outline" onClick={() => void submitQuickTemBrowserPrint()} disabled={quickTemLoading}>
+                {quickTemLoading ? 'Đang xử lý...' : 'In qua trình duyệt'}
+              </Button>
+              <Button onClick={() => void submitQuickTemDirectPrint()} disabled={quickTemLoading || !quickTemPrinterName.trim()}>
+                {quickTemLoading ? 'Đang gửi lệnh in...' : 'In trực tiếp'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(selectedFrameImage)} onOpenChange={(open) => { if (!open) setSelectedFrameImage(null); }}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Ảnh gọng kính</DialogTitle>
+            </DialogHeader>
+
+            {selectedFrameImage && (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">{selectedFrameImage.title}</p>
+                <div className="w-full max-h-[70vh] overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  <img
+                    src={selectedFrameImage.src}
+                    alt={`Ảnh lớn ${selectedFrameImage.title}`}
+                    className="mx-auto h-auto max-h-[65vh] w-auto max-w-full rounded-md"
+                  />
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSelectedFrameImage(null)}>
+                Đóng
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   };
@@ -1997,6 +2610,14 @@ function DanhMucPage() {
                     placeholder="52-18-140"
                   />
                 </div>
+              </div>
+              <div>
+                <Label>Hãng sản xuất</Label>
+                <Input
+                  value={gongKinhForm.hang_san_xuat || ''}
+                  onChange={(e) => setGongKinhForm({ ...gongKinhForm, hang_san_xuat: e.target.value })}
+                  placeholder="VD: Shieido, Ray-Ban, Versace"
+                />
               </div>
               <div>
                 <Label>Nhà cung cấp</Label>

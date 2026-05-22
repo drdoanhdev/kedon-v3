@@ -799,6 +799,7 @@ export default function MobileBottomNav() {
       { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
       { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
       { href: '/cau-hinh-in', label: 'Cấu hình in', icon: Printer },
+      { href: '/tem-kinh', label: 'In tem kính', icon: Printer, feature: 'print_config' },
       { href: '/cai-dat-nhan-tin', label: 'Nhắn tin tự động', icon: Send, visible: isOwnerAdmin },
       { href: '/quan-ly-phong-kham', label: 'Phòng khám', icon: Settings, visible: isOwnerAdmin },
       { href: '/billing', label: 'Gói dịch vụ', icon: CreditCard },

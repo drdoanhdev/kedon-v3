@@ -83,6 +83,26 @@ function buildSearchOrFilter(rawSearch: string): string {
   return Array.from(clauses).join(',');
 }
 
+function firstQueryValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0] : '';
+  }
+  return typeof value === 'string' ? value : '';
+}
+
+function parsePositiveIntQuery(
+  value: string | string[] | undefined,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const raw = firstQueryValue(value).trim();
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<
@@ -104,10 +124,10 @@ export default async function handler(
   // Handle GET requests
   if (req.method === "GET") {
     try {
-      const benhnhanid = req.query.benhnhanid as string;
-      const page = parseInt(req.query.page as string) || 1;
-      const pageSize = parseInt(req.query.pageSize as string) || 100;
-      const search = ((req.query.search as string) || '').trim();
+      const benhnhanid = firstQueryValue(req.query.benhnhanid).trim();
+      const page = parsePositiveIntQuery(req.query.page, 1, 1, 100000);
+      const pageSize = parsePositiveIntQuery(req.query.pageSize, 100, 1, 500);
+      const search = firstQueryValue(req.query.search).trim();
       const searchOrFilter = buildSearchOrFilter(search);
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
@@ -240,6 +260,7 @@ export default async function handler(
         return res.status(200).json({ data: dataWithAge, total: count ?? 0 });
       }
     } catch (error: unknown) {
+      console.error('benh-nhan GET unexpected error:', error);
       const message = error instanceof Error ? error.message : "Unknown error";
       return res.status(500).json({ message: "Server error", error: message });
     }

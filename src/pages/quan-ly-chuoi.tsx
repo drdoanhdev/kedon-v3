@@ -16,6 +16,7 @@ interface Branch {
   tenant_id: string;
   ten_chi_nhanh: string;
   dia_chi: string | null;
+  dia_chi_full: string | null;
   dien_thoai: string | null;
   is_main: boolean;
   status: string;
@@ -95,7 +96,7 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
   const [loading, setLoading] = useState(true);
   const [showAddBranch, setShowAddBranch] = useState(false);
   const [editBranch, setEditBranch] = useState<Branch | null>(null);
-  const [branchForm, setBranchForm] = useState({ ten_chi_nhanh: '', dia_chi: '', dien_thoai: '' });
+  const [branchForm, setBranchForm] = useState({ ten_chi_nhanh: '', dia_chi: '', dia_chi_full: '', dien_thoai: '' });
   const [saving, setSaving] = useState(false);
 
   // Staff state
@@ -184,7 +185,7 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
         toast.success(editBranch ? 'Đã cập nhật chi nhánh' : 'Đã tạo chi nhánh mới');
         setShowAddBranch(false);
         setEditBranch(null);
-        setBranchForm({ ten_chi_nhanh: '', dia_chi: '', dien_thoai: '' });
+        setBranchForm({ ten_chi_nhanh: '', dia_chi: '', dia_chi_full: '', dien_thoai: '' });
         loadBranches();
       } else {
         const err = await res.json();
@@ -340,6 +341,7 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
     setBranchForm({
       ten_chi_nhanh: branch.ten_chi_nhanh,
       dia_chi: branch.dia_chi || '',
+      dia_chi_full: branch.dia_chi_full || '',
       dien_thoai: branch.dien_thoai || '',
     });
     setShowAddBranch(true);
@@ -348,7 +350,7 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
   const cancelForm = () => {
     setShowAddBranch(false);
     setEditBranch(null);
-    setBranchForm({ ten_chi_nhanh: '', dia_chi: '', dien_thoai: '' });
+    setBranchForm({ ten_chi_nhanh: '', dia_chi: '', dia_chi_full: '', dien_thoai: '' });
   };
 
   const weekdayOptions: { value: number; label: string }[] = [];
@@ -427,6 +429,17 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
                         placeholder="0901234567"
                       />
                     </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="text-sm font-medium text-gray-700 mb-1 block">Địa chỉ đầy đủ (in trên tem kính)</label>
+                    <textarea
+                      value={branchForm.dia_chi_full}
+                      onChange={e => setBranchForm(f => ({ ...f, dia_chi_full: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-200 focus:outline-none"
+                      placeholder="VD: Gạo Bắc, Hồ Tùng Mậu, Ân Thi, Hưng Yên"
+                      rows={2}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Địa chỉ này sẽ hiển thị trên tem kính xoay 90° (mặt sau)</p>
                   </div>
                   <div className="flex gap-2 mt-4">
                     <button

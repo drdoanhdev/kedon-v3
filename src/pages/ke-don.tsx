@@ -22,6 +22,7 @@ import { useFooter } from '../contexts/FooterContext';
 import { usePageTabs } from '../contexts/PageTabsContext';
 import { searchByStartsWith } from '@/lib/utils';
 import PrintDonThuoc from '../components/ke-don/PrintDonThuoc';
+import DonKinhMediaPanel, { type DraftDonKinhUploadItem } from '../components/ke-don/DonKinhImageStripPanel';
 
 interface Thuoc {
   id: number;
@@ -79,6 +80,110 @@ interface PatientNote {
   id: number;
   content: string;
   note_type: 'important' | 'normal';
+}
+
+function parseNgayKham(value?: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatNgayKhamDdMm(value?: string): string {
+  const parsed = parseNgayKham(value);
+  if (!parsed) return '--/--';
+  return parsed.toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function formatNgayKhamYear(value?: string): string {
+  const parsed = parseNgayKham(value);
+  if (!parsed) return 'Không rõ năm';
+  return parsed.toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+  });
+}
+
+async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => reject(new Error('Cannot read image dimensions'));
+      img.src = objectUrl;
+    });
+    return size;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function uploadDraftDonThuocMediaQueue(
+  donThuocId: number,
+  draftQueue: DraftDonKinhUploadItem[]
+): Promise<{ successCount: number; failedCount: number }> {
+  let successCount = 0;
+  let failedCount = 0;
+
+  for (const draft of draftQueue) {
+    let mediaId: number | null = null;
+
+    try {
+      const createRes = await axios.post('/api/don-thuoc/media', {
+        don_thuoc_id: donThuocId,
+        loai_anh: 'don_thuoc',
+        mime_type: draft.file.type || 'image/jpeg',
+        size_bytes: draft.file.size,
+        original_filename: draft.file.name,
+        source_device: draft.sourceDevice,
+        captured_at: new Date().toISOString(),
+      });
+
+      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; contentType?: string } | undefined;
+      mediaId = Number(createRes.data?.data?.id || 0) || null;
+      if (!uploadMeta?.signedUrl) {
+        throw new Error('Không nhận được signed upload URL');
+      }
+
+      const uploadRes = await fetch(uploadMeta.signedUrl, {
+        method: uploadMeta.method || 'PUT',
+        headers: {
+          'Content-Type': uploadMeta.contentType || draft.file.type || 'application/octet-stream',
+        },
+        body: draft.file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload thất bại (${uploadRes.status})`);
+      }
+
+      const imageDimensions = await readImageDimensions(draft.file);
+      if (mediaId) {
+        await axios.patch('/api/don-thuoc/media', {
+          id: mediaId,
+          status: 'uploaded',
+          width: imageDimensions?.width,
+          height: imageDimensions?.height,
+          size_bytes: draft.file.size,
+        });
+      }
+
+      successCount += 1;
+    } catch {
+      failedCount += 1;
+      if (mediaId) {
+        await axios.patch('/api/don-thuoc/media', { id: mediaId, status: 'failed' }).catch(() => {});
+      }
+    }
+  }
+
+  return { successCount, failedCount };
 }
 
 // Mobile swipeable row — vuốt sang trái để hiện nút − / + / 🗑 (giống KiotViet)
@@ -242,12 +347,20 @@ export default function KeDon() {
   const [tienKhachDua, setTienKhachDua] = useState(0);
   const [tienKhachDuaInput, setTienKhachDuaInput] = useState('');
   const [editDonThuocId, setEditDonThuocId] = useState<number | null>(null);
+  const [activeDonThuocMediaId, setActiveDonThuocMediaId] = useState<number | null>(null);
+  const [draftMediaQueue, setDraftMediaQueue] = useState<DraftDonKinhUploadItem[]>([]);
+  const [draftQueueResetToken, setDraftQueueResetToken] = useState(0);
   const [highlightId, setHighlightId] = useState<number | null>(null); // highlight đơn mới / cập nhật
   const [focusedRowIdx, setFocusedRowIdx] = useState<number>(-1);
   const chandoanDesktopRef = useRef<HTMLInputElement | null>(null);
   const searchDesktopRef = useRef<HTMLInputElement | null>(null);
   const soluongRefs = useRef<(HTMLInputElement | null)[]>([]);
   const cachdungRefs = useRef<(HTMLInputElement | null)[]>([]);
+  useEffect(() => {
+    if (!activeDonThuocMediaId) return;
+    setDraftQueueResetToken((prev) => prev + 1);
+    setDraftMediaQueue([]);
+  }, [activeDonThuocMediaId]);
   // Edit patient dialog state
   const [openEditPatient, setOpenEditPatient] = useState(false);
   const [patientForm, setPatientForm] = useState<BenhNhan | null>(null);
@@ -518,6 +631,15 @@ export default function KeDon() {
   const tongTien = useMemo(() => dsChon.reduce((sum, item) => sum + item.soluong * item.thuoc.giaban, 0), [dsChon]);
   const tongTienThuoc = useMemo(() => dsChon.filter(item => !item.thuoc.donvitinh?.toLowerCase().includes('lần')).reduce((sum, item) => sum + item.soluong * item.thuoc.giaban, 0), [dsChon]);
   const tongTienThuThuat = useMemo(() => dsChon.filter(item => item.thuoc.donvitinh?.toLowerCase().includes('lần')).reduce((sum, item) => sum + item.soluong * item.thuoc.giaban, 0), [dsChon]);
+  const dsDonCuGroupedByYear = useMemo(() => {
+    const map = new Map<string, DonThuocCu[]>();
+    for (const don of dsDonCu) {
+      const year = formatNgayKhamYear(don.ngay_kham);
+      if (!map.has(year)) map.set(year, []);
+      map.get(year)?.push(don);
+    }
+    return Array.from(map.entries()).map(([year, items]) => ({ year, items }));
+  }, [dsDonCu]);
   const lai = useMemo(
     () => (dsChon.reduce((sum, item) => sum + (item.thuoc.giaban - (item.thuoc.gianhap || 0)) * item.soluong, 0) / 1000).toFixed(0),
     [dsChon]
@@ -623,6 +745,7 @@ export default function KeDon() {
   // Sử dụng trường no (boolean) nếu có, nếu không thì tính lại từ số tiền
   const isNo = typeof don.no === 'boolean' ? don.no : don.sotien_da_thanh_toan < don.tongtien;
   setGhiNo(isNo);
+      setActiveDonThuocMediaId(don.id);
       // Sử dụng ngay_kham và chuyển đổi sang múi giờ local để hiển thị đúng
       const ngayKhamDate = new Date(don.ngay_kham);
       const localTime = new Date(ngayKhamDate.getTime() + (7 * 60 * 60 * 1000)); // Chuyển sang UTC+7
@@ -642,8 +765,11 @@ export default function KeDon() {
     setTienKhachDua(0);
     setTienKhachDuaInput('');
     setEditDonThuocId(null);
+    setActiveDonThuocMediaId(null);
     setTimThuocDonDangKe('');
     setHighlightedIndex(-1);
+    setDraftQueueResetToken((prev) => prev + 1);
+    setDraftMediaQueue([]);
     const now = new Date();
     const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000)); // UTC+7
     setNgayKham(vietnamTime.toISOString().slice(0, 16)); // Reset về ngày giờ hiện tại theo UTC+7
@@ -800,6 +926,22 @@ export default function KeDon() {
         // Hiển thị cảnh báo tồn kho
         const warnings: string[] = data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
+        const savedDonThuocId = editDonThuocId || data?.data?.id;
+        if (savedDonThuocId && draftMediaQueue.length > 0) {
+          toast.loading('Đang tải ảnh tạm lên đơn thuốc...', { id: 'draft-donthuoc-media-upload' });
+          const uploadResult = await uploadDraftDonThuocMediaQueue(savedDonThuocId, draftMediaQueue);
+          toast.dismiss('draft-donthuoc-media-upload');
+          if (uploadResult.successCount > 0 && uploadResult.failedCount === 0) {
+            toast.success(`Đã tải ${uploadResult.successCount} ảnh lên đơn thuốc`);
+          } else if (uploadResult.successCount > 0 && uploadResult.failedCount > 0) {
+            toast(`Đã tải ${uploadResult.successCount} ảnh, lỗi ${uploadResult.failedCount} ảnh`);
+          } else if (uploadResult.failedCount > 0) {
+            toast.error(`Không tải được ${uploadResult.failedCount} ảnh tạm`);
+          }
+        }
+
+        setDraftQueueResetToken((prev) => prev + 1);
+        setDraftMediaQueue([]);
         if (!editDonThuocId) {
           const newId = data.data.id;
           setDsDonCu((prev) => [data.data, ...prev]);
@@ -835,6 +977,9 @@ export default function KeDon() {
           setTimeout(() => setHighlightId(current => current === updatedId ? null : current), 3000);
         }
         resetForm();
+        if (savedDonThuocId) {
+          setActiveDonThuocMediaId(savedDonThuocId);
+        }
       } else {
         toast.error(`Lỗi khi lưu đơn thuốc: ${data.message}`);
       }
@@ -842,7 +987,7 @@ export default function KeDon() {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi khi lưu đơn thuốc: ${message}`);
     }
-  }, [benhnhanid, chandoan, dsChon, ghiNo, tongTien, sotienDaThanhToan, editDonThuocId, ngayKham, resetForm]);
+  }, [benhnhanid, chandoan, dsChon, ghiNo, tongTien, sotienDaThanhToan, editDonThuocId, ngayKham, resetForm, draftMediaQueue]);
 
   // Functions cho đơn thuốc mẫu
   const fetchDonThuocMau = useCallback(async () => {
@@ -1053,7 +1198,7 @@ export default function KeDon() {
   <div className="flex flex-col lg:block">
 
         {/* Mobile layout - Clinical blue theme */}
-  <div className="block lg:hidden bg-[#f5f6f8] min-h-screen -mt-10">
+  <div className="block lg:hidden bg-[#f5f6f8] min-h-screen">
 
           {/* Patient Mini Card - Mobile (sticky full-bleed header replacement) */}
           {benhNhan ? (
@@ -1516,6 +1661,7 @@ export default function KeDon() {
                 )}
               </div>
             </div>
+
             {tienKhachDua > 0 && tienTraLai > 0 && (
               <div className="flex justify-between items-center px-1">
                 <span className="text-xs text-gray-500 font-medium">Tiền trả lại khách</span>
@@ -1635,6 +1781,20 @@ export default function KeDon() {
               )}
             </div>
           </div>
+
+          <DonKinhMediaPanel
+            donKinhId={null}
+            mediaOwnerId={activeDonThuocMediaId || editDonThuocId}
+            apiBasePath="/api/don-thuoc/media"
+            ownerIdField="don_thuoc_id"
+            ownerLabel="đơn thuốc"
+            missingOwnerMessage="Chưa có đơn thuốc đang chọn."
+            mediaKind="don_thuoc"
+            enableDraftWhenNoDonKinhId
+            draftQueueResetToken={draftQueueResetToken}
+            onDraftQueueChange={setDraftMediaQueue}
+            className="mt-2"
+          />
 
           {/* === End Panel 0 === */}
           </div>
@@ -1858,35 +2018,41 @@ export default function KeDon() {
             {dsDonCu.length === 0 && (
               <p className="text-xs text-gray-400 px-1">Chưa có đơn thuốc nào.</p>
             )}
-            <div className="space-y-0.5">
-            {dsDonCu.map((don) => (
-              <div
-                key={don.id}
-                className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border ${don.id === highlightId || don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-sm' : 'bg-transparent border-transparent hover:bg-white hover:border-blue-300 hover:shadow-sm'}`}
-                onClick={() => suaDon(don)}
-              >
-                <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <p className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
-                    {new Date(don.ngay_kham).toLocaleDateString('vi-VN', {
-                      timeZone: 'Asia/Ho_Chi_Minh',
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: '2-digit',
-                    })}
-                  </p>
-                  <p className="text-xs font-bold text-gray-900 truncate flex-1">{don.chandoan || '—'}</p>
-                  <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-                    <p className="text-[11px] font-bold text-blue-600">{(don.tongtien / 1000).toFixed(0)}k</p>
-                    {(don.tongtien - (don.sotien_da_thanh_toan || 0)) > 0 && (
-                      <p className="text-[10px] font-semibold text-red-600">Nợ {(((don.tongtien - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0))}k</p>
-                    )}
+            <div className="space-y-1">
+              {dsDonCuGroupedByYear.map((group) => (
+                <div key={group.year} className="space-y-0.5">
+                  <div className="flex items-center px-0.5 pt-1.5 pb-0.5">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-extrabold text-gray-700">
+                      {group.year === 'Không rõ năm'
+                        ? `Năm khác (${group.items.length})`
+                        : `Năm ${group.year} (${group.items.length})`}
+                    </span>
                   </div>
+                  {group.items.map((don) => (
+                    <div
+                      key={don.id}
+                      className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border ${don.id === highlightId || don.id === editDonThuocId ? 'bg-blue-50 border-blue-400 shadow-sm' : 'bg-transparent border-transparent hover:bg-white hover:border-blue-300 hover:shadow-sm'}`}
+                      onClick={() => suaDon(don)}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <p className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">
+                          {formatNgayKhamDdMm(don.ngay_kham)}
+                        </p>
+                        <p className="text-xs font-bold text-gray-900 truncate flex-1">{don.chandoan || '—'}</p>
+                        <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                          <p className="text-[11px] font-bold text-blue-600">{(don.tongtien / 1000).toFixed(0)}k</p>
+                          {(don.tongtien - (don.sotien_da_thanh_toan || 0)) > 0 && (
+                            <p className="text-[10px] font-semibold text-red-600">Nợ {(((don.tongtien - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0))}k</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-gray-500 leading-tight">
+                        {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-[11px] text-gray-500 leading-tight">
-                  {dsChiTietDonCu[don.id]?.map((item) => `${item.thuoc.tenthuoc} x${item.soluong}`).join(', ') || 'Không có thuốc'}
-                </p>
-              </div>
-            ))}
+              ))}
             </div>
           </>
         )}
@@ -2284,7 +2450,8 @@ export default function KeDon() {
     </section>
 
     {/* ═══ RIGHT SIDEBAR: Thanh toán & Hành động ═══ */}
-    <aside className="w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-l border-gray-200 bg-[#f5f6f8] p-3 flex flex-col overflow-y-auto clinical-scrollbar">
+    <aside className="w-[clamp(220px,16.67%,320px)] flex-shrink-0 border-l border-gray-200 bg-[#f5f6f8] flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto clinical-scrollbar p-3 min-h-0">
       <h2 className="font-bold text-gray-900 text-sm tracking-tight mb-2">Thanh toán</h2>
 
       {/* Payment Summary Card */}
@@ -2403,8 +2570,24 @@ export default function KeDon() {
         )}
       </div>
 
+      <DonKinhMediaPanel
+        donKinhId={null}
+        mediaOwnerId={activeDonThuocMediaId || editDonThuocId}
+        apiBasePath="/api/don-thuoc/media"
+        ownerIdField="don_thuoc_id"
+        ownerLabel="đơn thuốc"
+        missingOwnerMessage="Chưa có đơn thuốc đang chọn."
+        mediaKind="don_thuoc"
+        enableDraftWhenNoDonKinhId
+        draftQueueResetToken={draftQueueResetToken}
+        onDraftQueueChange={setDraftMediaQueue}
+        className="mb-3"
+      />
+
+      </div>
+
       {/* Action buttons */}
-      <div className="mt-auto space-y-2">
+      <div className="flex-shrink-0 p-3 border-t border-gray-200 space-y-2">
         {!editDonThuocId && (
           <button
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-extrabold text-sm py-3 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"

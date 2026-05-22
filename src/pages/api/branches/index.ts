@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // POST: Tạo chi nhánh mới
     if (req.method === 'POST') {
-      const { ten_chi_nhanh, dia_chi, dien_thoai } = req.body;
+      const { ten_chi_nhanh, dia_chi, dia_chi_full, dien_thoai } = req.body;
       if (!ten_chi_nhanh?.trim()) {
         return res.status(400).json({ error: 'Tên chi nhánh là bắt buộc' });
       }
@@ -53,6 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           tenant_id: tenantId,
           ten_chi_nhanh: ten_chi_nhanh.trim(),
           dia_chi: dia_chi?.trim() || null,
+          dia_chi_full: dia_chi_full?.trim() || null,
           dien_thoai: dien_thoai?.trim() || null,
           is_main: false,
           status: 'active',
@@ -66,12 +67,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // PUT: Cập nhật chi nhánh
     if (req.method === 'PUT') {
-      const { id, ten_chi_nhanh, dia_chi, dien_thoai, status: branchStatus } = req.body;
+      const { id, ten_chi_nhanh, dia_chi, dia_chi_full, dien_thoai, status: branchStatus } = req.body;
       if (!id) return res.status(400).json({ error: 'Thiếu id' });
 
       const updateData: any = {};
       if (ten_chi_nhanh !== undefined) updateData.ten_chi_nhanh = ten_chi_nhanh.trim();
       if (dia_chi !== undefined) updateData.dia_chi = dia_chi?.trim() || null;
+      if (dia_chi_full !== undefined) updateData.dia_chi_full = dia_chi_full?.trim() || null;
       if (dien_thoai !== undefined) updateData.dien_thoai = dien_thoai?.trim() || null;
       if (branchStatus !== undefined) {
         // Không cho tắt chi nhánh chính

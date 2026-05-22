@@ -419,7 +419,11 @@ export default function BenhNhanPage() {
         setTotal(res.data.total || 0);
       } catch (error: unknown) {
         if (axios.isCancel(error)) return; // Request bị hủy, bỏ qua
-        const message = error instanceof Error ? error.message : String(error);
+        const message = axios.isAxiosError(error)
+          ? error.response?.data?.message || error.response?.data?.error || error.message
+          : error instanceof Error
+            ? error.message
+            : String(error);
         toast.error(`Lỗi tải danh sách bệnh nhân: ${message}`);
       }
     };

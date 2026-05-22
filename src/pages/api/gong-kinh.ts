@@ -2,6 +2,94 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../lib/tenantApi';
 import { requirePermission } from '../../lib/permissions';
+import { getMediaStorageProviderForRow } from '../../lib/media/storage';
+
+const FRAME_MEDIA_READ_URL_TTL_SECONDS = 20 * 60;
+
+type GongKinhListRow = {
+  id: number;
+  gia_ban?: number;
+  gia_nhap?: number;
+  [key: string]: any;
+};
+
+type GongKinhMediaLookupRow = {
+  id: number;
+  gong_kinh_id: number;
+  loai_anh: 'mat_truoc' | 'mat_trai' | 'mat_phai' | string;
+  storage_driver: string;
+  bucket: string;
+  object_path: string;
+  status: string;
+  created_at: string;
+};
+
+function mediaKindPriority(kind: string): number {
+  if (kind === 'mat_truoc') return 0;
+  if (kind === 'mat_trai') return 1;
+  if (kind === 'mat_phai') return 2;
+  return 99;
+}
+
+async function attachRepresentativeFrameImage(tenantId: string, rows: GongKinhListRow[]): Promise<GongKinhListRow[]> {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+
+  const frameIds = rows
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isFinite(id));
+
+  if (frameIds.length === 0) {
+    return rows.map((row) => ({ ...row, hinh_anh_url: null }));
+  }
+
+  const { data: mediaRaw, error: mediaError } = await supabase
+    .from('gong_kinh_media')
+    .select('id, gong_kinh_id, loai_anh, storage_driver, bucket, object_path, status, created_at')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'uploaded')
+    .in('gong_kinh_id', frameIds)
+    .order('created_at', { ascending: false });
+
+  if (mediaError) {
+    console.warn('gong-kinh media lookup warning:', mediaError.message);
+    return rows.map((row) => ({ ...row, hinh_anh_url: null }));
+  }
+
+  const mediaRows = ((mediaRaw || []) as unknown[]) as GongKinhMediaLookupRow[];
+  const bestMediaByFrameId = new Map<number, GongKinhMediaLookupRow>();
+
+  for (const media of mediaRows) {
+    const frameId = Number(media.gong_kinh_id);
+    if (!Number.isFinite(frameId)) continue;
+
+    const current = bestMediaByFrameId.get(frameId);
+    if (!current) {
+      bestMediaByFrameId.set(frameId, media);
+      continue;
+    }
+
+    if (mediaKindPriority(media.loai_anh) < mediaKindPriority(current.loai_anh)) {
+      bestMediaByFrameId.set(frameId, media);
+    }
+  }
+
+  const signedUrlByFrameId = new Map<number, string | null>();
+  for (const [frameId, media] of bestMediaByFrameId.entries()) {
+    try {
+      const provider = getMediaStorageProviderForRow(media.storage_driver, media.bucket);
+      const readUrl = await provider.createSignedReadUrl(media.object_path, FRAME_MEDIA_READ_URL_TTL_SECONDS);
+      signedUrlByFrameId.set(frameId, readUrl || null);
+    } catch (error) {
+      console.warn(`cannot sign frame media URL for gong_kinh_id=${frameId}:`, error);
+      signedUrlByFrameId.set(frameId, null);
+    }
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    hinh_anh_url: signedUrlByFrameId.get(Number(row.id)) || null,
+  }));
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -58,8 +146,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data, error } = await query;
       if (error) throw error;
 
+      const rowsWithImage = await attachRepresentativeFrameImage(
+        tenantId,
+        ((data || []) as unknown[]) as GongKinhListRow[]
+      );
+
       if (includeEffectivePrice) {
-        const rows = Array.isArray(data) ? data : [];
+        const rows = Array.isArray(rowsWithImage) ? rowsWithImage : [];
         const itemIds = rows.map((item: any) => Number(item.id)).filter((id: number) => Number.isFinite(id));
 
         const overrideByItemId = new Map<number, any>();
@@ -101,17 +194,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(effectiveRows);
       }
 
-      return res.status(200).json(data);
+      return res.status(200).json(rowsWithImage);
     }
 
     if (req.method === 'POST') {
-      const { ten_gong, chat_lieu, gia_nhap, gia_ban, mo_ta, ma_gong, mau_sac, kich_co, nha_cung_cap_id, ton_kho, muc_ton_can_co } = req.body;
+      const { ten_gong, chat_lieu, hang_san_xuat, gia_nhap, gia_ban, mo_ta, ma_gong, mau_sac, kich_co, nha_cung_cap_id, ton_kho, muc_ton_can_co } = req.body;
       
       const { data, error } = await supabase
         .from('GongKinh')
         .insert({
           ten_gong,
           chat_lieu: chat_lieu || '',
+          hang_san_xuat: hang_san_xuat || null,
           gia_nhap: parseInt(gia_nhap) || 0,
           gia_ban: parseInt(gia_ban) || 0,
           mo_ta: mo_ta || '',
@@ -131,13 +225,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PUT') {
-      const { id, ten_gong, chat_lieu, gia_nhap, gia_ban, mo_ta, ma_gong, mau_sac, kich_co, nha_cung_cap_id, muc_ton_can_co } = req.body;
+      const { id, ten_gong, chat_lieu, hang_san_xuat, gia_nhap, gia_ban, mo_ta, ma_gong, mau_sac, kich_co, nha_cung_cap_id, muc_ton_can_co } = req.body;
       
       const { data, error } = await supabase
         .from('GongKinh')
         .update({
           ten_gong,
           chat_lieu: chat_lieu || '',
+          hang_san_xuat: hang_san_xuat || null,
           gia_nhap: parseInt(gia_nhap) || 0,
           gia_ban: parseInt(gia_ban) || 0,
           mo_ta: mo_ta || '',

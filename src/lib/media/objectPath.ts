@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto';
 import type { MediaImageKind } from './types';
 
-interface BuildDonKinhMediaPathInput {
+interface BuildPrescriptionMediaPathInput {
   tenantId: string;
   branchId: string | null;
   benhnhanId: number;
-  donKinhId: number;
+  prescriptionId: number;
+  folderName: string;
   kind: MediaImageKind;
   mimeType: string;
   originalFilename?: string | null;
@@ -54,7 +55,7 @@ function resolveCapturedAt(capturedAt?: Date): Date {
   return capturedAt;
 }
 
-export function buildDonKinhMediaObjectPath(input: BuildDonKinhMediaPathInput): string {
+function buildPrescriptionMediaObjectPath(input: BuildPrescriptionMediaPathInput): string {
   const capturedAt = resolveCapturedAt(input.capturedAt);
   const year = String(capturedAt.getUTCFullYear());
   const month = String(capturedAt.getUTCMonth() + 1).padStart(2, '0');
@@ -69,10 +70,26 @@ export function buildDonKinhMediaObjectPath(input: BuildDonKinhMediaPathInput): 
     `tenant/${tenantSegment}`,
     `branch/${branchSegment}`,
     `benhnhan/${input.benhnhanId}`,
-    `donkinh/${input.donKinhId}`,
+    `${input.folderName}/${input.prescriptionId}`,
     input.kind,
     year,
     month,
     `${token}.${extension}`,
   ].join('/');
+}
+
+export function buildDonKinhMediaObjectPath(input: Omit<BuildPrescriptionMediaPathInput, 'folderName' | 'prescriptionId'> & { donKinhId: number }): string {
+  return buildPrescriptionMediaObjectPath({
+    ...input,
+    folderName: 'donkinh',
+    prescriptionId: input.donKinhId,
+  });
+}
+
+export function buildDonThuocMediaObjectPath(input: Omit<BuildPrescriptionMediaPathInput, 'folderName' | 'prescriptionId'> & { donThuocId: number }): string {
+  return buildPrescriptionMediaObjectPath({
+    ...input,
+    folderName: 'donthuoc',
+    prescriptionId: input.donThuocId,
+  });
 }

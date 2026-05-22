@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -9,33 +9,99 @@ interface UnreadCounts {
   total: number;
 }
 
-const POLL_INTERVAL_FOCUS = 30_000;   // 30s khi tab đang focus
-const POLL_INTERVAL_BLUR = 120_000;   // 2 phút khi tab không focus
-const POLL_INTERVAL_IDLE = 0;         // Dừng hẳn khi user idle > 10 phút
+interface PollSnapshot {
+  counts: UnreadCounts;
+  loading: boolean;
+}
 
-/**
- * Hook polling thông minh cho thông báo + tin nhắn.
- * - Focus tab: poll 30s
- * - Blur tab: poll 2 phút
- * - Idle > 10 phút: dừng poll
- * - Tự restart khi user quay lại
- */
-export function useNotificationPolling() {
-  const { user, currentTenantId } = useAuth();
-  const [counts, setCounts] = useState<UnreadCounts>({ thongBao: 0, tinNhan: 0, tinNhanPlatform: 0, total: 0 });
-  const [loading, setLoading] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFocusedRef = useRef(true);
-  const lastActivityRef = useRef(Date.now());
+const EMPTY_COUNTS: UnreadCounts = {
+  thongBao: 0,
+  tinNhan: 0,
+  tinNhanPlatform: 0,
+  total: 0,
+};
 
-  const fetchCounts = useCallback(async () => {
-    if (!user || !currentTenantId) {
-      setCounts({ thongBao: 0, tinNhan: 0, tinNhanPlatform: 0, total: 0 });
-      return;
-    }
+const POLL_INTERVAL_FOCUS = 60_000; // 60s khi tab đang focus
+const POLL_INTERVAL_BLUR = 300_000; // 5 phút khi tab không focus
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+const MIN_FETCH_GAP_MS = 8_000;
 
+let snapshot: PollSnapshot = { counts: EMPTY_COUNTS, loading: false };
+const listeners = new Set<(value: PollSnapshot) => void>();
+
+let subscriberCount = 0;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let isFocused = true;
+let lastActivityAt = Date.now();
+let activeUserId: string | null = null;
+let activeTenantId: string | null = null;
+let inFlightRequest: Promise<void> | null = null;
+let lastFetchAt = 0;
+
+let isVisibilityBound = false;
+let isActivityBound = false;
+let isOnlineBound = false;
+
+function emitSnapshot() {
+  for (const listener of listeners) {
+    listener(snapshot);
+  }
+}
+
+function countsEqual(a: UnreadCounts, b: UnreadCounts) {
+  return (
+    a.thongBao === b.thongBao
+    && a.tinNhan === b.tinNhan
+    && a.tinNhanPlatform === b.tinNhanPlatform
+    && a.total === b.total
+  );
+}
+
+function updateLoading(loading: boolean) {
+  if (snapshot.loading === loading) return;
+  snapshot = { ...snapshot, loading };
+  emitSnapshot();
+}
+
+function updateCounts(counts: UnreadCounts) {
+  if (countsEqual(snapshot.counts, counts)) return;
+  snapshot = { ...snapshot, counts };
+  emitSnapshot();
+}
+
+function clearPollTimer() {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function canPoll() {
+  return subscriberCount > 0 && !!activeUserId && !!activeTenantId;
+}
+
+function getPollInterval() {
+  return isFocused ? POLL_INTERVAL_FOCUS : POLL_INTERVAL_BLUR;
+}
+
+async function fetchCounts(force = false) {
+  if (!activeUserId || !activeTenantId) {
+    updateCounts(EMPTY_COUNTS);
+    return;
+  }
+
+  const now = Date.now();
+  if (!force && now - lastFetchAt < MIN_FETCH_GAP_MS) {
+    return;
+  }
+
+  if (inFlightRequest) {
+    return inFlightRequest;
+  }
+
+  inFlightRequest = (async () => {
     try {
-      setLoading(true);
+      updateLoading(true);
       const [tbRes, tnRes, tpRes] = await Promise.all([
         fetchWithAuth('/api/thong-bao?unread_only=true&limit=1'),
         fetchWithAuth('/api/tin-nhan?limit=1'),
@@ -59,81 +125,187 @@ export function useNotificationPolling() {
         tinNhanPlatform = tpData.unreadCount || 0;
       }
 
-      setCounts({ thongBao, tinNhan, tinNhanPlatform, total: thongBao + tinNhan + tinNhanPlatform });
+      updateCounts({
+        thongBao,
+        tinNhan,
+        tinNhanPlatform,
+        total: thongBao + tinNhan + tinNhanPlatform,
+      });
     } catch {
       // Silent fail — sẽ retry lần sau
     } finally {
-      setLoading(false);
+      lastFetchAt = Date.now();
+      updateLoading(false);
+      inFlightRequest = null;
     }
-  }, [user, currentTenantId]);
+  })();
 
-  // Schedule next poll
-  const scheduleNext = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (!user || !currentTenantId) return;
+  return inFlightRequest;
+}
 
-    // Idle > 10 phút → dừng
-    const idleTime = Date.now() - lastActivityRef.current;
-    if (idleTime > 10 * 60 * 1000) return;
+function scheduleNextPoll() {
+  clearPollTimer();
+  if (!canPoll()) return;
 
-    const interval = isFocusedRef.current ? POLL_INTERVAL_FOCUS : POLL_INTERVAL_BLUR;
-    timerRef.current = setTimeout(async () => {
-      await fetchCounts();
-      scheduleNext();
-    }, interval);
-  }, [user, currentTenantId, fetchCounts]);
+  const idleTime = Date.now() - lastActivityAt;
+  if (idleTime > IDLE_TIMEOUT_MS) return;
 
-  // Visibility + activity tracking
-  useEffect(() => {
-    const handleVisibility = () => {
-      isFocusedRef.current = document.visibilityState === 'visible';
-      if (isFocusedRef.current) {
-        lastActivityRef.current = Date.now();
-        // Fetch ngay khi quay lại tab
-        fetchCounts();
-        scheduleNext();
-      }
-    };
+  pollTimer = setTimeout(async () => {
+    await fetchCounts();
+    scheduleNextPoll();
+  }, getPollInterval());
+}
 
-    const handleActivity = () => {
-      const wasIdle = Date.now() - lastActivityRef.current > 10 * 60 * 1000;
-      lastActivityRef.current = Date.now();
-      // Restart polling nếu đã idle
-      if (wasIdle) {
-        fetchCounts();
-        scheduleNext();
-      }
-    };
+function handleVisibilityChange() {
+  if (typeof document === 'undefined') return;
+  isFocused = document.visibilityState === 'visible';
+  if (isFocused) {
+    lastActivityAt = Date.now();
+    void fetchCounts(true);
+  }
+  scheduleNextPoll();
+}
 
-    document.addEventListener('visibilitychange', handleVisibility);
+function handleActivity() {
+  const now = Date.now();
+  const wasIdle = now - lastActivityAt > IDLE_TIMEOUT_MS;
+  lastActivityAt = now;
+  if (wasIdle) {
+    void fetchCounts(true);
+  }
+  scheduleNextPoll();
+}
+
+function handleOnline() {
+  lastActivityAt = Date.now();
+  void fetchCounts(true);
+  scheduleNextPoll();
+}
+
+function bindBrowserEvents() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  if (!isVisibilityBound) {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    isVisibilityBound = true;
+  }
+
+  if (!isActivityBound) {
     window.addEventListener('mousedown', handleActivity, { passive: true });
     window.addEventListener('keydown', handleActivity, { passive: true });
+    window.addEventListener('touchstart', handleActivity, { passive: true });
+    isActivityBound = true;
+  }
 
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('mousedown', handleActivity);
-      window.removeEventListener('keydown', handleActivity);
-    };
-  }, [fetchCounts, scheduleNext]);
+  if (!isOnlineBound) {
+    window.addEventListener('online', handleOnline);
+    isOnlineBound = true;
+  }
 
-  // Start polling khi user/tenant thay đổi
+  isFocused = document.visibilityState === 'visible';
+}
+
+function unbindBrowserEvents() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  if (isVisibilityBound) {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    isVisibilityBound = false;
+  }
+
+  if (isActivityBound) {
+    window.removeEventListener('mousedown', handleActivity);
+    window.removeEventListener('keydown', handleActivity);
+    window.removeEventListener('touchstart', handleActivity);
+    isActivityBound = false;
+  }
+
+  if (isOnlineBound) {
+    window.removeEventListener('online', handleOnline);
+    isOnlineBound = false;
+  }
+}
+
+function setAuthScope(userId: string | null, tenantId: string | null) {
+  const changed = activeUserId !== userId || activeTenantId !== tenantId;
+  activeUserId = userId;
+  activeTenantId = tenantId;
+
+  if (!activeUserId || !activeTenantId) {
+    clearPollTimer();
+    unbindBrowserEvents();
+    updateLoading(false);
+    updateCounts(EMPTY_COUNTS);
+    return;
+  }
+
+  if (changed && canPoll()) {
+    bindBrowserEvents();
+    lastActivityAt = Date.now();
+    void fetchCounts(true);
+    scheduleNextPoll();
+  }
+}
+
+function startPolling() {
+  if (!canPoll()) return;
+  bindBrowserEvents();
+  lastActivityAt = Date.now();
+  void fetchCounts(true);
+  scheduleNextPoll();
+}
+
+function stopPolling() {
+  clearPollTimer();
+  if (subscriberCount === 0) {
+    unbindBrowserEvents();
+  }
+}
+
+/**
+ * Hook polling thông minh cho thông báo + tin nhắn.
+ * - Focus tab: poll 60s
+ * - Blur tab: poll 5 phút
+ * - Idle > 10 phút: dừng poll
+ * - Tự restart khi user quay lại
+ * - Dùng singleton để tránh nhân đôi request khi nhiều component cùng mount hook
+ */
+export function useNotificationPolling() {
+  const { user, currentTenantId } = useAuth();
+  const [localSnapshot, setLocalSnapshot] = useState<PollSnapshot>(snapshot);
+
   useEffect(() => {
-    if (user && currentTenantId) {
-      fetchCounts();
-      scheduleNext();
-    } else {
-      setCounts({ thongBao: 0, tinNhan: 0, tinNhanPlatform: 0, total: 0 });
+    const listener = (next: PollSnapshot) => {
+      setLocalSnapshot(next);
+    };
+
+    listeners.add(listener);
+    subscriberCount += 1;
+    listener(snapshot);
+
+    if (subscriberCount === 1 && activeUserId && activeTenantId) {
+      startPolling();
     }
 
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      listeners.delete(listener);
+      subscriberCount = Math.max(0, subscriberCount - 1);
+      if (subscriberCount === 0) {
+        stopPolling();
+      }
     };
-  }, [user, currentTenantId, fetchCounts, scheduleNext]);
+  }, []);
+
+  useEffect(() => {
+    setAuthScope(user?.id || null, currentTenantId || null);
+  }, [user?.id, currentTenantId]);
 
   // Refresh thủ công (dùng khi vừa đọc xong)
   const refresh = useCallback(() => {
-    fetchCounts();
-  }, [fetchCounts]);
+    lastActivityAt = Date.now();
+    void fetchCounts(true);
+    scheduleNextPoll();
+  }, []);
 
-  return { counts, loading, refresh };
+  return { counts: localSnapshot.counts, loading: localSnapshot.loading, refresh };
 }

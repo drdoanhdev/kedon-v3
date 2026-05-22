@@ -462,6 +462,17 @@ export default function Header() {
                   <span>Cấu hình in</span>
                 </Link>
 
+                <Link
+                  href="/tem-kinh"
+                  onClick={() => setIsAvatarOpen(false)}
+                  className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                    isActivePage('/tem-kinh') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                  }`}
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>In tem kính</span>
+                </Link>
+
                 {/* Nhắn tin tự động (Zalo OA) */}
                 {(currentRole === 'owner' || currentRole === 'admin') && (
                   <Link
@@ -601,6 +612,17 @@ export default function Header() {
                 >
                   <Printer className="w-4 h-4" />
                   <span>Cấu hình in</span>
+                </Link>
+              </div>
+
+              <div className="px-3 py-1">
+                <Link
+                  href="/tem-kinh"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-sm text-gray-600"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>In tem kính</span>
                 </Link>
               </div>
 

@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Label } from '../components/ui/label';
 import PrintDonKinh from '../components/ke-don/PrintDonKinh';
 import DonKinhMediaPanel from '@/components/ke-don/DonKinhImageStripPanel';
+import type { DraftDonKinhUploadItem } from '@/components/ke-don/DonKinhImageStripPanel';
 import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
 
 interface BenhNhan {
@@ -112,68 +113,133 @@ interface DonKinh {
   lai?: number;
 }
 
-interface HistoryProps { items: DonKinh[]; onSelect: (don: DonKinh) => void; highlightId?: number | null; }
-const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId }) => (
-  <div className="lg:max-h-none lg:h-full lg:flex lg:flex-col contents lg:bg-[#f5f6f8]">
-    {/* Header chỉ hiển thị trên desktop — mobile đã có nhãn "Đơn cũ" trong bottom nav */}
-    <h2 className="hidden lg:block font-bold text-gray-900 text-sm tracking-tight px-3 pt-3 pb-2 flex-shrink-0">Lịch sử đơn kính {items.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold ml-1">{items.length}</span>}</h2>
-    {items.length === 0 ? (
-      <p className="text-xs text-gray-500 px-1 lg:px-3">Chưa có đơn kính nào</p>
-    ) : (
-      <div className="space-y-0.5 lg:overflow-y-auto lg:flex-1 lg:min-h-0 lg:px-3 lg:pb-3">
-        {items.map((don) => (
-          <div
-            key={don.id}
-            className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
-            onClick={() => onSelect(don)}
-          >
-            <div className="block md:hidden">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <p className="text-sm font-bold text-gray-900">
-                    {new Date(don.ngaykham || don.ngay_kham || '').toLocaleDateString('vi-VN')}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(don.ngaykham || don.ngay_kham || '').toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-gray-900">{(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k</p>
-                  {(don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0) > 0 && (
-                    <p className="text-xs font-semibold text-red-600">Nợ: {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-1 text-xs">
-                <div><span className="text-gray-500">MP:</span> {don.sokinh_moi_mp || 'N/A'} {don.thiluc_kinhmoi_mp ? `→ ${don.thiluc_kinhmoi_mp}` : ''}</div>
-                <div><span className="text-gray-500">MT:</span> {don.sokinh_moi_mt || 'N/A'} {don.thiluc_kinhmoi_mt ? `→ ${don.thiluc_kinhmoi_mt}` : ''}</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><span className="text-gray-500">Tròng:</span> {((don.giatrong || 0) / 1000).toFixed(0)}k</div>
-                  <div><span className="text-gray-500">Gọng:</span> {((don.giagong || 0) / 1000).toFixed(0)}k</div>
-                </div>
-              </div>
-            </div>
-            <div className="hidden md:block">
-              <p className="text-xs flex items-center gap-1">
-                <span><strong>Ngày:</strong> {new Date(don.ngaykham || don.ngay_kham || '').toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                {(don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0) > 0 && (
-                  <span className="text-red-600 font-semibold ml-auto">Nợ {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</span>
-                )}
-              </p>
-              <p className="text-xs"><strong>MP:</strong> {don.sokinh_moi_mp || 'N/A'} {don.thiluc_kinhmoi_mp ? `→ ${don.thiluc_kinhmoi_mp}` : ''}</p>
-              <p className="text-xs"><strong>MT:</strong> {don.sokinh_moi_mt || 'N/A'} {don.thiluc_kinhmoi_mt ? `→ ${don.thiluc_kinhmoi_mt}` : ''}</p>
-              <div className="flex items-center gap-2 text-xs">
-                <span><strong>Tròng:</strong> {((don.giatrong || 0) / 1000).toFixed(0)}k</span>
-                <span><strong>Gọng:</strong> {((don.giagong || 0) / 1000).toFixed(0)}k</span>
-                <span className="ml-auto font-bold text-gray-900">Σ {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k</span>
-              </div>
-            </div>
+function parseNgayKham(value?: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatNgayKhamDdMm(value?: string): string {
+  const parsed = parseNgayKham(value);
+  if (!parsed) return '--/--';
+  return parsed.toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
+function formatNgayKhamYear(value?: string): string {
+  const parsed = parseNgayKham(value);
+  if (!parsed) return 'Không rõ năm';
+  return parsed.toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+  });
+}
+
+interface HistoryProps {
+  items: DonKinh[];
+  onSelect: (don: DonKinh) => void;
+  highlightId?: number | null;
+  groupByYear?: boolean;
+}
+
+const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId, groupByYear = false }) => {
+  const groupedItems = useMemo(() => {
+    if (!groupByYear) return [] as Array<{ year: string; items: DonKinh[] }>;
+    const groups: Array<{ year: string; items: DonKinh[] }> = [];
+
+    for (const don of items) {
+      const year = formatNgayKhamYear(don.ngaykham || don.ngay_kham);
+      const lastGroup = groups[groups.length - 1];
+      if (!lastGroup || lastGroup.year !== year) {
+        groups.push({ year, items: [don] });
+      } else {
+        lastGroup.items.push(don);
+      }
+    }
+
+    return groups;
+  }, [items, groupByYear]);
+
+  const renderDon = (don: DonKinh) => (
+    <div
+      key={don.id}
+      className={`px-2.5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${don.id === highlightId ? 'bg-blue-50 border-blue-400 shadow-blue-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}
+      onClick={() => onSelect(don)}
+    >
+      <div className="block md:hidden">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <p className="text-sm font-bold text-gray-900">
+              {new Date(don.ngaykham || don.ngay_kham || '').toLocaleDateString('vi-VN')}
+            </p>
+            <p className="text-xs text-gray-500">
+              {new Date(don.ngaykham || don.ngay_kham || '').toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            </p>
           </div>
-        ))}
+          <div className="text-right">
+            <p className="text-sm font-bold text-gray-900">{(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k</p>
+            {(don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0) > 0 && (
+              <p className="text-xs font-semibold text-red-600">Nợ: {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</p>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-1 text-xs">
+          <div><span className="text-gray-500">MP:</span> {don.sokinh_moi_mp || 'N/A'} {don.thiluc_kinhmoi_mp ? `→ ${don.thiluc_kinhmoi_mp}` : ''}</div>
+          <div><span className="text-gray-500">MT:</span> {don.sokinh_moi_mt || 'N/A'} {don.thiluc_kinhmoi_mt ? `→ ${don.thiluc_kinhmoi_mt}` : ''}</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><span className="text-gray-500">Tròng:</span> {((don.giatrong || 0) / 1000).toFixed(0)}k</div>
+            <div><span className="text-gray-500">Gọng:</span> {((don.giagong || 0) / 1000).toFixed(0)}k</div>
+          </div>
+        </div>
       </div>
-    )}
-  </div>
-);
+      <div className="hidden md:block">
+        <p className="text-xs flex items-center gap-1">
+          <span><strong>Ngày:</strong> {formatNgayKhamDdMm(don.ngaykham || don.ngay_kham)}</span>
+          {(don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0) > 0 && (
+            <span className="text-red-600 font-semibold ml-auto">Nợ {(((don.giatrong || 0) + (don.giagong || 0) - (don.sotien_da_thanh_toan || 0)) / 1000).toFixed(0)}k</span>
+          )}
+        </p>
+        <p className="text-xs"><strong>MP:</strong> {don.sokinh_moi_mp || 'N/A'} {don.thiluc_kinhmoi_mp ? `→ ${don.thiluc_kinhmoi_mp}` : ''}</p>
+        <p className="text-xs"><strong>MT:</strong> {don.sokinh_moi_mt || 'N/A'} {don.thiluc_kinhmoi_mt ? `→ ${don.thiluc_kinhmoi_mt}` : ''}</p>
+        <div className="flex items-center gap-2 text-xs">
+          <span><strong>Tròng:</strong> {((don.giatrong || 0) / 1000).toFixed(0)}k</span>
+          <span><strong>Gọng:</strong> {((don.giagong || 0) / 1000).toFixed(0)}k</span>
+          <span className="ml-auto font-bold text-gray-900">Σ {(((don.giatrong || 0) + (don.giagong || 0)) / 1000).toFixed(0)}k</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="lg:max-h-none lg:h-full lg:flex lg:flex-col contents lg:bg-[#f5f6f8]">
+      {/* Header chỉ hiển thị trên desktop — mobile đã có nhãn "Đơn cũ" trong bottom nav */}
+      <h2 className="hidden lg:block font-bold text-gray-900 text-sm tracking-tight px-3 pt-3 pb-2 flex-shrink-0">Lịch sử đơn kính {items.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold ml-1">{items.length}</span>}</h2>
+      {items.length === 0 ? (
+        <p className="text-xs text-gray-500 px-1 lg:px-3">Chưa có đơn kính nào</p>
+      ) : (
+        <div className="space-y-0.5 lg:overflow-y-auto lg:flex-1 lg:min-h-0 lg:px-3 lg:pb-3">
+          {groupByYear
+            ? groupedItems.map((group, groupIndex) => (
+                <div key={`${group.year}-${groupIndex}`} className="space-y-0.5">
+                  <div className="hidden lg:flex items-center px-0.5 pt-1.5 pb-0.5">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-extrabold text-gray-700">
+                      {group.year === 'Không rõ năm'
+                        ? `Năm khác (${group.items.length})`
+                        : `Năm ${group.year} (${group.items.length})`}
+                    </span>
+                  </div>
+                  {group.items.map((don) => renderDon(don))}
+                </div>
+              ))
+            : items.map((don) => renderDon(don))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // === Lịch hẹn types & helpers ===
 interface HenKham {
@@ -222,9 +288,143 @@ function getHenCountdown(dateStr: string, trangThai: string): { text: string; cl
   return { text: `Còn ${diff} ngày`, className: 'text-gray-500 bg-gray-50' };
 }
 
+async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => reject(new Error('Cannot read image dimensions'));
+      img.src = objectUrl;
+    });
+    return size;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function uploadDraftMediaQueue(
+  donKinhId: number,
+  draftQueue: DraftDonKinhUploadItem[]
+): Promise<{ successCount: number; failedCount: number }> {
+  let successCount = 0;
+  let failedCount = 0;
+
+  for (const draft of draftQueue) {
+    let mediaId: number | null = null;
+
+    try {
+      const createRes = await axios.post('/api/don-kinh/media', {
+        don_kinh_id: donKinhId,
+        loai_anh: 'don_kinh',
+        mime_type: draft.file.type || 'image/jpeg',
+        size_bytes: draft.file.size,
+        original_filename: draft.file.name,
+        source_device: draft.sourceDevice,
+        captured_at: new Date().toISOString(),
+      });
+
+      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; contentType?: string } | undefined;
+      mediaId = Number(createRes.data?.data?.id || 0) || null;
+      if (!uploadMeta?.signedUrl) {
+        throw new Error('Không nhận được signed upload URL');
+      }
+
+      const uploadRes = await fetch(uploadMeta.signedUrl, {
+        method: uploadMeta.method || 'PUT',
+        headers: {
+          'Content-Type': uploadMeta.contentType || draft.file.type || 'application/octet-stream',
+        },
+        body: draft.file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload thất bại (${uploadRes.status})`);
+      }
+
+      const imageDimensions = await readImageDimensions(draft.file);
+      if (mediaId) {
+        await axios.patch('/api/don-kinh/media', {
+          id: mediaId,
+          status: 'uploaded',
+          width: imageDimensions?.width,
+          height: imageDimensions?.height,
+          size_bytes: draft.file.size,
+        });
+      }
+
+      successCount += 1;
+    } catch {
+      failedCount += 1;
+      if (mediaId) {
+        await axios.patch('/api/don-kinh/media', { id: mediaId, status: 'failed' }).catch(() => {});
+      }
+    }
+  }
+
+  return { successCount, failedCount };
+}
+
 type DetectedBarcodeValue = { rawValue?: string };
 type BarcodeDetectorLike = { detect: (source: HTMLVideoElement) => Promise<DetectedBarcodeValue[]> };
-type BarcodeDetectorCtorLike = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
+type BarcodeDetectorCtorLike = {
+  new (options?: { formats?: string[] }): BarcodeDetectorLike;
+  getSupportedFormats?: () => Promise<string[]>;
+};
+
+const FRAME_SCAN_FORMATS = ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] as const;
+const FRAME_QR_QUERY_KEYS = ['ma_gong', 'ma', 'code', 'frame'] as const;
+
+function extractFrameScanCandidates(rawValue: string): string[] {
+  const initial = rawValue.trim();
+  if (!initial) return [];
+
+  const candidates: string[] = [initial];
+
+  try {
+    const decoded = decodeURIComponent(initial).trim();
+    if (decoded && decoded !== initial) candidates.push(decoded);
+  } catch {
+    // Keep the original value if decodeURIComponent fails.
+  }
+
+  for (const value of [...candidates]) {
+    if (!/^https?:\/\//i.test(value)) continue;
+    try {
+      const parsed = new URL(value);
+      for (const key of FRAME_QR_QUERY_KEYS) {
+        const param = parsed.searchParams.get(key)?.trim();
+        if (param) candidates.push(param);
+      }
+      const lastSegment = parsed.pathname.split('/').filter(Boolean).pop()?.trim();
+      if (lastSegment) candidates.push(lastSegment);
+    } catch {
+      // Ignore malformed URL payloads and continue with other candidates.
+    }
+  }
+
+  for (const value of [...candidates]) {
+    for (const separator of ['|', ':', ';', ',', '\n']) {
+      const tail = value.split(separator).pop()?.trim();
+      if (tail && tail !== value) candidates.push(tail);
+    }
+  }
+
+  const seen = new Set<string>();
+  const uniqueCandidates: string[] = [];
+  for (const candidate of candidates) {
+    const cleaned = candidate.trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueCandidates.push(cleaned);
+  }
+
+  return uniqueCandidates;
+}
 
 export default function KeDonKinh() {
   const { confirm } = useConfirm();
@@ -254,6 +454,14 @@ export default function KeDonKinh() {
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]); // lịch sử đơn kính
   const [highlightId, setHighlightId] = useState<number | null>(null); // id đơn kính mới / vừa cập nhật để highlight
   const [activeDonKinhMediaId, setActiveDonKinhMediaId] = useState<number | null>(null);
+  const [draftMediaQueue, setDraftMediaQueue] = useState<DraftDonKinhUploadItem[]>([]);
+  const [draftQueueResetToken, setDraftQueueResetToken] = useState(0);
+
+  useEffect(() => {
+    if (!activeDonKinhMediaId) return;
+    setDraftQueueResetToken((prev) => prev + 1);
+    setDraftMediaQueue([]);
+  }, [activeDonKinhMediaId]);
   // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ (lịch sử), 2 = Lịch hẹn
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
   // Desktop left sidebar tab: 'don_cu' or 'lich_hen'
@@ -859,12 +1067,18 @@ export default function KeDonKinh() {
   }, [gongKinhs]);
 
   const applyFrameByBarcode = useCallback((rawValue: string): string | null => {
-    const normalized = rawValue.trim().toLowerCase();
-    if (!normalized) return null;
+    const scanCandidates = extractFrameScanCandidates(rawValue);
+    if (scanCandidates.length === 0) return null;
 
-    const matchedByCode = gongKinhs.find((g) => (g.ma_gong || '').trim().toLowerCase() === normalized);
-    const matchedByName = matchedByCode ? null : gongKinhs.find((g) => g.ten_gong.trim().toLowerCase() === normalized);
-    const matchedFrame = matchedByCode || matchedByName;
+    let matchedFrame: GongKinh | null = null;
+    for (const candidate of scanCandidates) {
+      const normalized = candidate.toLowerCase();
+      const matchedByCode = gongKinhs.find((g) => (g.ma_gong || '').trim().toLowerCase() === normalized);
+      const matchedByName = matchedByCode ? null : gongKinhs.find((g) => g.ten_gong.trim().toLowerCase() === normalized);
+      matchedFrame = matchedByCode || matchedByName || null;
+      if (matchedFrame) break;
+    }
+
     if (!matchedFrame) return null;
 
     handleFrameChange(matchedFrame.ten_gong);
@@ -961,20 +1175,72 @@ export default function KeDonKinh() {
         }
 
         const BarcodeDetectorCtor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtorLike }).BarcodeDetector;
-        if (!BarcodeDetectorCtor) {
-          setBarcodeScannerError('Thiết bị chưa hỗ trợ quét tự động. Bạn có thể nhập mã thủ công bên dưới.');
+        let detector: BarcodeDetectorLike | null = null;
+        let supportedNativeFormats: string[] = [];
+
+        if (BarcodeDetectorCtor) {
+          try {
+            const nativeFormats = typeof BarcodeDetectorCtor.getSupportedFormats === 'function'
+              ? await BarcodeDetectorCtor.getSupportedFormats()
+              : [...FRAME_SCAN_FORMATS];
+            supportedNativeFormats = FRAME_SCAN_FORMATS.filter((format) => nativeFormats.includes(format));
+            const detectorOptions = supportedNativeFormats.length > 0
+              ? { formats: supportedNativeFormats }
+              : undefined;
+            detector = new BarcodeDetectorCtor(detectorOptions);
+          } catch {
+            detector = null;
+            supportedNativeFormats = [];
+          }
+        }
+
+        let detectQrFallback: ((source: HTMLVideoElement) => string | null) | null = null;
+        if (!supportedNativeFormats.includes('qr_code')) {
+          try {
+            const { default: jsQR } = await import('jsqr');
+            const qrCanvas = document.createElement('canvas');
+            const qrCtx = qrCanvas.getContext('2d');
+            if (qrCtx) {
+              detectQrFallback = (source: HTMLVideoElement) => {
+                const width = source.videoWidth || source.clientWidth;
+                const height = source.videoHeight || source.clientHeight;
+                if (!width || !height) return null;
+
+                qrCanvas.width = width;
+                qrCanvas.height = height;
+                qrCtx.drawImage(source, 0, 0, width, height);
+
+                const imageData = qrCtx.getImageData(0, 0, width, height);
+                const qrResult = jsQR(imageData.data, width, height, {
+                  inversionAttempts: 'attemptBoth',
+                });
+                const qrValue = qrResult?.data?.trim() || '';
+                return qrValue || null;
+              };
+            }
+          } catch {
+            // Ignore dynamic import failures and keep manual input fallback.
+          }
+        }
+
+        if (!detector && !detectQrFallback) {
+          setBarcodeScannerError('Thiết bị chưa hỗ trợ quét mã vạch/QR tự động. Bạn có thể nhập mã thủ công bên dưới.');
           return;
         }
 
-        const detector = new BarcodeDetectorCtor({
-          formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code'],
-        });
-
         frameBarcodeTimerRef.current = window.setInterval(async () => {
           try {
-            if (!frameBarcodeVideoRef.current || frameBarcodeVideoRef.current.readyState < 2) return;
-            const detected = await detector.detect(frameBarcodeVideoRef.current);
-            const rawValue = typeof detected?.[0]?.rawValue === 'string' ? detected[0].rawValue.trim() : '';
+            const currentVideo = frameBarcodeVideoRef.current;
+            if (!currentVideo || currentVideo.readyState < 2) return;
+
+            let rawValue = '';
+            if (detector) {
+              const detected = await detector.detect(currentVideo);
+              rawValue = typeof detected?.[0]?.rawValue === 'string' ? detected[0].rawValue.trim() : '';
+            }
+            if (!rawValue && detectQrFallback) {
+              rawValue = detectQrFallback(currentVideo) || '';
+            }
             if (!rawValue) return;
 
             const now = Date.now();
@@ -1117,7 +1383,24 @@ export default function KeDonKinh() {
         // Show inventory warnings
         const warnings: string[] = res.data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
-  addHistory(res.data.data);
+        const createdDon = res.data.data as DonKinh;
+        const createdDonId = createdDon?.id;
+        if (createdDonId && draftMediaQueue.length > 0) {
+          toast.loading('Đang tải ảnh tạm lên đơn kính...', { id: 'draft-media-upload' });
+          const uploadResult = await uploadDraftMediaQueue(createdDonId, draftMediaQueue);
+          toast.dismiss('draft-media-upload');
+          if (uploadResult.successCount > 0 && uploadResult.failedCount === 0) {
+            toast.success(`Đã tải ${uploadResult.successCount} ảnh lên đơn kính`);
+          } else if (uploadResult.successCount > 0 && uploadResult.failedCount > 0) {
+            toast(`Đã tải ${uploadResult.successCount} ảnh, lỗi ${uploadResult.failedCount} ảnh`);
+          } else if (uploadResult.failedCount > 0) {
+            toast.error(`Không tải được ${uploadResult.failedCount} ảnh tạm`);
+          }
+        }
+
+        addHistory(createdDon);
+        setDraftQueueResetToken((prev) => prev + 1);
+        setDraftMediaQueue([]);
         resetForm();
       } else {
         toast.error(`Lỗi khi lưu đơn kính: ${res.data.message || 'Không rõ nguyên nhân'}`);
@@ -1275,6 +1558,8 @@ export default function KeDonKinh() {
     setLensStockMt(null);
     // Reset media panel - bỏ liên kết với đơn vừa thao tác
     setActiveDonKinhMediaId(null);
+    setDraftQueueResetToken((prev) => prev + 1);
+    setDraftMediaQueue([]);
   };
 
   // Chọn đơn từ lịch sử
@@ -1322,7 +1607,7 @@ export default function KeDonKinh() {
   return (
     <ProtectedRoute>
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
-      <div className="flex flex-col -mt-10 h-[calc(100dvh-68px)] overflow-hidden lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
+      <div className="flex flex-col h-[calc(100dvh-68px)] overflow-hidden lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
         
         {/* Left sidebar - Hidden on mobile, shown on desktop (tab layout) */}
         <aside className="hidden lg:flex lg:flex-col w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
@@ -1363,7 +1648,7 @@ export default function KeDonKinh() {
 
           {desktopLeftTab === 'don_cu' ? (
             <div className="min-h-0 flex-1">
-              <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
+              <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} groupByYear />
             </div>
           ) : (
             <div className="min-h-0 flex-1 flex flex-col">
@@ -2297,7 +2582,12 @@ export default function KeDonKinh() {
                   ) : null}
                 </div>
 
-                <DonKinhMediaPanel donKinhId={activeDonKinhMediaId} className="mt-3" />
+                <DonKinhMediaPanel
+                  donKinhId={activeDonKinhMediaId}
+                  className="mt-3"
+                  onDraftQueueChange={setDraftMediaQueue}
+                  draftQueueResetToken={draftQueueResetToken}
+                />
 
                 {/* Mobile History Section */}
                 <div className="hidden">
@@ -2640,7 +2930,11 @@ export default function KeDonKinh() {
             </div>
           </div>
 
-          <DonKinhMediaPanel donKinhId={activeDonKinhMediaId} />
+          <DonKinhMediaPanel
+            donKinhId={activeDonKinhMediaId}
+            onDraftQueueChange={setDraftMediaQueue}
+            draftQueueResetToken={draftQueueResetToken}
+          />
 
           </div>
           {/* end scrollable zone */}
@@ -2712,7 +3006,7 @@ export default function KeDonKinh() {
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Quét mã vạch gọng</DialogTitle>
+            <DialogTitle>Quét mã gọng (Barcode/QR)</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="relative aspect-video overflow-hidden rounded-lg border border-gray-200 bg-black">
@@ -2738,7 +3032,7 @@ export default function KeDonKinh() {
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="manual-frame-barcode">Nhập mã thủ công</Label>
+              <Label htmlFor="manual-frame-barcode">Nhập mã gọng thủ công</Label>
               <div className="flex items-center gap-2">
                 <Input
                   id="manual-frame-barcode"
@@ -2759,7 +3053,7 @@ export default function KeDonKinh() {
             </div>
 
             <p className="text-[11px] text-gray-500">
-              Quét hoặc nhập mã gọng để tự điền loại gọng vào đơn.
+              Quét mã vạch hoặc QR code để tự điền loại gọng vào đơn.
             </p>
           </div>
         </DialogContent>
