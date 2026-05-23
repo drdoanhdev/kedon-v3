@@ -10,14 +10,13 @@ import { Textarea } from '../components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle, ScanLine } from 'lucide-react';
+import { Pill, Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle, ScanLine, Image as ImageIcon } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
 import ThiLucInput from '../components/ThiLucInput';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Link from 'next/link';
 import { useAuth } from '../contexts/AuthContext';
 import { useFooter } from '../contexts/FooterContext';
-import { usePageTabs } from '../contexts/PageTabsContext';
 import { isOwnerRole } from '../lib/tenantRoles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -25,6 +24,7 @@ import PrintDonKinh from '../components/ke-don/PrintDonKinh';
 import DonKinhMediaPanel from '@/components/ke-don/DonKinhImageStripPanel';
 import type { DraftDonKinhUploadItem } from '@/components/ke-don/DonKinhImageStripPanel';
 import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
+import PatientMediaTimeline from '../components/media/PatientMediaTimeline';
 import {
   enqueueBackgroundUploadTask,
   getBackgroundUploadTask,
@@ -230,7 +230,7 @@ const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId, groupBy
 
   return (
     <div className="lg:max-h-none lg:h-full lg:flex lg:flex-col contents lg:bg-[#f5f6f8]">
-      {/* Header chỉ hiển thị trên desktop — mobile đã có nhãn "Đơn cũ" trong bottom nav */}
+      {/* Header chỉ hiển thị trên desktop — mobile dùng thanh tab ở phần đầu trang. */}
       <h2 className="hidden lg:block font-bold text-gray-900 text-sm tracking-tight px-3 pt-3 pb-2 flex-shrink-0">Lịch sử đơn kính {items.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-bold ml-1">{items.length}</span>}</h2>
       {items.length === 0 ? (
         <p className="text-xs text-gray-500 px-1 lg:px-3">Chưa có đơn kính nào</p>
@@ -447,6 +447,32 @@ export default function KeDonKinh() {
   const { confirm } = useConfirm();
   const searchParams = useSearchParams();
   const benhnhanid = searchParams.get('bn');
+  const patientIdNumber = useMemo(() => {
+    const parsed = Number.parseInt(benhnhanid || '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [benhnhanid]);
+  const [imageTabCount, setImageTabCount] = useState(0);
+
+  const refreshImageTabCount = useCallback(async () => {
+    if (!patientIdNumber) {
+      setImageTabCount(0);
+      return;
+    }
+
+    try {
+      const response = await axios.get('/api/don-kinh/media', {
+        params: { benhnhan_id: patientIdNumber },
+      });
+      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+      setImageTabCount(rows.length);
+    } catch {
+      // Keep current count when refresh fails.
+    }
+  }, [patientIdNumber]);
+
+  useEffect(() => {
+    void refreshImageTabCount();
+  }, [refreshImageTabCount]);
   const { currentRole } = useAuth();
   const { setLai: setFooterLai } = useFooter();
   const isAdmin = isOwnerRole(currentRole);
@@ -656,10 +682,11 @@ export default function KeDonKinh() {
       </div>
     );
   }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
-  // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ (lịch sử), 2 = Lịch hẹn
-  const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
-  // Desktop left sidebar tab: 'don_cu' or 'lich_hen'
-  const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'lich_hen'>('don_cu');
+  // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ, 2 = Lịch hẹn, 3 = Ảnh
+  const [mobileTab, setMobileTab] = useState<0 | 1 | 2 | 3>(0);
+  const mobileTabLabels = ['Đơn kính', 'Đơn cũ', 'Lịch hẹn', 'Ảnh'] as const;
+  // Desktop left sidebar tab: 'don_cu' | 'lich_hen' | 'anh'
+  const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'lich_hen' | 'anh'>('don_cu');
   // Ref cho datetime-local trên mobile (để custom Calendar button mở picker)
   const mobileNgayKhamRef = useRef<HTMLInputElement | null>(null);
   // Edit patient dialog state
@@ -686,17 +713,6 @@ export default function KeDonKinh() {
   const [editHenForm, setEditHenForm] = useState<{ id: number; ngay_hen: string; gio_hen: string; ly_do: string; ghichu: string } | null>(null);
   const [addHenForm, setAddHenForm] = useState({ ngay_hen: '', gio_hen: '', ly_do: 'Lấy kính', ghichu: '' });
   const henLyDoOptions = ['Lấy kính', 'Kiểm tra kính mới', 'Tái khám', 'Kiểm soát cận thị', 'Khác'];
-
-  // Đăng ký page tabs vào MobileBottomNav (hiển thị: Đơn kính / Đơn cũ / Lịch hẹn)
-  usePageTabs(
-    [
-      { key: 'donkinh', label: 'Đơn kính', icon: Glasses },
-      { key: 'cu', label: 'Đơn cũ', count: donKinhs.length, icon: HistoryIcon },
-      { key: 'hen', label: 'Lịch hẹn', count: dsHenKham.length, icon: CalendarDays },
-    ],
-    mobileTab,
-    (idx) => setMobileTab(idx as 0 | 1 | 2),
-  );
 
   // === Swipe ngang để chuyển tab trên mobile ===
   const [tabDragX, setTabDragX] = useState(0);
@@ -729,7 +745,7 @@ export default function KeDonKinh() {
       e.preventDefault();
       let next = dx;
       if (mobileTab === 0 && next > 0) next = next * 0.3;
-      if (mobileTab === 2 && next < 0) next = next * 0.3;
+      if (mobileTab === 3 && next < 0) next = next * 0.3;
       setTabDragX(next);
     }
   };
@@ -743,11 +759,10 @@ export default function KeDonKinh() {
       tabSwipeStart.current.locked = null;
       return;
     }
-    const w = tabViewportRef.current?.clientWidth || 360;
-    const threshold = w * 0.22;
+    const threshold = (tabViewportRef.current?.clientWidth || 360) * 0.22;
     let next = mobileTab;
-    if (tabDragX < -threshold && mobileTab < 2) next = (mobileTab + 1) as 0 | 1 | 2;
-    else if (tabDragX > threshold && mobileTab > 0) next = (mobileTab - 1) as 0 | 1 | 2;
+    if (tabDragX < -threshold && mobileTab < 3) next = (mobileTab + 1) as 0 | 1 | 2 | 3;
+    else if (tabDragX > threshold && mobileTab > 0) next = (mobileTab - 1) as 0 | 1 | 2 | 3;
     setMobileTab(next);
     setTabDragX(0);
     tabSwipeStart.current.locked = null;
@@ -1822,6 +1837,15 @@ export default function KeDonKinh() {
                   )}
                   <span className={`absolute bottom-0 left-0 right-0 h-[2px] rounded-full transition-colors ${desktopLeftTab === 'lich_hen' ? 'bg-blue-500/45' : 'bg-transparent'}`} />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDesktopLeftTab('anh')}
+                  className={`relative h-8 px-0 text-xs font-bold transition-colors ${desktopLeftTab === 'anh' ? 'text-blue-700' : 'text-gray-600 hover:text-gray-800'}`}
+                >
+                  Ảnh
+                  <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">{imageTabCount}</span>
+                  <span className={`absolute bottom-0 left-0 right-0 h-[2px] rounded-full transition-colors ${desktopLeftTab === 'anh' ? 'bg-blue-500/45' : 'bg-transparent'}`} />
+                </button>
               </div>
               <button
                 className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-0.5 transition-colors"
@@ -1835,6 +1859,16 @@ export default function KeDonKinh() {
           {desktopLeftTab === 'don_cu' ? (
             <div className="min-h-0 flex-1">
               <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} groupByYear />
+            </div>
+          ) : desktopLeftTab === 'anh' ? (
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+              <PatientMediaTimeline
+                patientId={patientIdNumber}
+                sourceFilter="don_kinh"
+                dense
+                hideHeader
+                onCountChange={setImageTabCount}
+              />
             </div>
           ) : (
             <div className="min-h-0 flex-1 flex flex-col">
@@ -1933,12 +1967,23 @@ export default function KeDonKinh() {
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   <Link href={`/ke-don?bn=${benhnhanid}`}>
-                    <Button variant="outline" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" size="sm">
-                      Kê thuốc
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label="Kê thuốc"
+                      className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
+                    >
+                      <Pill className="w-[18px] h-[18px]" />
                     </Button>
                   </Link>
-                  <Button variant="outline" size="sm" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}>
-                    <Pencil className="w-3 h-3" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Chỉnh sửa"
+                    className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
+                    onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}
+                  >
+                    <Pencil className="w-[18px] h-[18px]" />
                   </Button>
                 </div>
               </div>
@@ -1947,6 +1992,25 @@ export default function KeDonKinh() {
                 <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
               </div>
             )}
+
+            <div className="lg:hidden border-t border-white/20 bg-[#1976D2] px-2 pb-2 pt-1.5">
+              <div className="grid grid-cols-4 gap-1">
+                {mobileTabLabels.map((label, idx) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setMobileTab(idx as 0 | 1 | 2 | 3)}
+                    className={`h-8 rounded-lg text-xs font-medium transition-colors ${
+                      mobileTab === idx
+                        ? 'bg-white text-[#1f6cc0]'
+                        : 'text-white/85'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {patientNotes.length > 0 && (
               <div className="lg:hidden px-2 pt-2 space-y-1">
@@ -2989,6 +3053,23 @@ export default function KeDonKinh() {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Panel 3: Ảnh đơn kính (mobile viewport track) */}
+            <div
+              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              style={{
+                transform: `translate3d(calc(${(3 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
+                transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
+                willChange: 'transform',
+              }}
+            >
+              <PatientMediaTimeline
+                patientId={patientIdNumber}
+                sourceFilter="don_kinh"
+                hideHeader
+                onCountChange={setImageTabCount}
+              />
             </div>
             </div>
         </div>

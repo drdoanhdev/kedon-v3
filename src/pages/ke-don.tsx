@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin, Pill, History, Activity, AlertTriangle } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin, Pill, History, Activity, AlertTriangle, Image as ImageIcon } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -19,10 +19,10 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useAuth } from '../contexts/AuthContext';
 import { useFooter } from '../contexts/FooterContext';
-import { usePageTabs } from '../contexts/PageTabsContext';
 import { searchByStartsWith } from '@/lib/utils';
 import PrintDonThuoc from '../components/ke-don/PrintDonThuoc';
 import DonKinhMediaPanel, { type DraftDonKinhUploadItem } from '../components/ke-don/DonKinhImageStripPanel';
+import PatientMediaTimeline from '../components/media/PatientMediaTimeline';
 
 interface Thuoc {
   id: number;
@@ -80,6 +80,13 @@ interface PatientNote {
   id: number;
   content: string;
   note_type: 'important' | 'normal';
+}
+
+interface BackgroundDonThuocFailedTask {
+  taskId: string;
+  donThuocId: number;
+  failedCount: number;
+  failedItems: DraftDonKinhUploadItem[];
 }
 
 function parseNgayKham(value?: string): Date | null {
@@ -307,6 +314,32 @@ export default function KeDon() {
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
   const { setLai: setFooterLai } = useFooter();
   const authReady = !authLoading && !tenancyLoading && !!currentTenantId;
+  const patientIdNumber = useMemo(() => {
+    const parsed = Number.parseInt(benhnhanid || '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [benhnhanid]);
+  const [imageTabCount, setImageTabCount] = useState(0);
+
+  const refreshImageTabCount = useCallback(async () => {
+    if (!patientIdNumber) {
+      setImageTabCount(0);
+      return;
+    }
+
+    try {
+      const response = await axios.get('/api/don-thuoc/media', {
+        params: { benhnhan_id: patientIdNumber },
+      });
+      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+      setImageTabCount(rows.length);
+    } catch {
+      // Keep current count when refresh fails.
+    }
+  }, [patientIdNumber]);
+
+  useEffect(() => {
+    void refreshImageTabCount();
+  }, [refreshImageTabCount]);
 
   // Auto chuyển trạng thái chờ khám → đang_khám khi mở trang kê đơn
   useEffect(() => {
@@ -353,12 +386,7 @@ export default function KeDon() {
   const [draftMediaQueue, setDraftMediaQueue] = useState<DraftDonKinhUploadItem[]>([]);
   const [draftQueueResetToken, setDraftQueueResetToken] = useState(0);
   const [backgroundUploadingCount, setBackgroundUploadingCount] = useState(0);
-  const [backgroundFailedTasks, setBackgroundFailedTasks] = useState<Array<{
-    taskId: string;
-    donThuocId: number;
-    failedCount: number;
-    failedItems: DraftDonKinhUploadItem[];
-  }>>([]);
+  const [backgroundFailedTasks, setBackgroundFailedTasks] = useState<BackgroundDonThuocFailedTask[]>([]);
   const [highlightId, setHighlightId] = useState<number | null>(null); // highlight đơn mới / cập nhật
   const [focusedRowIdx, setFocusedRowIdx] = useState<number>(-1);
   const chandoanDesktopRef = useRef<HTMLInputElement | null>(null);
@@ -411,22 +439,12 @@ export default function KeDon() {
   }, []);
 
   const retryBackgroundFailedTask = useCallback((taskId: string) => {
-    let taskToRetry: {
-      taskId: string;
-      donThuocId: number;
-      failedCount: number;
-      failedItems: DraftDonKinhUploadItem[];
-    } | null = null;
-
-    setBackgroundFailedTasks((prev) => {
-      const found = prev.find((task) => task.taskId === taskId) || null;
-      taskToRetry = found;
-      return prev.filter((task) => task.taskId !== taskId);
-    });
-
+    const taskToRetry = backgroundFailedTasks.find((task) => task.taskId === taskId);
     if (!taskToRetry) return;
+
+    setBackgroundFailedTasks((prev) => prev.filter((task) => task.taskId !== taskId));
     startBackgroundDonThuocMediaUpload(taskToRetry.donThuocId, taskToRetry.failedItems);
-  }, [startBackgroundDonThuocMediaUpload]);
+  }, [backgroundFailedTasks, startBackgroundDonThuocMediaUpload]);
 
   useEffect(() => {
     if (backgroundUploadingCount <= 0) return;
@@ -509,9 +527,10 @@ export default function KeDon() {
       mobileSearchRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 60);
   }, []);
-  // Mobile tabs: 0 = Đơn thuốc, 1 = Đơn cũ, 2 = Diễn tiến
-  const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
-  const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'dien_bien'>('don_cu');
+  // Mobile tabs: 0 = Đơn thuốc, 1 = Đơn cũ, 2 = Diễn tiến, 3 = Ảnh
+  const [mobileTab, setMobileTab] = useState<0 | 1 | 2 | 3>(0);
+  const mobileTabLabels = ['Đơn thuốc', 'Đơn cũ', 'Diễn tiến', 'Ảnh'] as const;
+  const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'dien_bien' | 'anh'>('don_cu');
   const [tabDragX, setTabDragX] = useState(0);
   const [tabDragging, setTabDragging] = useState(false);
   const tabStart = useRef<{ x: number; y: number; locked: 'h' | 'v' | null }>({ x: 0, y: 0, locked: null });
@@ -540,7 +559,7 @@ export default function KeDon() {
       e.preventDefault();
       let next = dx;
       if (mobileTab === 0 && next > 0) next = next * 0.3;
-      if (mobileTab === 2 && next < 0) next = next * 0.3;
+      if (mobileTab === 3 && next < 0) next = next * 0.3;
       setTabDragX(next);
     }
   };
@@ -551,23 +570,12 @@ export default function KeDon() {
     const w = viewportRef.current?.clientWidth || 360;
     const threshold = w * 0.22;
     let next = mobileTab;
-    if (tabDragX < -threshold && mobileTab < 2) next = (mobileTab + 1) as 0 | 1 | 2;
-    else if (tabDragX > threshold && mobileTab > 0) next = (mobileTab - 1) as 0 | 1 | 2;
+    if (tabDragX < -threshold && mobileTab < 3) next = (mobileTab + 1) as 0 | 1 | 2 | 3;
+    else if (tabDragX > threshold && mobileTab > 0) next = (mobileTab - 1) as 0 | 1 | 2 | 3;
     setMobileTab(next);
     setTabDragX(0);
     tabStart.current.locked = null;
   };
-
-  // Đăng ký page tabs vào MobileBottomNav
-  usePageTabs(
-    [
-      { key: 'don', label: 'Kê đơn', icon: Pill },
-      { key: 'cu', label: 'Đơn cũ', count: dsDonCu.length, icon: History },
-      { key: 'dt', label: 'Diễn tiến', count: dsDienTien.length, icon: Activity },
-    ],
-    mobileTab,
-    (idx) => setMobileTab(idx as 0 | 1 | 2),
-  );
   // Print config
   const [printConfig, setPrintConfig] = useState<{
     ten_cua_hang: string; dia_chi: string; dien_thoai: string; logo_url: string;
@@ -1340,12 +1348,23 @@ export default function KeDon() {
               </div>
               <div className="flex gap-1 flex-shrink-0">
                 <Link href={`/ke-don-kinh?bn=${benhnhanid}`}>
-                  <Button variant="outline" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" size="sm">
-                    Kê kính
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Kê thuốc"
+                    className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
+                  >
+                    <Pill className="w-[18px] h-[18px]" />
                   </Button>
                 </Link>
-                <Button variant="outline" size="sm" className="h-8 text-xs px-2 border-white/35 bg-white/10 text-white hover:bg-white/20" onClick={openEditPatientDialog}>
-                  <Pencil className="w-3 h-3" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Chỉnh sửa"
+                  className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
+                  onClick={openEditPatientDialog}
+                >
+                  <Pencil className="w-[18px] h-[18px]" />
                 </Button>
               </div>
             </div>
@@ -1354,6 +1373,25 @@ export default function KeDon() {
               <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
             </div>
           )}
+
+          <div className="border-t border-white/20 bg-[#1976D2] px-2 pb-2 pt-1.5">
+            <div className="grid grid-cols-4 gap-1">
+              {mobileTabLabels.map((label, idx) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setMobileTab(idx as 0 | 1 | 2 | 3)}
+                  className={`h-8 rounded-lg text-xs font-medium transition-colors ${
+                    mobileTab === idx
+                      ? 'bg-white text-[#1f6cc0]'
+                      : 'text-white/85'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {patientNotes.length > 0 && (
             <div className="px-2 pt-2 space-y-1">
@@ -1370,13 +1408,13 @@ export default function KeDon() {
 
           {renderBackgroundUploadNotice()}
 
-          {/* Tab bar đã chuyển vào MobileBottomNav (route-aware). Vuốt ngang viewport bên dưới để chuyển tab. */}
+          {/* Vuốt ngang viewport bên dưới để chuyển tab. */}
 
-          {/* Swipeable viewport (3 panels: Đơn thuốc | Đơn cũ | Diễn tiến) — mỗi panel cuộn dọc độc lập */}
+          {/* Swipeable viewport (4 panels: Đơn thuốc | Đơn cũ | Diễn tiến | Ảnh) — mỗi panel cuộn dọc độc lập */}
           <div
             ref={viewportRef}
             className="overflow-hidden"
-            style={{ height: 'calc(100dvh - 64px - 68px)' }}
+            style={{ height: 'calc(100dvh - 64px - 68px - 46px)' }}
             onTouchStart={onTabTouchStart}
             onTouchMove={onTabTouchMove}
             onTouchEnd={onTabTouchEnd}
@@ -2058,6 +2096,16 @@ export default function KeDon() {
             )}
           </div>
 
+          {/* === Panel 3: Ảnh đơn thuốc === */}
+          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2">
+            <PatientMediaTimeline
+              patientId={patientIdNumber}
+              sourceFilter="don_thuoc"
+              hideHeader
+              onCountChange={setImageTabCount}
+            />
+          </div>
+
             {/* === End rail === */}
             </div>
           {/* === End viewport === */}
@@ -2085,6 +2133,13 @@ export default function KeDon() {
               className={`px-2 py-1 text-xs font-bold rounded-md transition-colors ${desktopLeftTab === 'dien_bien' ? 'text-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}
             >
               Diễn biến ({dsDienTien.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setDesktopLeftTab('anh')}
+              className={`px-2 py-1 text-xs font-bold rounded-md transition-colors ${desktopLeftTab === 'anh' ? 'text-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              Ảnh ({imageTabCount})
             </button>
           </div>
           {desktopLeftTab === 'dien_bien' && (
@@ -2209,6 +2264,16 @@ export default function KeDon() {
               </div>
             ))}
           </>
+        )}
+
+        {desktopLeftTab === 'anh' && (
+          <PatientMediaTimeline
+            patientId={patientIdNumber}
+            sourceFilter="don_thuoc"
+            dense
+            hideHeader
+            onCountChange={setImageTabCount}
+          />
         )}
       </div>
     </aside>
