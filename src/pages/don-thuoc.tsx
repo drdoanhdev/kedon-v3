@@ -1,7 +1,7 @@
 //src/pages/don-thuoc.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, FormEvent } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -13,8 +13,8 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
-import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface DonThuoc {
   id: number;
@@ -76,16 +76,14 @@ export default function DonThuocPage() {
   const [total, setTotal] = useState(0);
   const [chiTietDonThuocs, setChiTietDonThuocs] = useState<{ [donthuocid: number]: ChiTietDonThuoc[] }>({});
   const [selectedDonThuocId, setSelectedDonThuocId] = useState<number | null>(null);
-  // Profit reveal via system password
+  // Profit visibility
   const [showProfit, setShowProfit] = useState(false);
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState('');
   // Partial payment dialog state
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payDonId, setPayDonId] = useState<number | null>(null);
   const [payAmount, setPayAmount] = useState(''); // nhập theo nghìn
-  const { user, signIn } = useAuth();
+  const { has } = usePermissions();
+  const canViewProfit = has('view_revenue');
   const { isMultiBranch } = useBranch();
 
   // Đặt tiêu đề trang tĩnh
@@ -104,37 +102,25 @@ export default function DonThuocPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    if (!canViewProfit && showProfit) {
+      setShowProfit(false);
+    }
+  }, [canViewProfit, showProfit]);
+
   const handleSettingsClick = () => {
+    if (!canViewProfit) {
+      toast.error('Bạn không có quyền xem lãi');
+      return;
+    }
     if (showProfit) {
       setShowProfit(false);
       toast.success('Đã ẩn cột lãi');
     } else {
-      setShowPasswordDialog(true);
+      setShowProfit(true);
+      toast.success('Đã hiện cột lãi');
     }
   };
-
-  const handleUnlock = useCallback(async (e: FormEvent) => {
-    e.preventDefault();
-    if (!user?.email) {
-      setPasswordError('Không tìm thấy email người dùng');
-      return;
-    }
-    try {
-      const { error } = await signIn(user.email, passwordInput);
-      if (!error) {
-        setShowProfit(true);
-        setShowPasswordDialog(false);
-        setPasswordInput('');
-        setPasswordError('');
-        toast.success('Đã mở khóa cột lãi');
-      } else {
-        setPasswordError('Mật khẩu không đúng');
-        toast.error('Sai mật khẩu');
-      }
-    } catch {
-      setPasswordError('Lỗi xác thực');
-    }
-  }, [passwordInput, signIn, user?.email]);
 
   // Fetch danh sách đơn thuốc với pagination
   useEffect(() => {
@@ -312,9 +298,11 @@ export default function DonThuocPage() {
                   <>Tổng: {total} đơn thuốc (trang {currentPage}/{totalPages})</>
                 )}
               </div>
-              <Button variant={showProfit ? 'default' : 'outline'} size="sm" className="h-10 px-3" type="button" onClick={handleSettingsClick}>
-                <Settings className="w-4 h-4" />
-              </Button>
+              {canViewProfit && (
+                <Button variant={showProfit ? 'default' : 'outline'} size="sm" className="h-10 px-3" type="button" onClick={handleSettingsClick}>
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -329,9 +317,11 @@ export default function DonThuocPage() {
                 }}
                 className="w-64"
               />
-              <Button variant={showProfit ? 'default' : 'outline'} size="sm" type="button" onClick={handleSettingsClick} className="h-10 px-3">
-                <Settings className="w-4 h-4" />
-              </Button>
+              {canViewProfit && (
+                <Button variant={showProfit ? 'default' : 'outline'} size="sm" type="button" onClick={handleSettingsClick} className="h-10 px-3">
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
               <Input
                 type="date"
                 value={filterDate}
@@ -646,27 +636,6 @@ export default function DonThuocPage() {
           </div>
         </div>
       </div>
-      {showPasswordDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setShowPasswordDialog(false); setPasswordInput(''); setPasswordError(''); }}>
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-xs p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-sm font-semibold">Nhập mật khẩu để xem lãi</h2>
-            <form onSubmit={handleUnlock} className="space-y-2">
-              <Input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(''); }}
-                autoFocus
-                placeholder="Mật khẩu"
-              />
-              {passwordError && <div className="text-xs text-red-600">{passwordError}</div>}
-              <div className="flex gap-2 justify-end pt-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => { setShowPasswordDialog(false); setPasswordInput(''); setPasswordError(''); }}>Hủy</Button>
-                <Button type="submit" size="sm">Xác nhận</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {payDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setPayDialogOpen(false); setPayDonId(null); setPayAmount(''); }}>
           <div className="bg-white rounded-lg shadow-lg w-full max-w-xs p-4 space-y-3" onClick={(e) => e.stopPropagation()}>

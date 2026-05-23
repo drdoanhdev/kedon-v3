@@ -1,6 +1,7 @@
 //src/pages/api/bao-cao/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission } from '../../../lib/permissions';
 
 type ChiTietItem = {
   id: number;
@@ -87,6 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!ctx) return;
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
   if (!branchAccess) return;
+  if (!(await requirePermission(ctx, res, 'view_revenue'))) return;
   const { tenantId } = ctx;
   const { branchId } = branchAccess;
   

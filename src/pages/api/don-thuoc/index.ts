@@ -1,7 +1,7 @@
 //src/pages/api/don-thuoc/index.ts L1
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { requirePermission } from '../../../lib/permissions';
+import { requirePermission, userHasPermission } from '../../../lib/permissions';
 import { withDebtFields, calcDebt } from '../../../lib/debt';
 
 // === INVENTORY HELPERS ===
@@ -136,6 +136,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!branchAccess) return;
   const { tenantId } = ctx;
   const { branchId } = branchAccess;
+  const canViewRevenue = await userHasPermission(ctx, 'view_revenue');
+
+  const sanitizeRevenueFields = <T extends Record<string, unknown> | null>(row: T): T => {
+    if (!row || canViewRevenue) return row;
+    const cloned = { ...(row as Record<string, unknown>) };
+    delete (cloned as { lai?: unknown }).lai;
+    return cloned as T;
+  };
 
   if (req.method === "GET") {
     try {
@@ -180,8 +188,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ message: "Lỗi khi lấy đơn thuốc", error: error.message });
         }
         const processedData = Array.isArray(data)
-          ? data.map((item) => withDebtFields(item))
-          : data ? withDebtFields(data as any) : data;
+          ? data.map((item) => sanitizeRevenueFields(withDebtFields(item) as Record<string, unknown>))
+          : data ? sanitizeRevenueFields(withDebtFields(data as any) as Record<string, unknown>) : data;
         return res.status(200).json({ data: processedData });
       } else {
         // Áp dụng filter ngay trong Supabase query (tối ưu hơn)
@@ -253,7 +261,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           // Phân trang sau khi filter
           const paginatedData = filteredData.slice(from, to + 1);
           
-          const processedData = paginatedData.map((item) => withDebtFields(item));
+          const processedData = paginatedData.map((item) => sanitizeRevenueFields(withDebtFields(item) as Record<string, unknown>));
           return res.status(200).json({ data: processedData, total: finalCount });
         } else {
           // Không có search/filterNo - phân trang bình thường (nhanh)
@@ -261,7 +269,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (error) {
             return res.status(400).json({ message: "Lỗi khi lấy đơn thuốc", error: error.message });
           }
-          const processedData = (data || []).map((item) => withDebtFields(item));
+          const processedData = (data || []).map((item) => sanitizeRevenueFields(withDebtFields(item) as Record<string, unknown>));
           return res.status(200).json({ data: processedData, total: count ?? 0 });
         }
       }
@@ -430,7 +438,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         inventoryWarnings.push('Lỗi xử lý kho: ' + (invErr instanceof Error ? invErr.message : String(invErr)));
       }
 
-  return res.status(200).json({ message: "Đã tạo đơn thuốc", data: withDebtFields(donthuoc), inventoryWarnings });
+      return res.status(200).json({
+        message: "Đã tạo đơn thuốc",
+        data: sanitizeRevenueFields(withDebtFields(donthuoc) as Record<string, unknown>),
+        inventoryWarnings,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: "Lỗi server", error: message });
@@ -571,7 +583,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         inventoryWarnings.push('Lỗi xử lý kho khi sửa đơn: ' + (invErr instanceof Error ? invErr.message : String(invErr)));
       }
 
-      return res.status(200).json({ message: "Đã cập nhật đơn thuốc", data: withDebtFields(donthuoc), inventoryWarnings });
+      return res.status(200).json({
+        message: "Đã cập nhật đơn thuốc",
+        data: sanitizeRevenueFields(withDebtFields(donthuoc) as Record<string, unknown>),
+        inventoryWarnings,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: "Lỗi server", error: message });
@@ -626,7 +642,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi cập nhật thanh toán', error: updErr.message });
       }
 
-      return res.status(200).json({ message: 'Đã cập nhật thanh toán', data: withDebtFields(updated) });
+      return res.status(200).json({
+        message: 'Đã cập nhật thanh toán',
+        data: sanitizeRevenueFields(withDebtFields(updated) as Record<string, unknown>),
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return res.status(500).json({ message: "Lỗi server", error: message });

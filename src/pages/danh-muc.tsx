@@ -15,6 +15,7 @@ import GongKinhMediaPanel from '@/components/GongKinhMediaPanel';
 import { printResolvedTemTemplate } from '../lib/temKinhClientPrint';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
+import { usePermissions } from '../hooks/usePermissions';
 
 // Interfaces
 interface Thuoc {
@@ -387,8 +388,10 @@ async function buildBitmapPayloadFromTemplate(resolvedTemplate: TemDataResponse[
 
 function DanhMucPage() {
   const { confirm } = useConfirm();
-  const { user, signIn, userRole } = useAuth();
+  const { userRole } = useAuth();
   const isSuperAdmin = userRole === 'superadmin';
+  const { has, loading: permissionsLoading } = usePermissions();
+  const canViewCategoryPage = isSuperAdmin || has('manage_categories');
   const restrictedTabs = ['so-kinh', 'thi-luc'];
   // Define tab options
   const tabs = [
@@ -511,13 +514,6 @@ function DanhMucPage() {
   const [openNhomGiaNhapDialog, setOpenNhomGiaNhapDialog] = useState(false);
   const [nhapNhomGiaForm, setNhapNhomGiaForm] = useState({ nhom_gia_gong_id: 0, so_luong: 1, don_gia: 0, ghi_chu: '' });
 
-  // Xác thực lại bằng mật khẩu tài khoản Supabase
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-
   useEffect(() => {
     if (!isSuperAdmin && restrictedTabs.includes(activeTab)) {
       setActiveTab('thuoc');
@@ -603,14 +599,15 @@ function DanhMucPage() {
   };
 
   useEffect(() => {
+    if (permissionsLoading || !canViewCategoryPage) return;
     fetchThuocs();
     fetchDonMau();
     fetchHangTrong();
     fetchGongKinh();
     fetchNhomGiaGong();
     fetchMauDuLieu();
-  fetchNhaCungCap();
-  }, []);
+    fetchNhaCungCap();
+  }, [permissionsLoading, canViewCategoryPage]);
 
   // Helper functions
   const generateMaThuoc = (list: Thuoc[]) => {
@@ -2247,104 +2244,27 @@ function DanhMucPage() {
     }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setPasswordError('');
-    if (!user?.email) {
-      setPasswordError('Không tìm thấy email người dùng.');
-      setLoading(false);
-      return;
-    }
-    try {
-      const { error } = await signIn(user.email, password);
-      if (!error) {
-        setIsAuthenticated(true);
-        setPasswordError('');
-        toast.success('Xác thực lại thành công!');
-      } else {
-        setPasswordError('Mật khẩu không đúng. Vui lòng thử lại.');
-        setPassword('');
-        toast.error('Mật khẩu không đúng');
-      }
-    } catch (err) {
-      setPasswordError('Có lỗi xảy ra khi xác thực lại.');
-    }
-    setLoading(false);
-  };
+  if (permissionsLoading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-sm text-gray-600">Đang kiểm tra quyền truy cập...</div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
 
-  if (!isAuthenticated) {
+  if (!canViewCategoryPage) {
     return (
       <ProtectedRoute>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="w-full max-w-md p-6">
-
             <Card className="shadow-lg">
-              <CardContent className="p-6 lg:p-8">
-                <div className="text-center mb-6">
-                  <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h1 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">Xác thực truy cập Danh mục</h1>
-                  <p className="text-sm text-gray-600">Vui lòng nhập lại mật khẩu tài khoản để tiếp tục</p>
-                </div>
-
-                <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Mật khẩu
-                    </label>
-                    <div className="relative">
-                      <Input
-                        type={showPassword ? 'text' : 'password'}
-                        value={password}
-                        onChange={(e) => {
-                          setPassword(e.target.value);
-                          setPasswordError('');
-                        }}
-                        className="w-full h-12 pr-12"
-                        placeholder="Nhập lại mật khẩu tài khoản..."
-                        required
-                        disabled={loading}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                      >
-                        {showPassword ? (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                          </svg>
-                        ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                    {passwordError && (
-                      <p className="mt-2 text-sm text-red-600">{passwordError}</p>
-                    )}
-                  </div>
-
-                  <Button
-                    type="submit"
-                    className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                    disabled={loading}
-                  >
-                    {loading ? 'Đang xác thực...' : 'Xác thực lại'}
-                  </Button>
-                </form>
-
-                <div className="mt-6 text-center">
-                  <p className="text-xs text-gray-500">
-                    Danh mục chứa thông tin quan trọng của hệ thống
-                  </p>
-                </div>
+              <CardContent className="p-6 lg:p-8 text-center space-y-2">
+                <h1 className="text-xl lg:text-2xl font-bold text-red-600">Không có quyền truy cập</h1>
+                <p className="text-sm text-gray-600">
+                  Bạn chưa được cấp quyền xem và quản lý trang danh mục.
+                </p>
               </CardContent>
             </Card>
           </div>

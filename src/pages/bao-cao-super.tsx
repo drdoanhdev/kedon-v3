@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../lib/apiClient';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -11,6 +10,7 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
 import Link from 'next/link';
+import { usePermissions } from '../hooks/usePermissions';
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -164,26 +164,8 @@ export default function BaoCaoSuperPage() {
   const [report, setReport] = useState<SuperReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
-
-  // Password protection
-  const { user, signIn } = useAuth();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setPasswordError('');
-    if (!user?.email) { setPasswordError('Không tìm thấy email.'); setLoading(false); return; }
-    try {
-      const { error } = await signIn(user.email, password);
-      if (!error) { setIsAuthenticated(true); toast.success('Xác thực thành công!'); }
-      else { setPasswordError('Mật khẩu không đúng.'); setPassword(''); }
-    } catch { setPasswordError('Lỗi xác thực.'); }
-    setLoading(false);
-  };
+  const { has, loading: permissionsLoading } = usePermissions();
+  const canViewRevenue = has('view_revenue');
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -211,46 +193,26 @@ export default function BaoCaoSuperPage() {
     return Math.ceil(d / 86400000);
   }, [fromDate, toDate]);
 
-  // ── AUTH WALL ──
-  if (!isAuthenticated) {
+  if (permissionsLoading) {
+    return (
+      <ProtectedRoute>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+          <div className="text-sm text-gray-600">Đang kiểm tra quyền truy cập...</div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  if (!canViewRevenue) {
     return (
       <ProtectedRoute>
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
           <Card className="w-full max-w-md shadow-xl border-0">
-            <CardContent className="p-8">
-              <div className="text-center mb-6">
-                <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                </div>
-                <h1 className="text-2xl font-bold text-gray-900 mb-1">Báo Cáo Tổng Hợp</h1>
-                <p className="text-sm text-gray-500">Nhập mật khẩu để truy cập báo cáo</p>
-              </div>
-              <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                <div className="relative">
-                  <Input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setPasswordError(''); }}
-                    className="h-12 pr-12"
-                    placeholder="Mật khẩu..."
-                    required disabled={loading}
-                  />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      {showPassword
-                        ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                        : <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></>}
-                    </svg>
-                  </button>
-                </div>
-                {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
-                <Button type="submit" className="w-full h-12 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white" disabled={loading}>
-                  {loading ? 'Đang xác thực...' : 'Truy cập báo cáo'}
-                </Button>
-              </form>
+            <CardContent className="p-8 text-center space-y-2">
+              <h1 className="text-2xl font-bold text-red-600">Không có quyền truy cập</h1>
+              <p className="text-sm text-gray-600">
+                Bạn chưa được cấp quyền xem dữ liệu lãi và doanh thu báo cáo.
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -294,7 +256,6 @@ export default function BaoCaoSuperPage() {
             </div>
             <div className="flex items-center gap-2">
               <Link href="/bao-cao" className="text-xs text-blue-600 hover:underline">← Báo cáo cũ</Link>
-              <Button variant="outline" size="sm" onClick={() => { setIsAuthenticated(false); setPassword(''); }}>Đăng xuất</Button>
             </div>
           </div>
 

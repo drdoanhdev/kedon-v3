@@ -1,7 +1,7 @@
 //src/pages/api/don-kinh/index.ts L1
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { requirePermission } from '../../../lib/permissions';
+import { requirePermission, userHasPermission } from '../../../lib/permissions';
 import { withDebtFields, calcDebt, calcKinhProfit } from '../../../lib/debt';
 
 // Cache: whether FK columns exist in DonKinh table
@@ -30,10 +30,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!branchAccess) return;
   const { tenantId } = ctx;
   const { branchId } = branchAccess;
+  const canViewRevenue = await userHasPermission(ctx, 'view_revenue');
+
+  const sanitizeRevenueFields = <T extends Record<string, unknown> | null>(row: T): T => {
+    if (!row || canViewRevenue) return row;
+    const cloned = { ...(row as Record<string, unknown>) };
+    delete (cloned as { lai?: unknown }).lai;
+    return cloned as T;
+  };
 
   if (req.method === 'GET') {
     try {
-      const { benhnhanid, search, filterDate, filterNo } = req.query;
+      const { benhnhanid, search, filterNo } = req.query;
       const page = parseInt(req.query.page as string) || 1;
       const pageSize = parseInt(req.query.pageSize as string) || 1000; // Default to larger pageSize for don-kinh
       const from = (page - 1) * pageSize;
@@ -61,21 +69,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .limit(limit);
         const { data, error } = await query;
         if (error) throw error;
-        const processed = Array.isArray(data) ? data.map(d => withDebtFields(d)) : data ? withDebtFields(data as any) : data;
+        const processed = Array.isArray(data)
+          ? data.map((d) => sanitizeRevenueFields(withDebtFields(d) as Record<string, unknown>))
+          : data
+            ? sanitizeRevenueFields(withDebtFields(data as any) as Record<string, unknown>)
+            : data;
         res.status(200).json({ data: processed });
       } else {
         // Apply filters
         query = query
           .order('ngaykham', { ascending: false })
           .order('id', { ascending: false });
-        
-        // Date filter - filter trực tiếp trong DB
-        if (filterDate) {
-          const nextDay = new Date(filterDate as string);
-          nextDay.setDate(nextDay.getDate() + 1);
-          query = query.gte('ngaykham', filterDate as string)
-                       .lt('ngaykham', nextDay.toISOString().split('T')[0]);
-        }
         
         const needsMemoryFilter = !!(search || filterNo);
         
@@ -107,8 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               const matchesSearch =
                 (dk.benhnhan?.ten && dk.benhnhan.ten.toLowerCase().includes(searchLower)) ||
                 (dk.benhnhan?.id && dk.benhnhan.id.toString().includes(searchLower)) ||
-                (dk.benhnhan?.dienthoai && dk.benhnhan.dienthoai.includes(searchLower)) ||
-                (dk.benhnhan?.diachi && dk.benhnhan.diachi.toLowerCase().includes(searchLower));
+                (dk.benhnhan?.dienthoai && dk.benhnhan.dienthoai.includes(searchLower));
               if (!matchesSearch) return false;
             }
             
@@ -123,13 +126,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           
           const finalCount = filteredData.length;
           const paginatedData = filteredData.slice(from, to + 1);
-          const processed = paginatedData.map(d => withDebtFields(d));
+          const processed = paginatedData.map((d) => sanitizeRevenueFields(withDebtFields(d) as Record<string, unknown>));
           res.status(200).json({ data: processed, total: finalCount });
         } else {
           // Không có search/filterNo - phân trang bình thường
           const { data, error, count } = await query.range(from, to);
           if (error) throw error;
-          const processed = Array.isArray(data) ? data.map(d => withDebtFields(d)) : data ? withDebtFields(data as any) : data;
+          const processed = Array.isArray(data)
+            ? data.map((d) => sanitizeRevenueFields(withDebtFields(d) as Record<string, unknown>))
+            : data
+              ? sanitizeRevenueFields(withDebtFields(data as any) as Record<string, unknown>)
+              : data;
           res.status(200).json({ data: processed, total: count ?? 0 });
         }
       }
@@ -292,7 +299,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      res.status(200).json({ data: data ? withDebtFields(data) : data, inventoryWarnings });
+      res.status(200).json({
+        data: data ? sanitizeRevenueFields(withDebtFields(data) as Record<string, unknown>) : data,
+        inventoryWarnings,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Supabase POST error:', error);
@@ -452,7 +462,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      res.status(200).json({ data: data ? withDebtFields(data) : data, inventoryWarnings });
+      res.status(200).json({
+        data: data ? sanitizeRevenueFields(withDebtFields(data) as Record<string, unknown>) : data,
+        inventoryWarnings,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Supabase PUT error:', error);
@@ -502,7 +515,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (updErr) {
         return res.status(400).json({ message: 'Lỗi cập nhật thanh toán', error: updErr.message });
       }
-      return res.status(200).json({ message: 'Đã cập nhật thanh toán', data: updated ? withDebtFields(updated) : updated });
+      return res.status(200).json({
+        message: 'Đã cập nhật thanh toán',
+        data: updated ? sanitizeRevenueFields(withDebtFields(updated) as Record<string, unknown>) : updated,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Supabase PATCH error:', error);

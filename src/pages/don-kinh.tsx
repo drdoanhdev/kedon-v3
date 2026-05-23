@@ -7,13 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Pagination, SimplePagination } from '@/components/ui/pagination';
-import { Trash2, Pencil, Settings, Phone, MessageSquare, MessageCircle } from 'lucide-react';
+import { Trash2, Pencil, Phone, MessageSquare, MessageCircle } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import ProtectedRoute from '../components/ProtectedRoute';
-import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface DonKinh {
   id: number;
@@ -66,14 +66,6 @@ function calcAge(namsinh: string | null): number | "" {
     return age;
   }
   return "";
-}
-
-function getTodayLocalDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 const APP_TIME_ZONE = 'Asia/Ho_Chi_Minh';
@@ -462,14 +454,13 @@ const MobileDonKinhOrderCard = React.memo(function MobileDonKinhOrderCard({
 
 MobileDonKinhOrderCard.displayName = 'MobileDonKinhOrderCard';
 
-type MobileQuickFilter = 'all' | 'debt' | 'today' | 'custom';
+type MobileQuickFilter = 'all' | 'debt';
 
 export default function DonKinhPage() {
   const { confirm } = useConfirm();
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
   const [debtFilter, setDebtFilter] = useState<boolean | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(50);
@@ -478,14 +469,12 @@ export default function DonKinhPage() {
   const [isFetching, setIsFetching] = useState(false);
   // Profit reveal
   const [showProfit, setShowProfit] = useState(false);
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
-  const [passwordError, setPasswordError] = useState("");
   const [mobileQuickFilter, setMobileQuickFilter] = useState<MobileQuickFilter>('all');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [revealedProfitCardId, setRevealedProfitCardId] = useState<number | null>(null);
-  const { user, signIn } = useAuth();
+  const { has } = usePermissions();
+  const canViewProfit = has('view_revenue');
   const { isMultiBranch } = useBranch();
 
   // Đặt tiêu đề trang tĩnh
@@ -508,7 +497,7 @@ export default function DonKinhPage() {
   useEffect(() => {
     setExpandedCardId(null);
     setRevealedProfitCardId(null);
-  }, [currentPage, rowsPerPage, searchDebounced, dateFilter, debtFilter]);
+  }, [currentPage, rowsPerPage, searchDebounced, debtFilter]);
 
   useEffect(() => {
     if (!showProfit) {
@@ -516,35 +505,24 @@ export default function DonKinhPage() {
     }
   }, [showProfit]);
 
+  useEffect(() => {
+    if (!canViewProfit && showProfit) {
+      setShowProfit(false);
+      setRevealedProfitCardId(null);
+    }
+  }, [canViewProfit, showProfit]);
+
   const applyMobileQuickFilter = useCallback((next: MobileQuickFilter) => {
-    const today = getTodayLocalDate();
     setMobileQuickFilter(next);
     setCurrentPage(1);
 
     if (next === 'all') {
       setDebtFilter(null);
-      setDateFilter('');
       return;
     }
 
-    if (next === 'debt') {
-      setDebtFilter(true);
-      setDateFilter('');
-      return;
-    }
-
-    if (next === 'today') {
-      setDebtFilter(null);
-      setDateFilter(`${today}T00:00`);
-      return;
-    }
-
-    setDebtFilter(null);
-    if (!dateFilter) {
-      setDateFilter(`${today}T00:00`);
-    }
-    setShowMobileFilters(true);
-  }, [dateFilter]);
+    setDebtFilter(true);
+  }, []);
 
   const toggleExpandedCard = useCallback((id: number) => {
     setExpandedCardId((prev) => (prev === id ? null : id));
@@ -552,45 +530,27 @@ export default function DonKinhPage() {
   }, []);
 
   const revealMobileProfit = useCallback((id: number) => {
-    if (!showProfit) {
-      setShowPasswordDialog(true);
+    if (!canViewProfit) {
+      toast.error('Bạn không có quyền xem lãi');
       return;
     }
+    if (!showProfit) setShowProfit(true);
     setExpandedCardId(null);
     setRevealedProfitCardId(id);
-  }, [showProfit]);
+  }, [canViewProfit, showProfit]);
 
-  const handleSettingsClick = () => {
-    if (showProfit) {
-      setShowProfit(false);
-      toast.success('Đã ẩn cột lãi');
-    } else {
-      setShowPasswordDialog(true);
-    }
-  };
-
-  const handleUnlock = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.email) {
-      setPasswordError('Không tìm thấy email người dùng');
+  const handleProfitViewChange = useCallback((value: 'basic' | 'profit') => {
+    if (!canViewProfit) {
+      toast.error('Bạn không có quyền xem lãi');
       return;
     }
-    try {
-      const { error } = await signIn(user.email, passwordInput);
-      if (!error) {
-        setShowProfit(true);
-        setShowPasswordDialog(false);
-        setPasswordError("");
-        setPasswordInput("");
-        toast.success('Đã mở khóa cột lãi');
-      } else {
-        setPasswordError('Mật khẩu không đúng');
-        toast.error('Sai mật khẩu');
-      }
-    } catch {
-      setPasswordError('Lỗi xác thực');
-    }
-  }, [passwordInput, signIn, user?.email]);
+
+    const nextShowProfit = value === 'profit';
+    if (nextShowProfit === showProfit) return;
+
+    setShowProfit(nextShowProfit);
+    toast.success(nextShowProfit ? 'Đã hiện cột lãi' : 'Đã ẩn cột lãi');
+  }, [canViewProfit, showProfit]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -614,10 +574,6 @@ export default function DonKinhPage() {
         });
         
         if (searchDebounced && searchDebounced.trim()) params.append('search', searchDebounced.trim());
-        if (dateFilter && dateFilter.trim()) {
-          const dateOnly = dateFilter.includes('T') ? dateFilter.split('T')[0] : dateFilter;
-          params.append('filterDate', dateOnly);
-        }
         if (debtFilter === true) params.append('filterNo', 'true');
         
         const resDonKinh = await axios.get(`/api/don-kinh?${params.toString()}`, {
@@ -646,7 +602,7 @@ export default function DonKinhPage() {
     };
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, rowsPerPage, searchDebounced, dateFilter, debtFilter]);
+  }, [currentPage, rowsPerPage, searchDebounced, debtFilter]);
 
   const handleDelete = async (id: number) => {
     if (!await confirm('Bạn có chắc muốn xóa đơn kính này?')) return;
@@ -708,17 +664,8 @@ export default function DonKinhPage() {
   }, [paginated]);
 
   useEffect(() => {
-    if (debtFilter === true) {
-      setMobileQuickFilter('debt');
-      return;
-    }
-    if (dateFilter) {
-      const dateOnly = dateFilter.includes('T') ? dateFilter.split('T')[0] : dateFilter;
-      setMobileQuickFilter(dateOnly === getTodayLocalDate() ? 'today' : 'custom');
-      return;
-    }
-    setMobileQuickFilter('all');
-  }, [dateFilter, debtFilter]);
+    setMobileQuickFilter(debtFilter === true ? 'debt' : 'all');
+  }, [debtFilter]);
 
   const formatMoney = useCallback((amount: number) => {
     return (amount / 1000).toLocaleString('vi-VN');
@@ -759,7 +706,7 @@ export default function DonKinhPage() {
               </div>
 
               <div className="border-t border-white/20 bg-black/10 px-2 pb-2 pt-1.5">
-                <div className="grid grid-cols-4 gap-1">
+                <div className="grid grid-cols-2 gap-1">
                   <button
                     type="button"
                     onClick={() => applyMobileQuickFilter('all')}
@@ -774,20 +721,6 @@ export default function DonKinhPage() {
                   >
                     Còn nợ
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => applyMobileQuickFilter('today')}
-                    className={`h-8 rounded-lg text-xs font-medium ${mobileQuickFilter === 'today' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
-                  >
-                    Hôm nay
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyMobileQuickFilter('custom')}
-                    className={`h-8 rounded-lg text-xs font-medium ${mobileQuickFilter === 'custom' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
-                  >
-                    Khoảng
-                  </button>
                 </div>
               </div>
             </div>
@@ -797,26 +730,13 @@ export default function DonKinhPage() {
               <div className="rounded-xl border border-slate-200 bg-[#f3f1ec] p-2.5">
                 <div className="flex items-center gap-2">
                   <Input
-                    placeholder="Tìm tên, SĐT, địa chỉ..."
+                    placeholder="Tìm tên, mã BN, SĐT..."
                     value={search}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       setSearch(e.target.value);
                     }}
                     className="h-9 border-slate-300 bg-white"
                   />
-
-                  <select
-                    value={rowsPerPage}
-                    onChange={(e) => {
-                      setRowsPerPage(+e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
-                  >
-                    {[25, 50, 100, 200].map((val) => (
-                      <option key={val} value={val}>{val} / trang</option>
-                    ))}
-                  </select>
 
                   <Button
                     type="button"
@@ -831,40 +751,29 @@ export default function DonKinhPage() {
 
                 {showMobileFilters && (
                   <div className="mt-2.5 space-y-2">
-                    <Input
-                      type="datetime-local"
-                      value={dateFilter}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                        setDateFilter(e.target.value);
-                        setMobileQuickFilter('custom');
-                        setCurrentPage(1);
-                      }}
-                      className="h-9 border-slate-300 bg-white"
-                    />
-
                     <div className="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-2.5 py-2">
                       <label className="text-sm font-medium text-slate-700">Chỉ hiện đơn còn nợ</label>
                       <Switch
                         checked={debtFilter === true}
                         onCheckedChange={(checked: boolean) => {
                           setDebtFilter(checked ? true : null);
-                          setMobileQuickFilter(checked ? 'debt' : (dateFilter ? 'custom' : 'all'));
+                          setMobileQuickFilter(checked ? 'debt' : 'all');
                           setCurrentPage(1);
                         }}
                       />
                     </div>
 
                     <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant={showProfit ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-9 flex-1"
-                        onClick={handleSettingsClick}
-                      >
-                        <Settings className="mr-1 h-4 w-4" />
-                        {showProfit ? 'Đang mở lãi' : 'Mở khóa lãi'}
-                      </Button>
+                      {canViewProfit && (
+                        <select
+                          value={showProfit ? 'profit' : 'basic'}
+                          onChange={(e) => handleProfitViewChange(e.target.value as 'basic' | 'profit')}
+                          className="h-9 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+                        >
+                          <option value="basic">Xem: Mặc định</option>
+                          <option value="profit">Xem: Có lãi</option>
+                        </select>
+                      )}
                       <Button
                         type="button"
                         variant="ghost"
@@ -872,7 +781,6 @@ export default function DonKinhPage() {
                         className="h-9"
                         onClick={() => {
                           setSearch('');
-                          setDateFilter('');
                           setDebtFilter(null);
                           setMobileQuickFilter('all');
                           setCurrentPage(1);
@@ -886,7 +794,7 @@ export default function DonKinhPage() {
 
                 <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
                   <span>Hiển thị {filtered.length} đơn · trang {currentPage}</span>
-                  <span>← vuốt trái để xem lãi</span>
+                  <span>{canViewProfit ? '← vuốt trái để xem lãi' : 'Không có quyền xem lãi'}</span>
                 </div>
               </div>
             </div>
@@ -894,22 +802,13 @@ export default function DonKinhPage() {
             {/* Desktop Controls */}
             <div className="hidden lg:flex flex-col sm:flex-row gap-4 items-center">
               <Input
-                placeholder="Tìm tên, số ĐT, địa chỉ..."
+                placeholder="Tìm tên, mã BN, số ĐT..."
                 value={search}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   setSearch(e.target.value);
                   // Không set currentPage ở đây, để debounce xử lý
                 }}
                 className="w-full sm:w-1/3"
-              />
-              <Input
-                type="datetime-local"
-                value={dateFilter}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  setDateFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full sm:w-1/4"
               />
               <div className="flex items-center space-x-2">
                 <Switch
@@ -921,24 +820,16 @@ export default function DonKinhPage() {
                 />
                 <label className="text-sm font-semibold">Chỉ hiển thị đơn còn nợ</label>
               </div>
-              <select
-                value={rowsPerPage}
-                onChange={(e) => {
-                  setRowsPerPage(+e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="border px-2 py-1 rounded text-sm"
-              >
-                {[25, 50, 100, 200].map((val) => (
-                  <option key={val} value={val}>{val}</option>
-                ))}
-              </select>
-              <div className="text-sm text-muted-foreground whitespace-nowrap">
-                Tổng: {total} đơn kính (hiển thị {filtered.length} trên trang {currentPage})
-              </div>
-              <Button type="button" variant={showProfit ? 'default' : 'outline'} size="sm" onClick={handleSettingsClick} className="h-10 px-3 ml-auto">
-                <Settings className="w-4 h-4" />
-              </Button>
+              {canViewProfit && (
+                <select
+                  value={showProfit ? 'profit' : 'basic'}
+                  onChange={(e) => handleProfitViewChange(e.target.value as 'basic' | 'profit')}
+                  className="ml-auto h-10 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                >
+                  <option value="basic">Xem: Mặc định</option>
+                  <option value="profit">Xem: Có lãi</option>
+                </select>
+              )}
             </div>
 
             {/* Mobile Card Layout */}
@@ -985,7 +876,9 @@ export default function DonKinhPage() {
 
               {paginated.length > 0 && (
                 <div className="rounded-lg bg-slate-100 px-3 py-2 text-center text-[11px] text-slate-500">
-                  ← Vuốt trái để xem lãi đơn · Chạm bệnh nhân để xem chi tiết và thao tác
+                  {canViewProfit
+                    ? '← Vuốt trái để xem lãi đơn · Chạm bệnh nhân để xem chi tiết và thao tác'
+                    : 'Chạm bệnh nhân để xem chi tiết và thao tác'}
                 </div>
               )}
             </div>
@@ -998,6 +891,27 @@ export default function DonKinhPage() {
                 onPageChange={setCurrentPage}
                 className="mt-4"
               />
+
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-sm font-medium text-slate-700">Số người trên trang</label>
+                  <select
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                      setRowsPerPage(+e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+                  >
+                    {[25, 50, 100, 200].map((val) => (
+                      <option key={val} value={val}>{val} / trang</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Tổng: {total} đơn kính (hiển thị {filtered.length} trên trang {currentPage})
+                </p>
+              </div>
             </div>
 
             {/* Desktop Table Layout */}
@@ -1095,31 +1009,31 @@ export default function DonKinhPage() {
                 onPageChange={setCurrentPage}
                 className="mt-6"
               />
+
+              <div className="mt-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-slate-700">Số người trên trang</label>
+                  <select
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                      setRowsPerPage(+e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                  >
+                    {[25, 50, 100, 200].map((val) => (
+                      <option key={val} value={val}>{val} / trang</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-sm text-muted-foreground whitespace-nowrap">
+                  Tổng: {total} đơn kính (hiển thị {filtered.length} trên trang {currentPage})
+                </div>
+              </div>
             </div>
           </>
         )}
       </div>
-      {showPasswordDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setShowPasswordDialog(false); setPasswordInput(''); setPasswordError(''); }}>
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-xs p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-sm font-semibold">Nhập mật khẩu để xem lãi</h2>
-            <form onSubmit={handleUnlock} className="space-y-2">
-              <Input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => { setPasswordInput(e.target.value); setPasswordError(''); }}
-                autoFocus
-                placeholder="Mật khẩu"
-              />
-              {passwordError && <div className="text-xs text-red-600">{passwordError}</div>}
-              <div className="flex gap-2 justify-end pt-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => { setShowPasswordDialog(false); setPasswordInput(''); setPasswordError(''); }}>Hủy</Button>
-                <Button type="submit" size="sm">Xác nhận</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </ProtectedRoute>
   );
 }

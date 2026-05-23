@@ -1,11 +1,13 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission } from '../../../lib/permissions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'advanced_reports', 'view_reports'))) return;
+  if (!(await requirePermission(ctx, res, 'view_revenue'))) return;
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
   if (!branchAccess) return;
   const { tenantId } = ctx;
