@@ -348,7 +348,7 @@ export default function DonKinhMediaPanel({
       const imageDimensions = await readImageDimensions(uploadFile);
 
       if (mediaId) {
-        await axios.patch('/api/don-kinh/media', {
+        await axios.patch(apiBasePath, {
           id: mediaId,
           status: 'uploaded',
           width: imageDimensions?.width,
@@ -365,7 +365,7 @@ export default function DonKinhMediaPanel({
       }
     } catch (error: unknown) {
       if (mediaId) {
-        await axios.patch('/api/don-kinh/media', { id: mediaId, status: 'failed' }).catch(() => {});
+        await axios.patch(apiBasePath, { id: mediaId, status: 'failed' }).catch(() => {});
       }
 
       const message = axios.isAxiosError(error)
@@ -511,7 +511,7 @@ export default function DonKinhMediaPanel({
 
     setSavingNote(true);
     try {
-      await axios.patch('/api/don-kinh/media', {
+      await axios.patch(apiBasePath, {
         id: previewItem.id,
         ghi_chu: noteDraft,
       });

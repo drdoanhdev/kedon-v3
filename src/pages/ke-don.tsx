@@ -127,9 +127,10 @@ async function readImageDimensions(file: File): Promise<{ width: number; height:
 async function uploadDraftDonThuocMediaQueue(
   donThuocId: number,
   draftQueue: DraftDonKinhUploadItem[]
-): Promise<{ successCount: number; failedCount: number }> {
+): Promise<{ successCount: number; failedCount: number; failedItems: DraftDonKinhUploadItem[] }> {
   let successCount = 0;
   let failedCount = 0;
+  const failedItems: DraftDonKinhUploadItem[] = [];
 
   for (const draft of draftQueue) {
     let mediaId: number | null = null;
@@ -177,13 +178,14 @@ async function uploadDraftDonThuocMediaQueue(
       successCount += 1;
     } catch {
       failedCount += 1;
+      failedItems.push(draft);
       if (mediaId) {
         await axios.patch('/api/don-thuoc/media', { id: mediaId, status: 'failed' }).catch(() => {});
       }
     }
   }
 
-  return { successCount, failedCount };
+  return { successCount, failedCount, failedItems };
 }
 
 // Mobile swipeable row — vuốt sang trái để hiện nút − / + / 🗑 (giống KiotViet)
@@ -350,6 +352,13 @@ export default function KeDon() {
   const [activeDonThuocMediaId, setActiveDonThuocMediaId] = useState<number | null>(null);
   const [draftMediaQueue, setDraftMediaQueue] = useState<DraftDonKinhUploadItem[]>([]);
   const [draftQueueResetToken, setDraftQueueResetToken] = useState(0);
+  const [backgroundUploadingCount, setBackgroundUploadingCount] = useState(0);
+  const [backgroundFailedTasks, setBackgroundFailedTasks] = useState<Array<{
+    taskId: string;
+    donThuocId: number;
+    failedCount: number;
+    failedItems: DraftDonKinhUploadItem[];
+  }>>([]);
   const [highlightId, setHighlightId] = useState<number | null>(null); // highlight đơn mới / cập nhật
   const [focusedRowIdx, setFocusedRowIdx] = useState<number>(-1);
   const chandoanDesktopRef = useRef<HTMLInputElement | null>(null);
@@ -361,6 +370,122 @@ export default function KeDon() {
     setDraftQueueResetToken((prev) => prev + 1);
     setDraftMediaQueue([]);
   }, [activeDonThuocMediaId]);
+
+  const startBackgroundDonThuocMediaUpload = useCallback((donThuocId: number, items: DraftDonKinhUploadItem[]) => {
+    if (items.length === 0) return;
+    const taskId = `bg-don-thuoc-media-${donThuocId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setBackgroundUploadingCount((prev) => prev + 1);
+    toast.loading(`Đang tải nền ${items.length} ảnh cho đơn #${donThuocId}...`, { id: taskId });
+
+    void (async () => {
+      try {
+        const result = await uploadDraftDonThuocMediaQueue(donThuocId, items);
+        toast.dismiss(taskId);
+
+        if (result.successCount > 0 && result.failedCount === 0) {
+          toast.success(`Đã tải nền ${result.successCount} ảnh lên đơn #${donThuocId}`);
+          return;
+        }
+
+        if (result.failedCount > 0) {
+          setBackgroundFailedTasks((prev) => ([
+            {
+              taskId,
+              donThuocId,
+              failedCount: result.failedCount,
+              failedItems: result.failedItems,
+            },
+            ...prev,
+          ]));
+
+          if (result.successCount > 0) {
+            toast(`Đơn #${donThuocId}: tải nền ${result.successCount} ảnh, lỗi ${result.failedCount} ảnh`);
+          } else {
+            toast.error(`Đơn #${donThuocId}: không tải được ${result.failedCount} ảnh`);
+          }
+        }
+      } finally {
+        setBackgroundUploadingCount((prev) => Math.max(0, prev - 1));
+      }
+    })();
+  }, []);
+
+  const retryBackgroundFailedTask = useCallback((taskId: string) => {
+    let taskToRetry: {
+      taskId: string;
+      donThuocId: number;
+      failedCount: number;
+      failedItems: DraftDonKinhUploadItem[];
+    } | null = null;
+
+    setBackgroundFailedTasks((prev) => {
+      const found = prev.find((task) => task.taskId === taskId) || null;
+      taskToRetry = found;
+      return prev.filter((task) => task.taskId !== taskId);
+    });
+
+    if (!taskToRetry) return;
+    startBackgroundDonThuocMediaUpload(taskToRetry.donThuocId, taskToRetry.failedItems);
+  }, [startBackgroundDonThuocMediaUpload]);
+
+  useEffect(() => {
+    if (backgroundUploadingCount <= 0) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = 'Ảnh đơn thuốc đang tải nền. Rời trang có thể làm gián đoạn tải ảnh.';
+      return event.returnValue;
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [backgroundUploadingCount]);
+
+  const renderBackgroundUploadNotice = useCallback(() => {
+    if (backgroundUploadingCount <= 0 && backgroundFailedTasks.length === 0) return null;
+
+    return (
+      <div className="px-2 pt-2 space-y-2">
+        {backgroundUploadingCount > 0 && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+            <p className="text-xs sm:text-sm text-blue-700 font-semibold">
+              Đang tải nền {backgroundUploadingCount} tác vụ ảnh. Bạn có thể tiếp tục kê đơn bình thường.
+            </p>
+          </div>
+        )}
+
+        {backgroundFailedTasks.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
+            <p className="text-xs sm:text-sm text-amber-800 font-semibold">
+              Có {backgroundFailedTasks.length} tác vụ ảnh lỗi. Hệ thống không bỏ qua âm thầm, vui lòng thử lại.
+            </p>
+            {backgroundFailedTasks.map((task) => (
+              <div key={task.taskId} className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-white/70 px-2 py-1.5">
+                <p className="text-[11px] sm:text-xs text-amber-900">
+                  Đơn #{task.donThuocId}: lỗi {task.failedCount} ảnh
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="h-7 px-2 rounded-md bg-amber-600 text-white text-[11px] hover:bg-amber-700"
+                    onClick={() => retryBackgroundFailedTask(task.taskId)}
+                  >
+                    Thử lại
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 px-2 rounded-md border border-amber-300 text-amber-800 text-[11px] hover:bg-amber-100"
+                    onClick={() => setBackgroundFailedTasks((prev) => prev.filter((t) => t.taskId !== task.taskId))}
+                  >
+                    Ẩn
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
   // Edit patient dialog state
   const [openEditPatient, setOpenEditPatient] = useState(false);
   const [patientForm, setPatientForm] = useState<BenhNhan | null>(null);
@@ -916,6 +1041,7 @@ export default function KeDon() {
 
       const data = await res.json();
       if (res.ok) {
+        const draftQueueSnapshot = [...draftMediaQueue];
         saveChandoanToHistory(chandoan);
         toast.success(`Đã ${editDonThuocId ? 'cập nhật' : 'lưu'} đơn thuốc: ${data.data.madonthuoc}`);
         // Auto chuyển trạng thái chờ khám → đã_xong
@@ -927,18 +1053,6 @@ export default function KeDon() {
         const warnings: string[] = data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
         const savedDonThuocId = editDonThuocId || data?.data?.id;
-        if (savedDonThuocId && draftMediaQueue.length > 0) {
-          toast.loading('Đang tải ảnh tạm lên đơn thuốc...', { id: 'draft-donthuoc-media-upload' });
-          const uploadResult = await uploadDraftDonThuocMediaQueue(savedDonThuocId, draftMediaQueue);
-          toast.dismiss('draft-donthuoc-media-upload');
-          if (uploadResult.successCount > 0 && uploadResult.failedCount === 0) {
-            toast.success(`Đã tải ${uploadResult.successCount} ảnh lên đơn thuốc`);
-          } else if (uploadResult.successCount > 0 && uploadResult.failedCount > 0) {
-            toast(`Đã tải ${uploadResult.successCount} ảnh, lỗi ${uploadResult.failedCount} ảnh`);
-          } else if (uploadResult.failedCount > 0) {
-            toast.error(`Không tải được ${uploadResult.failedCount} ảnh tạm`);
-          }
-        }
 
         setDraftQueueResetToken((prev) => prev + 1);
         setDraftMediaQueue([]);
@@ -979,6 +1093,9 @@ export default function KeDon() {
         resetForm();
         if (savedDonThuocId) {
           setActiveDonThuocMediaId(savedDonThuocId);
+          if (draftQueueSnapshot.length > 0) {
+            startBackgroundDonThuocMediaUpload(savedDonThuocId, draftQueueSnapshot);
+          }
         }
       } else {
         toast.error(`Lỗi khi lưu đơn thuốc: ${data.message}`);
@@ -987,7 +1104,7 @@ export default function KeDon() {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi khi lưu đơn thuốc: ${message}`);
     }
-  }, [benhnhanid, chandoan, dsChon, ghiNo, tongTien, sotienDaThanhToan, editDonThuocId, ngayKham, resetForm, draftMediaQueue]);
+  }, [benhnhanid, chandoan, dsChon, ghiNo, tongTien, sotienDaThanhToan, editDonThuocId, ngayKham, resetForm, draftMediaQueue, startBackgroundDonThuocMediaUpload]);
 
   // Functions cho đơn thuốc mẫu
   const fetchDonThuocMau = useCallback(async () => {
@@ -1250,6 +1367,8 @@ export default function KeDon() {
               ))}
             </div>
           )}
+
+          {renderBackgroundUploadNotice()}
 
           {/* Tab bar đã chuyển vào MobileBottomNav (route-aware). Vuốt ngang viewport bên dưới để chuyển tab. */}
 
@@ -2145,6 +2264,8 @@ export default function KeDon() {
           ))}
         </div>
       )}
+
+      {renderBackgroundUploadNotice()}
 
       {/* Diagnosis & Date Row */}
       <div className="grid grid-cols-3 gap-3">

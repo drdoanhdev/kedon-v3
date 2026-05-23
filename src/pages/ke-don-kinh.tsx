@@ -25,6 +25,14 @@ import PrintDonKinh from '../components/ke-don/PrintDonKinh';
 import DonKinhMediaPanel from '@/components/ke-don/DonKinhImageStripPanel';
 import type { DraftDonKinhUploadItem } from '@/components/ke-don/DonKinhImageStripPanel';
 import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
+import {
+  enqueueBackgroundUploadTask,
+  getBackgroundUploadTask,
+  listBackgroundUploadTasks,
+  persistedItemsToDraftQueue,
+  removeBackgroundUploadTask,
+  updateBackgroundUploadTask,
+} from '@/lib/media/backgroundUploadPersistence';
 
 interface BenhNhan {
   id: number;
@@ -143,6 +151,13 @@ interface HistoryProps {
   onSelect: (don: DonKinh) => void;
   highlightId?: number | null;
   groupByYear?: boolean;
+}
+
+interface BackgroundDonKinhFailedTask {
+  taskId: number;
+  donKinhId: number;
+  failedCount: number;
+  lastError: string | null;
 }
 
 const History: React.FC<HistoryProps> = ({ items, onSelect, highlightId, groupByYear = false }) => {
@@ -308,9 +323,10 @@ async function readImageDimensions(file: File): Promise<{ width: number; height:
 async function uploadDraftMediaQueue(
   donKinhId: number,
   draftQueue: DraftDonKinhUploadItem[]
-): Promise<{ successCount: number; failedCount: number }> {
+): Promise<{ successCount: number; failedCount: number; failedItems: DraftDonKinhUploadItem[] }> {
   let successCount = 0;
   let failedCount = 0;
+  const failedItems: DraftDonKinhUploadItem[] = [];
 
   for (const draft of draftQueue) {
     let mediaId: number | null = null;
@@ -358,13 +374,14 @@ async function uploadDraftMediaQueue(
       successCount += 1;
     } catch {
       failedCount += 1;
+      failedItems.push(draft);
       if (mediaId) {
         await axios.patch('/api/don-kinh/media', { id: mediaId, status: 'failed' }).catch(() => {});
       }
     }
   }
 
-  return { successCount, failedCount };
+  return { successCount, failedCount, failedItems };
 }
 
 type DetectedBarcodeValue = { rawValue?: string };
@@ -456,12 +473,189 @@ export default function KeDonKinh() {
   const [activeDonKinhMediaId, setActiveDonKinhMediaId] = useState<number | null>(null);
   const [draftMediaQueue, setDraftMediaQueue] = useState<DraftDonKinhUploadItem[]>([]);
   const [draftQueueResetToken, setDraftQueueResetToken] = useState(0);
+  const [backgroundUploadingCount, setBackgroundUploadingCount] = useState(0);
+  const [backgroundFailedTasks, setBackgroundFailedTasks] = useState<BackgroundDonKinhFailedTask[]>([]);
+  const runningBackgroundOwnersRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     if (!activeDonKinhMediaId) return;
     setDraftQueueResetToken((prev) => prev + 1);
     setDraftMediaQueue([]);
   }, [activeDonKinhMediaId]);
+
+  const syncBackgroundFailedTasks = useCallback(async () => {
+    try {
+      const tasks = await listBackgroundUploadTasks('don_kinh');
+      setBackgroundFailedTasks(
+        tasks
+          .filter((task) => task.status === 'failed' && typeof task.id === 'number')
+          .map((task) => ({
+            taskId: Number(task.id),
+            donKinhId: task.ownerId,
+            failedCount: task.items.length,
+            lastError: task.lastError || null,
+          }))
+      );
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const processPersistedDonKinhTask = useCallback(async (taskId: number) => {
+    const task = await getBackgroundUploadTask(taskId);
+    if (!task || task.scope !== 'don_kinh') return;
+    if (task.items.length === 0) {
+      await removeBackgroundUploadTask(taskId);
+      await syncBackgroundFailedTasks();
+      return;
+    }
+
+    const toastId = `bg-don-kinh-media-${task.ownerId}-${taskId}`;
+    setBackgroundUploadingCount((prev) => prev + 1);
+    toast.loading(`Đang tải nền ${task.items.length} ảnh cho đơn kính #${task.ownerId}...`, { id: toastId });
+
+    try {
+      await updateBackgroundUploadTask(taskId, {
+        status: 'pending',
+        attempts: (task.attempts || 0) + 1,
+        lastError: null,
+      });
+
+      const queue = persistedItemsToDraftQueue(task.items) as DraftDonKinhUploadItem[];
+      const result = await uploadDraftMediaQueue(task.ownerId, queue);
+      toast.dismiss(toastId);
+
+      if (result.failedCount === 0) {
+        await removeBackgroundUploadTask(taskId);
+        toast.success(`Đã tải nền ${result.successCount} ảnh lên đơn kính #${task.ownerId}`);
+      } else {
+        await updateBackgroundUploadTask(taskId, {
+          status: 'failed',
+          items: result.failedItems.map((item) => ({
+            fileName: item.file.name || `upload-${Date.now()}`,
+            mimeType: item.file.type || 'application/octet-stream',
+            sourceDevice: item.sourceDevice,
+            fileBlob: item.file,
+            createdAt: new Date().toISOString(),
+          })),
+          lastError: `Lỗi ${result.failedCount} ảnh khi tải nền`,
+        });
+
+        if (result.successCount > 0) {
+          toast(`Đơn kính #${task.ownerId}: tải nền ${result.successCount} ảnh, lỗi ${result.failedCount} ảnh`);
+        } else {
+          toast.error(`Đơn kính #${task.ownerId}: không tải được ${result.failedCount} ảnh`);
+        }
+      }
+    } finally {
+      setBackgroundUploadingCount((prev) => Math.max(0, prev - 1));
+      await syncBackgroundFailedTasks();
+    }
+  }, [syncBackgroundFailedTasks]);
+
+  const startBackgroundDonKinhMediaUpload = useCallback((donKinhId: number, items: DraftDonKinhUploadItem[]) => {
+    if (items.length === 0) return;
+    if (runningBackgroundOwnersRef.current.has(donKinhId)) {
+      toast('Đang có tác vụ ảnh nền cho đơn này, hệ thống sẽ tự xử lý tuần tự.');
+      return;
+    }
+
+    runningBackgroundOwnersRef.current.add(donKinhId);
+    void (async () => {
+      try {
+        const taskId = await enqueueBackgroundUploadTask('don_kinh', donKinhId, items);
+        if (!taskId) {
+          // Fallback nếu IndexedDB không khả dụng.
+          const fallbackResult = await uploadDraftMediaQueue(donKinhId, items);
+          if (fallbackResult.failedCount > 0) {
+            toast.error(`Đơn kính #${donKinhId}: lỗi ${fallbackResult.failedCount} ảnh (trình duyệt không hỗ trợ lưu tác vụ nền)`);
+          }
+          return;
+        }
+        await processPersistedDonKinhTask(taskId);
+      } finally {
+        runningBackgroundOwnersRef.current.delete(donKinhId);
+      }
+    })();
+  }, [processPersistedDonKinhTask]);
+
+  const retryBackgroundFailedTask = useCallback((taskId: number) => {
+    void processPersistedDonKinhTask(taskId);
+  }, [processPersistedDonKinhTask]);
+
+  useEffect(() => {
+    void (async () => {
+      await syncBackgroundFailedTasks();
+
+      // Tự resume các task pending sau khi reload/crash.
+      const tasks = await listBackgroundUploadTasks('don_kinh');
+      const pendingTasks = tasks.filter((task) => task.status === 'pending' && typeof task.id === 'number');
+      for (const task of pendingTasks) {
+        if (!task.id) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await processPersistedDonKinhTask(Number(task.id));
+      }
+    })();
+  }, [processPersistedDonKinhTask, syncBackgroundFailedTasks]);
+
+  useEffect(() => {
+    if (backgroundUploadingCount <= 0) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = 'Ảnh đơn kính đang tải nền. Rời trang có thể làm gián đoạn tải ảnh.';
+      return event.returnValue;
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [backgroundUploadingCount]);
+
+  const renderBackgroundUploadNotice = useCallback(() => {
+    if (backgroundUploadingCount <= 0 && backgroundFailedTasks.length === 0) return null;
+
+    return (
+      <div className="px-2 pt-2 space-y-2">
+        {backgroundUploadingCount > 0 && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+            <p className="text-xs sm:text-sm text-blue-700 font-semibold">
+              Đang tải nền {backgroundUploadingCount} tác vụ ảnh đơn kính. Bạn có thể tiếp tục thao tác bình thường.
+            </p>
+          </div>
+        )}
+
+        {backgroundFailedTasks.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
+            <p className="text-xs sm:text-sm text-amber-800 font-semibold">
+              Có {backgroundFailedTasks.length} tác vụ ảnh lỗi. Vui lòng thử lại để tránh sót dữ liệu.
+            </p>
+            {backgroundFailedTasks.map((task) => (
+              <div key={task.taskId} className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-white/70 px-2 py-1.5">
+                <p className="text-[11px] sm:text-xs text-amber-900">
+                  Đơn kính #{task.donKinhId}: lỗi {task.failedCount} ảnh
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="h-7 px-2 rounded-md bg-amber-600 text-white text-[11px] hover:bg-amber-700"
+                    onClick={() => retryBackgroundFailedTask(task.taskId)}
+                  >
+                    Thử lại
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 px-2 rounded-md border border-amber-300 text-amber-800 text-[11px] hover:bg-amber-100"
+                    onClick={() => setBackgroundFailedTasks((prev) => prev.filter((t) => t.taskId !== task.taskId))}
+                  >
+                    Ẩn
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
   // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ (lịch sử), 2 = Lịch hẹn
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(0);
   // Desktop left sidebar tab: 'don_cu' or 'lich_hen'
@@ -1374,6 +1568,7 @@ export default function KeDonKinh() {
     try {
       const res = await axios.post('/api/don-kinh', payload);
       if (res.status === 200) {
+        const draftQueueSnapshot = [...draftMediaQueue];
         toast.success('Đã lưu đơn kính');
         // Auto chuyển trạng thái chờ khám → đã_xong
         axios.patch('/api/cho-kham', {
@@ -1385,22 +1580,13 @@ export default function KeDonKinh() {
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
         const createdDon = res.data.data as DonKinh;
         const createdDonId = createdDon?.id;
-        if (createdDonId && draftMediaQueue.length > 0) {
-          toast.loading('Đang tải ảnh tạm lên đơn kính...', { id: 'draft-media-upload' });
-          const uploadResult = await uploadDraftMediaQueue(createdDonId, draftMediaQueue);
-          toast.dismiss('draft-media-upload');
-          if (uploadResult.successCount > 0 && uploadResult.failedCount === 0) {
-            toast.success(`Đã tải ${uploadResult.successCount} ảnh lên đơn kính`);
-          } else if (uploadResult.successCount > 0 && uploadResult.failedCount > 0) {
-            toast(`Đã tải ${uploadResult.successCount} ảnh, lỗi ${uploadResult.failedCount} ảnh`);
-          } else if (uploadResult.failedCount > 0) {
-            toast.error(`Không tải được ${uploadResult.failedCount} ảnh tạm`);
-          }
-        }
 
         addHistory(createdDon);
         setDraftQueueResetToken((prev) => prev + 1);
         setDraftMediaQueue([]);
+        if (createdDonId && draftQueueSnapshot.length > 0) {
+          startBackgroundDonKinhMediaUpload(createdDonId, draftQueueSnapshot);
+        }
         resetForm();
       } else {
         toast.error(`Lỗi khi lưu đơn kính: ${res.data.message || 'Không rõ nguyên nhân'}`);
@@ -1775,6 +1961,10 @@ export default function KeDonKinh() {
               </div>
             )}
 
+            <div className="lg:hidden">
+              {renderBackgroundUploadNotice()}
+            </div>
+
             {/* Scrollable content area (chứa form, payment, history, lịch hẹn) */}
             <div
               ref={tabViewportRef}
@@ -1839,6 +2029,10 @@ export default function KeDonKinh() {
                 ))}
               </div>
             )}
+
+            <div className="hidden lg:block">
+              {renderBackgroundUploadNotice()}
+            </div>
 
             {/* Form kê đơn kính - Responsive Layout */}
             <div className="space-y-4">
