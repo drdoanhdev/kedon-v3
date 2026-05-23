@@ -278,6 +278,18 @@ export default function DonKinhMediaPanel({
   }, [resolvedOwnerId, refreshTick, apiBasePath, ownerIdField]);
 
   useEffect(() => {
+    if (!resolvedOwnerId || isDraftMode) return;
+    const hasPending = items.some((item) => item.status === 'pending');
+    if (!hasPending) return;
+
+    const timer = window.setTimeout(() => {
+      setRefreshTick((prev) => prev + 1);
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [items, resolvedOwnerId, isDraftMode]);
+
+  useEffect(() => {
     onDraftQueueChange?.(draftItems.map((item) => ({
       file: item.file,
       sourceDevice: item.sourceDevice,
@@ -453,7 +465,7 @@ export default function DonKinhMediaPanel({
 
     setDeletingId(id);
     try {
-      await axios.delete(`/api/don-kinh/media?id=${id}`);
+      await axios.delete(`${apiBasePath}?id=${id}`);
       setItems((prev) => sortMediaItems(prev.filter((item) => item.id !== id)));
 
       if (deletingCurrentPreview) {
