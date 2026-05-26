@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
 import { Card, CardContent } from '../components/ui/card';
@@ -62,10 +63,12 @@ interface HuyRecord {
 // COMPONENT
 // ============================================
 export default function QuanLyKhoThuoc() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'nhap' | 'huy' | 'gia'>('overview');
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'nhap' | 'huy' | 'gia' | 'catalog'>('overview');
 
   // Data states
   const [thuocList, setThuocList] = useState<ThuocStock[]>([]);
+  const [catalogList, setCatalogList] = useState<ThuocStock[]>([]);
   const [summary, setSummary] = useState<StockSummary>({ total: 0, het: 0, sap_het: 0, du: 0 });
   const [nhapHistory, setNhapHistory] = useState<NhapKhoRecord[]>([]);
   const [huyHistory, setHuyHistory] = useState<HuyRecord[]>([]);
@@ -84,6 +87,21 @@ export default function QuanLyKhoThuoc() {
   // Dialog: Hủy thuốc
   const [showHuyDialog, setShowHuyDialog] = useState(false);
   const [huyForm, setHuyForm] = useState({ so_luong: '', ly_do: 'het_han', ghi_chu: '' });
+
+  // Dialog: CRUD danh mục thuốc
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [showCatalogDialog, setShowCatalogDialog] = useState(false);
+  const [editingCatalog, setEditingCatalog] = useState<ThuocStock | null>(null);
+  const [catalogForm, setCatalogForm] = useState({
+    mathuoc: '',
+    tenthuoc: '',
+    donvitinh: '',
+    gianhap: '',
+    giaban: '',
+    muc_ton_can_co: '10',
+    ngung_kinh_doanh: false,
+  });
 
   // ============================================
   // FETCH DATA
@@ -116,12 +134,44 @@ export default function QuanLyKhoThuoc() {
     } catch {}
   }, []);
 
+  const fetchCatalog = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/thuoc');
+      setCatalogList(data.data || []);
+    } catch {
+      toast.error('Lỗi tải danh mục thuốc');
+    }
+  }, []);
+
   useEffect(() => {
-    Promise.all([fetchStock(), fetchNhapHistory(), fetchHuyHistory()])
+    Promise.all([fetchStock(), fetchNhapHistory(), fetchHuyHistory(), fetchCatalog()])
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { fetchStock(); }, [stockFilter, searchText, showInactive]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const tabQuery = Array.isArray(router.query.tab) ? router.query.tab[0] : router.query.tab;
+    if (!tabQuery || typeof tabQuery !== 'string') return;
+
+    const tabMap: Record<string, 'overview' | 'stock' | 'nhap' | 'huy' | 'gia' | 'catalog'> = {
+      overview: 'overview',
+      stock: 'stock',
+      nhap: 'nhap',
+      huy: 'huy',
+      gia: 'gia',
+      catalog: 'catalog',
+    };
+
+    const mapped = tabMap[tabQuery];
+    if (!mapped) return;
+    if (activeTab !== mapped) setActiveTab(mapped);
+  }, [router.isReady, router.query.tab, activeTab]);
+
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [catalogSearch, catalogList.length]);
 
   // ============================================
   // ACTIONS
@@ -187,6 +237,107 @@ export default function QuanLyKhoThuoc() {
     setSelectedThuoc(null);
   };
 
+  const resetCatalogForm = () => {
+    setCatalogForm({
+      mathuoc: '',
+      tenthuoc: '',
+      donvitinh: '',
+      gianhap: '',
+      giaban: '',
+      muc_ton_can_co: '10',
+      ngung_kinh_doanh: false,
+    });
+    setEditingCatalog(null);
+  };
+
+  const openCreateCatalog = () => {
+    resetCatalogForm();
+    setShowCatalogDialog(true);
+  };
+
+  const openEditCatalog = (item: ThuocStock) => {
+    setEditingCatalog(item);
+    setCatalogForm({
+      mathuoc: item.mathuoc || '',
+      tenthuoc: item.tenthuoc || '',
+      donvitinh: item.donvitinh || '',
+      gianhap: String(item.gianhap || 0),
+      giaban: String(item.giaban || 0),
+      muc_ton_can_co: String(item.muc_ton_can_co || 10),
+      ngung_kinh_doanh: !!item.ngung_kinh_doanh,
+    });
+    setShowCatalogDialog(true);
+  };
+
+  const buildCatalogPayload = (overrides?: Partial<typeof catalogForm>) => ({
+    mathuoc: (overrides?.mathuoc ?? catalogForm.mathuoc).trim() || null,
+    tenthuoc: (overrides?.tenthuoc ?? catalogForm.tenthuoc).trim(),
+    donvitinh: (overrides?.donvitinh ?? catalogForm.donvitinh).trim(),
+    gianhap: parseInt(overrides?.gianhap ?? catalogForm.gianhap, 10) || 0,
+    giaban: parseInt(overrides?.giaban ?? catalogForm.giaban, 10) || 0,
+    muc_ton_can_co: parseInt(overrides?.muc_ton_can_co ?? catalogForm.muc_ton_can_co, 10) || 10,
+    ngung_kinh_doanh: overrides?.ngung_kinh_doanh ?? catalogForm.ngung_kinh_doanh,
+  });
+
+  const handleSaveCatalog = async () => {
+    const payload = buildCatalogPayload();
+    if (!payload.tenthuoc || !payload.donvitinh) {
+      toast.error('Tên thuốc và đơn vị tính là bắt buộc');
+      return;
+    }
+
+    try {
+      if (editingCatalog) {
+        await axios.put('/api/thuoc', { id: editingCatalog.id, ...payload });
+        toast.success('Đã cập nhật thuốc');
+      } else {
+        await axios.post('/api/thuoc', payload);
+        toast.success('Đã thêm thuốc mới');
+      }
+      setShowCatalogDialog(false);
+      resetCatalogForm();
+      fetchCatalog();
+      fetchStock();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi lưu danh mục thuốc');
+    }
+  };
+
+  const handleToggleBusinessStatus = async (item: ThuocStock) => {
+    try {
+      await axios.put('/api/thuoc', {
+        id: item.id,
+        ...buildCatalogPayload({
+          mathuoc: item.mathuoc || '',
+          tenthuoc: item.tenthuoc || '',
+          donvitinh: item.donvitinh || '',
+          gianhap: String(item.gianhap || 0),
+          giaban: String(item.giaban || 0),
+          muc_ton_can_co: String(item.muc_ton_can_co || 10),
+          ngung_kinh_doanh: !item.ngung_kinh_doanh,
+        }),
+      });
+      toast.success(!item.ngung_kinh_doanh ? 'Đã đánh dấu ngưng kinh doanh' : 'Đã kích hoạt lại thuốc');
+      fetchCatalog();
+      fetchStock();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi cập nhật trạng thái');
+    }
+  };
+
+  const handleDeleteCatalog = async (item: ThuocStock) => {
+    if (!window.confirm(`Xóa thuốc "${item.tenthuoc || ''}" khỏi danh mục?`)) return;
+
+    try {
+      await axios.delete(`/api/thuoc?id=${item.id}`);
+      toast.success('Đã xóa thuốc khỏi danh mục');
+      fetchCatalog();
+      fetchStock();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi xóa thuốc');
+    }
+  };
+
   // ============================================
   // HELPERS
   // ============================================
@@ -221,6 +372,24 @@ export default function QuanLyKhoThuoc() {
     return new Date(d).toLocaleDateString('vi-VN');
   };
 
+  const filteredCatalog = catalogList.filter((item) => {
+    if (!catalogSearch) return true;
+    const s = catalogSearch.toLowerCase();
+    return (
+      (item.tenthuoc || '').toLowerCase().includes(s) ||
+      (item.mathuoc || '').toLowerCase().includes(s) ||
+      (item.donvitinh || '').toLowerCase().includes(s)
+    );
+  });
+
+  const CATALOG_PAGE_SIZE = 20;
+  const totalCatalogPages = Math.max(1, Math.ceil(filteredCatalog.length / CATALOG_PAGE_SIZE));
+  const safeCatalogPage = Math.min(catalogPage, totalCatalogPages);
+  const pagedCatalog = filteredCatalog.slice(
+    (safeCatalogPage - 1) * CATALOG_PAGE_SIZE,
+    safeCatalogPage * CATALOG_PAGE_SIZE
+  );
+
   // ============================================
   // RENDER
   // ============================================
@@ -234,9 +403,14 @@ export default function QuanLyKhoThuoc() {
               <h1 className="text-2xl font-bold text-gray-900">Quản lý kho thuốc</h1>
               <p className="text-gray-500 text-sm mt-1">Xuất nhập tồn kho thuốc, vật tư y tế</p>
             </div>
-            <Button onClick={() => { fetchStock(); fetchNhapHistory(); fetchHuyHistory(); }} variant="outline" size="sm">
-              <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
+                Danh mục thuốc
+              </Button>
+              <Button onClick={() => { fetchStock(); fetchNhapHistory(); fetchHuyHistory(); fetchCatalog(); }} variant="outline" size="sm">
+                <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
+              </Button>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -247,6 +421,7 @@ export default function QuanLyKhoThuoc() {
               { key: 'nhap', label: 'Lịch sử nhập', icon: <ArrowDownToLine className="w-4 h-4" /> },
               { key: 'huy', label: 'Lịch sử hủy', icon: <Trash2 className="w-4 h-4" /> },
               { key: 'gia', label: 'Giá', icon: <TrendingUp className="w-4 h-4" /> },
+              { key: 'catalog', label: 'Danh mục thuốc', icon: <Package className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -565,10 +740,217 @@ export default function QuanLyKhoThuoc() {
               {activeTab === 'gia' && (
                 <PricingTab thuocList={thuocList.map(t => ({ id: t.id, tenthuoc: t.tenthuoc, donvitinh: t.donvitinh, giaban: t.giaban, gianhap: t.gianhap }))} />
               )}
+
+              {/* ======================== TAB: DANH MỤC THUỐC ======================== */}
+              {activeTab === 'catalog' && (
+                <Card>
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                          placeholder="Tìm theo tên thuốc, mã thuốc, đơn vị..."
+                          value={catalogSearch}
+                          onChange={(e) => setCatalogSearch(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                      <Button onClick={openCreateCatalog}>
+                        <Plus className="w-4 h-4 mr-1" /> Thêm thuốc
+                      </Button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-gray-500">
+                            <th className="py-2 pr-4">Mã</th>
+                            <th className="py-2 pr-4">Tên thuốc</th>
+                            <th className="py-2 pr-4">ĐVT</th>
+                            <th className="py-2 pr-4 text-right">Giá nhập</th>
+                            <th className="py-2 pr-4 text-right">Giá bán</th>
+                            <th className="py-2 pr-4 text-center">Tồn tối thiểu</th>
+                            <th className="py-2 pr-4 text-center">KD</th>
+                            <th className="py-2 text-right">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredCatalog.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="py-8 text-center text-gray-400">
+                                Không có thuốc phù hợp bộ lọc
+                              </td>
+                            </tr>
+                          ) : (
+                            pagedCatalog.map((item) => (
+                              <tr key={item.id} className={`border-b last:border-0 ${item.ngung_kinh_doanh ? 'bg-gray-50 opacity-60' : ''}`}>
+                                <td className="py-2 pr-4 text-gray-500">{item.mathuoc || '-'}</td>
+                                <td className="py-2 pr-4 font-medium">
+                                  {item.tenthuoc}
+                                  {item.ngung_kinh_doanh && (
+                                    <span className="ml-2 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">Ngừng kinh doanh</span>
+                                  )}
+                                </td>
+                                <td className="py-2 pr-4">{item.donvitinh || '-'}</td>
+                                <td className="py-2 pr-4 text-right">{formatMoney(item.gianhap || 0)}</td>
+                                <td className="py-2 pr-4 text-right">{formatMoney(item.giaban || 0)}</td>
+                                <td className="py-2 pr-4 text-center">{item.muc_ton_can_co ?? 10}</td>
+                                <td className="py-2 pr-4 text-center">
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${item.ngung_kinh_doanh ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
+                                    {item.ngung_kinh_doanh ? 'Ngừng kinh doanh' : 'Đang kinh doanh'}
+                                  </span>
+                                </td>
+                                <td className="py-2 text-right">
+                                  <div className="flex justify-end gap-1">
+                                    <Button size="sm" variant="outline" onClick={() => openEditCatalog(item)}>Sửa</Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleToggleBusinessStatus(item)}
+                                    >
+                                      {item.ngung_kinh_doanh ? 'Kích hoạt lại' : 'Ngừng KD'}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-red-600 hover:text-red-700"
+                                      onClick={() => handleDeleteCatalog(item)}
+                                    >
+                                      Xóa
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {filteredCatalog.length > 0 && (
+                      <div className="flex items-center justify-between pt-3 text-sm text-gray-500">
+                        <span>
+                          Hiển thị {(safeCatalogPage - 1) * CATALOG_PAGE_SIZE + 1}-
+                          {Math.min(safeCatalogPage * CATALOG_PAGE_SIZE, filteredCatalog.length)} / {filteredCatalog.length}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={safeCatalogPage <= 1}
+                            onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
+                          >
+                            Trước
+                          </Button>
+                          <span>Trang {safeCatalogPage}/{totalCatalogPages}</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={safeCatalogPage >= totalCatalogPages}
+                            onClick={() => setCatalogPage((p) => Math.min(totalCatalogPages, p + 1))}
+                          >
+                            Sau
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </>
           )}
         </main>
       </div>
+
+      {/* ======================== DIALOG: CRUD DANH MỤC THUỐC ======================== */}
+      <Dialog
+        open={showCatalogDialog}
+        onOpenChange={(open) => {
+          setShowCatalogDialog(open);
+          if (!open) resetCatalogForm();
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingCatalog ? 'Sửa thuốc' : 'Thêm thuốc mới'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Mã thuốc</Label>
+                <Input
+                  value={catalogForm.mathuoc}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, mathuoc: e.target.value })}
+                  placeholder="VD: TH001"
+                />
+              </div>
+              <div>
+                <Label>Đơn vị tính <span className="text-red-500">*</span></Label>
+                <Input
+                  value={catalogForm.donvitinh}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, donvitinh: e.target.value })}
+                  placeholder="VD: viên, hộp"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Tên thuốc <span className="text-red-500">*</span></Label>
+              <Input
+                value={catalogForm.tenthuoc}
+                onChange={(e) => setCatalogForm({ ...catalogForm, tenthuoc: e.target.value })}
+                placeholder="Nhập tên thuốc"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Giá nhập</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={catalogForm.gianhap}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, gianhap: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Giá bán</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={catalogForm.giaban}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, giaban: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Tồn tối thiểu</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={catalogForm.muc_ton_can_co}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, muc_ton_can_co: e.target.value })}
+                  placeholder="10"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={catalogForm.ngung_kinh_doanh}
+                onChange={(e) => setCatalogForm({ ...catalogForm, ngung_kinh_doanh: e.target.checked })}
+              />
+              Đánh dấu ngừng kinh doanh
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowCatalogDialog(false); resetCatalogForm(); }}>Hủy</Button>
+            <Button onClick={handleSaveCatalog}>{editingCatalog ? 'Lưu thay đổi' : 'Thêm thuốc'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ======================== DIALOG: NHẬP KHO ======================== */}
       <Dialog open={showNhapDialog} onOpenChange={(open) => { if (!open) resetNhapForm(); setShowNhapDialog(open); }}>

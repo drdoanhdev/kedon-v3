@@ -100,8 +100,12 @@ const mobileHeaderByPath: Array<{ match: (pathname: string) => boolean; config: 
     config: { title: 'Kho thuốc', subtitle: 'Theo dõi tồn kho và nhập xuất', groupLabel: 'Kho hàng', theme: 'inventory' },
   },
   {
+    match: (p) => p.startsWith('/quan-ly-kho-gong'),
+    config: { title: 'Kho gọng', subtitle: 'Theo dõi tồn kho và nhập gọng', groupLabel: 'Kho hàng', theme: 'inventory' },
+  },
+  {
     match: (p) => p.startsWith('/quan-ly-kho'),
-    config: { title: 'Kho kính', subtitle: 'Theo dõi tồn kho kính và tròng', groupLabel: 'Kho hàng', theme: 'inventory' },
+    config: { title: 'Kho tròng', subtitle: 'Theo dõi tồn kho tròng và đặt hàng', groupLabel: 'Kho hàng', theme: 'inventory' },
   },
   {
     match: (p) => p.startsWith('/thuoc'),

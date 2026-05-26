@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, Send, CheckSquare, Loader2, CheckCheck } from 'lucide-react';
+import { Menu, X, Home, Users, FileText, Glasses, Frame, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, Send, CheckSquare, Loader2, CheckCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { useFeatureGate } from '../hooks/useFeatureGate';
@@ -66,7 +66,8 @@ export default function Header() {
     { href: '/benh-nhan', label: 'Bệnh nhân', icon: Users, feature: 'patient_management' },
     { href: '/don-thuoc', label: 'Đơn thuốc', icon: FileText, feature: 'prescription_medicine' },
     { href: '/don-kinh', label: 'Đơn kính', icon: Glasses, feature: 'prescription_glasses' },
-    { href: '/quan-ly-kho', label: 'Kho kính', icon: Warehouse, feature: 'inventory_lens' },
+    { href: '/quan-ly-kho', label: 'Kho tròng', icon: Warehouse, feature: 'inventory_lens' },
+    { href: '/quan-ly-kho-gong', label: 'Kho gọng', icon: Frame, feature: 'inventory_lens' },
     { href: '/quan-ly-kho-thuoc', label: 'Kho thuốc', icon: Pill, feature: 'inventory_drug' },
     { href: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays, feature: 'appointments' },
   ];

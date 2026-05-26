@@ -18,12 +18,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // type: 'kinh' = chỉ tròng+gọng, 'thuoc' = chỉ thuốc, undefined = tất cả
-    const { type } = req.query;
+    // type:
+    // - 'kinh': tròng + gọng
+    // - 'trong': chỉ tròng
+    // - 'gong': chỉ gọng
+    // - 'thuoc': chỉ thuốc
+    // - undefined: tất cả
+    const rawType = Array.isArray(req.query.type) ? req.query.type[0] : req.query.type;
+    const includeLens = !rawType || rawType === 'kinh' || rawType === 'trong';
+    const includeFrame = !rawType || rawType === 'kinh' || rawType === 'gong';
+    const includeDrug = !rawType || rawType === 'thuoc';
     const alerts: any[] = [];
 
     // Tròng kính sắp hết
-    if (type !== 'thuoc') {
+    if (includeLens) {
     let lensQuery = supabase
       .from('lens_stock')
       .select('id, sph, cyl, add_power, ton_hien_tai, muc_ton_can_co, trang_thai_ton, HangTrong(ten_hang)')
@@ -50,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Gọng kính sắp hết
-    if (type !== 'thuoc') {
+    if (includeFrame) {
     let frameQuery = supabase
       .from('GongKinh')
       .select('id, ten_gong, mau_sac, ton_kho, muc_ton_can_co')
@@ -79,7 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Thuốc sắp hết / đã hết
-    if (type !== 'kinh') {
+    if (includeDrug) {
     let thuocQuery = supabase
       .from('Thuoc')
       .select('id, tenthuoc, donvitinh, tonkho, muc_ton_can_co, ngung_kinh_doanh')
@@ -111,16 +119,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Tròng cần đặt (chờ đặt)
-    let pendingQuery = supabase
-      .from('lens_order')
-      .select('id, sph, cyl, add_power, so_luong_mieng, HangTrong(ten_hang), DonKinh(branch_id)')
-      .eq('tenant_id', tenantId)
-      .eq('trang_thai', 'cho_dat');
+    let pendingOrders: any[] = [];
+    if (includeLens) {
+      const { data: pendingOrdersRaw } = await supabase
+        .from('lens_order')
+        .select('id, sph, cyl, add_power, so_luong_mieng, HangTrong(ten_hang), DonKinh(branch_id)')
+        .eq('tenant_id', tenantId)
+        .eq('trang_thai', 'cho_dat');
 
-    const { data: pendingOrdersRaw } = await pendingQuery;
-    const pendingOrders = branchId
-      ? (pendingOrdersRaw || []).filter((o: any) => o?.DonKinh?.branch_id === branchId)
-      : pendingOrdersRaw;
+      pendingOrders = branchId
+        ? (pendingOrdersRaw || []).filter((o: any) => o?.DonKinh?.branch_id === branchId)
+        : (pendingOrdersRaw || []);
+    }
 
     return res.status(200).json({
       alerts: alerts.sort((a, b) =>

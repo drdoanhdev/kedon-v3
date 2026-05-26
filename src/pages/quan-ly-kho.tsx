@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -69,10 +70,15 @@ interface LensOrder {
 interface HangTrong {
   id: number;
   ten_hang: string;
+  hang?: string | null;
   loai_trong: string;
   kieu_quan_ly: string;
   gia_nhap: number;
   gia_ban: number;
+  mo_ta?: string | null;
+  nha_cung_cap_id?: number | null;
+  ngung_kinh_doanh?: boolean;
+  NhaCungCap?: { id: number; ten: string } | null;
 }
 
 interface LowStockAlert {
@@ -95,15 +101,32 @@ interface AlertSummary {
 // COMPONENT
 // ============================================
 export default function QuanLyKho() {
+  const router = useRouter();
   const { confirm } = useConfirm();
-  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'frame_stock' | 'import'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'lens_catalog' | 'frame_stock' | 'import'>('overview');
 
   // Data states
   const [alertData, setAlertData] = useState<AlertSummary | null>(null);
   const [lensStocks, setLensStocks] = useState<LensStock[]>([]);
   const [lensOrders, setLensOrders] = useState<LensOrder[]>([]);
   const [hangTrongs, setHangTrongs] = useState<HangTrong[]>([]);
+  const [lensCatalog, setLensCatalog] = useState<HangTrong[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Lens catalog CRUD
+  const [lensCatalogSearch, setLensCatalogSearch] = useState('');
+  const [lensCatalogPage, setLensCatalogPage] = useState(1);
+  const [showLensCatalogDialog, setShowLensCatalogDialog] = useState(false);
+  const [editingLensCatalog, setEditingLensCatalog] = useState<HangTrong | null>(null);
+  const [lensCatalogForm, setLensCatalogForm] = useState({
+    ten_hang: '',
+    hang: '',
+    gia_nhap: '0',
+    gia_ban: '0',
+    nha_cung_cap_id: '',
+    mo_ta: '',
+    ngung_kinh_doanh: false,
+  });
 
   // Dialog states
   const [showAddStock, setShowAddStock] = useState(false);
@@ -138,6 +161,12 @@ export default function QuanLyKho() {
   const [showCopyText, setShowCopyText] = useState(false);
   const [copyTextContent, setCopyTextContent] = useState('');
   const [copyTextTitle, setCopyTextTitle] = useState('');
+
+  // Mobile UX: swipe-to-reveal actions, tap-to-expand details
+  const [swipedStockId, setSwipedStockId] = useState<number | null>(null);
+  const [expandedStockId, setExpandedStockId] = useState<number | null>(null);
+  const touchStartXRef = React.useRef<number>(0);
+  const touchStartYRef = React.useRef<number>(0);
 
   // Frame (gọng) stock states
   interface GongKinhStock {
@@ -209,7 +238,7 @@ export default function QuanLyKho() {
   // ============================================
   const fetchAlerts = useCallback(async () => {
     try {
-      const { data } = await axios.get('/api/inventory/low-stock?type=kinh');
+      const { data } = await axios.get('/api/inventory/low-stock?type=trong');
       setAlertData(data);
     } catch {}
   }, []);
@@ -237,6 +266,15 @@ export default function QuanLyKho() {
       const { data } = await axios.get('/api/hang-trong');
       setHangTrongs(data);
     } catch {}
+  }, []);
+
+  const fetchLensCatalog = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/hang-trong?show_inactive=1');
+      setLensCatalog(data || []);
+    } catch {
+      toast.error('Lỗi tải danh mục tròng');
+    }
   }, []);
 
   const fetchFrameStocks = useCallback(async () => {
@@ -284,11 +322,44 @@ export default function QuanLyKho() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchAlerts(), fetchLensStocks(), fetchLensOrders(), fetchHangTrongs(), fetchFrameStocks(), fetchNhomGiaGongs(), fetchReceipts(), fetchNhaCungCaps()])
+    Promise.all([
+      fetchAlerts(),
+      fetchLensStocks(),
+      fetchLensOrders(),
+      fetchHangTrongs(),
+      fetchLensCatalog(),
+      fetchReceipts(),
+      fetchNhaCungCaps(),
+    ])
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { fetchLensStocks(); }, [stockFilter, hangTrongFilter, showInactive]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const tabQuery = Array.isArray(router.query.tab) ? router.query.tab[0] : router.query.tab;
+    if (!tabQuery || typeof tabQuery !== 'string') return;
+
+    const tabMap: Record<string, 'overview' | 'lens_stock' | 'lens_order' | 'lens_catalog' | 'import'> = {
+      overview: 'overview',
+      stock: 'lens_stock',
+      lens_stock: 'lens_stock',
+      order: 'lens_order',
+      lens_order: 'lens_order',
+      catalog: 'lens_catalog',
+      lens_catalog: 'lens_catalog',
+      import: 'import',
+    };
+
+    const mapped = tabMap[tabQuery];
+    if (!mapped) return;
+    if (activeTab !== mapped) setActiveTab(mapped);
+  }, [router.isReady, router.query.tab, activeTab]);
+
+  useEffect(() => {
+    setLensCatalogPage(1);
+  }, [lensCatalogSearch, lensCatalog.length]);
 
   // ============================================
   // ACTIONS
@@ -309,15 +380,17 @@ export default function QuanLyKho() {
   const handleImport = async () => {
     if (!selectedStock) return;
     try {
-      await axios.post('/api/inventory/lens-import', {
+      const { data } = await axios.post('/api/inventory/lens-import', {
         lens_stock_id: selectedStock.id,
         ...importForm,
       });
-      toast.success(`Đã nhập ${importForm.so_luong} miếng`);
+      const receiptSuffix = data?.receipt_id ? ` (PN#${data.receipt_id})` : '';
+      toast.success(`Đã nhập ${importForm.so_luong} miếng${receiptSuffix}`);
       setShowImport(false);
       setImportForm({ so_luong: '', don_gia: '', ghi_chu: '' });
       setSelectedStock(null);
       fetchLensStocks();
+      fetchReceipts();
       fetchAlerts();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Lỗi nhập kho');
@@ -390,23 +463,130 @@ export default function QuanLyKho() {
     }
   };
 
+  const resetLensCatalogForm = () => {
+    setLensCatalogForm({
+      ten_hang: '',
+      hang: '',
+      gia_nhap: '0',
+      gia_ban: '0',
+      nha_cung_cap_id: '',
+      mo_ta: '',
+      ngung_kinh_doanh: false,
+    });
+    setEditingLensCatalog(null);
+  };
+
+  const openCreateLensCatalog = () => {
+    resetLensCatalogForm();
+    setShowLensCatalogDialog(true);
+  };
+
+  const openEditLensCatalog = (item: HangTrong) => {
+    setEditingLensCatalog(item);
+    setLensCatalogForm({
+      ten_hang: item.ten_hang || '',
+      hang: item.hang || '',
+      gia_nhap: String(item.gia_nhap || 0),
+      gia_ban: String(item.gia_ban || 0),
+      nha_cung_cap_id: item.nha_cung_cap_id ? String(item.nha_cung_cap_id) : '',
+      mo_ta: item.mo_ta || '',
+      ngung_kinh_doanh: !!item.ngung_kinh_doanh,
+    });
+    setShowLensCatalogDialog(true);
+  };
+
+  const buildLensCatalogPayload = (overrides?: Partial<typeof lensCatalogForm>) => ({
+    ten_hang: (overrides?.ten_hang ?? lensCatalogForm.ten_hang).trim(),
+    hang: (overrides?.hang ?? lensCatalogForm.hang).trim() || null,
+    gia_nhap: parseInt(overrides?.gia_nhap ?? lensCatalogForm.gia_nhap, 10) || 0,
+    gia_ban: parseInt(overrides?.gia_ban ?? lensCatalogForm.gia_ban, 10) || 0,
+    nha_cung_cap_id: (overrides?.nha_cung_cap_id ?? lensCatalogForm.nha_cung_cap_id) || null,
+    mo_ta: (overrides?.mo_ta ?? lensCatalogForm.mo_ta).trim() || null,
+    ngung_kinh_doanh: overrides?.ngung_kinh_doanh ?? lensCatalogForm.ngung_kinh_doanh,
+  });
+
+  const handleSaveLensCatalog = async () => {
+    const payload = buildLensCatalogPayload();
+    if (!payload.ten_hang) {
+      toast.error('Tên loại tròng là bắt buộc');
+      return;
+    }
+
+    try {
+      if (editingLensCatalog) {
+        await axios.put('/api/hang-trong', { id: editingLensCatalog.id, ...payload });
+        toast.success('Đã cập nhật loại tròng');
+      } else {
+        await axios.post('/api/hang-trong', payload);
+        toast.success('Đã thêm loại tròng');
+      }
+
+      setShowLensCatalogDialog(false);
+      resetLensCatalogForm();
+      fetchLensCatalog();
+      fetchHangTrongs();
+      fetchLensStocks();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi lưu danh mục tròng');
+    }
+  };
+
+  const handleToggleLensCatalogBusiness = async (item: HangTrong) => {
+    try {
+      await axios.put('/api/hang-trong', {
+        id: item.id,
+        ...buildLensCatalogPayload({
+          ten_hang: item.ten_hang || '',
+          hang: item.hang || '',
+          gia_nhap: String(item.gia_nhap || 0),
+          gia_ban: String(item.gia_ban || 0),
+          nha_cung_cap_id: item.nha_cung_cap_id ? String(item.nha_cung_cap_id) : '',
+          mo_ta: item.mo_ta || '',
+          ngung_kinh_doanh: !item.ngung_kinh_doanh,
+        }),
+      });
+      toast.success(!item.ngung_kinh_doanh ? 'Đã đánh dấu ngừng kinh doanh' : 'Đã kích hoạt lại loại tròng');
+      fetchLensCatalog();
+      fetchHangTrongs();
+      fetchLensStocks();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi cập nhật trạng thái');
+    }
+  };
+
+  const handleDeleteLensCatalog = async (item: HangTrong) => {
+    if (!await confirm(`Xác nhận xóa loại tròng "${item.ten_hang}"?`)) return;
+
+    try {
+      await axios.delete(`/api/hang-trong?id=${item.id}`);
+      toast.success('Đã xóa (ẩn) loại tròng');
+      fetchLensCatalog();
+      fetchHangTrongs();
+      fetchLensStocks();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi xóa loại tròng');
+    }
+  };
+
   // ============================================
   // FRAME (GỌNG) ACTIONS
   // ============================================
   const handleFrameImport = async () => {
     if (!selectedFrame) return;
     try {
-      await axios.post('/api/inventory/frame-import', {
+      const { data } = await axios.post('/api/inventory/frame-import', {
         gong_kinh_id: selectedFrame.id,
         so_luong: parseInt(frameImportForm.so_luong),
         don_gia: parseInt(frameImportForm.don_gia) || 0,
         ghi_chu: frameImportForm.ghi_chu || null,
       });
-      toast.success(`Đã nhập ${frameImportForm.so_luong} gọng`);
+      const receiptSuffix = data?.receipt_id ? ` (PN#${data.receipt_id})` : '';
+      toast.success(`Đã nhập ${frameImportForm.so_luong} gọng${receiptSuffix}`);
       setShowFrameImport(false);
       setFrameImportForm({ so_luong: '', don_gia: '', ghi_chu: '' });
       setSelectedFrame(null);
       fetchFrameStocks();
+      fetchReceipts();
       fetchAlerts();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Lỗi nhập kho gọng');
@@ -879,6 +1059,24 @@ export default function QuanLyKho() {
     return tt;
   };
 
+  const filteredLensCatalog = lensCatalog.filter((item) => {
+    if (!lensCatalogSearch) return true;
+    const s = lensCatalogSearch.toLowerCase();
+    return (
+      (item.ten_hang || '').toLowerCase().includes(s) ||
+      (item.hang || '').toLowerCase().includes(s) ||
+      (item.NhaCungCap?.ten || '').toLowerCase().includes(s)
+    );
+  });
+
+  const LENS_CATALOG_PAGE_SIZE = 20;
+  const totalLensCatalogPages = Math.max(1, Math.ceil(filteredLensCatalog.length / LENS_CATALOG_PAGE_SIZE));
+  const safeLensCatalogPage = Math.min(lensCatalogPage, totalLensCatalogPages);
+  const pagedLensCatalog = filteredLensCatalog.slice(
+    (safeLensCatalogPage - 1) * LENS_CATALOG_PAGE_SIZE,
+    safeLensCatalogPage * LENS_CATALOG_PAGE_SIZE
+  );
+
   // ============================================
   // RENDER
   // ============================================
@@ -889,35 +1087,40 @@ export default function QuanLyKho() {
         <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
           <div className="flex items-center justify-between mb-4 sm:mb-6">
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản lý kho kính</h1>
-              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">Tồn kho tròng kính, gọng kính</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản lý kho tròng</h1>
+              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">Tồn kho tròng kính</p>
             </div>
-            <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); }} variant="outline" size="sm">
-              <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setLensCatalogPage(1); setActiveTab('lens_catalog'); }}>
+                Danh mục tròng
+              </Button>
+              <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); fetchLensCatalog(); fetchHangTrongs(); }} variant="outline" size="sm">
+                <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
+              </Button>
+            </div>
           </div>
 
           {/* Tabs */}
-          <div className="grid grid-cols-5 sm:flex gap-1 mb-4 sm:mb-6 bg-white rounded-lg p-1 shadow-sm border">
+          <div className="flex gap-1 mb-4 sm:mb-6 bg-white rounded-xl p-1 shadow-sm border overflow-x-auto">
             {[
               { key: 'overview', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
               { key: 'lens_stock', label: 'Kho tròng kính', mobileLabel: 'Kho tròng', icon: <Eye className="w-4 h-4" /> },
-              { key: 'frame_stock', label: 'Kho gọng kính', mobileLabel: 'Kho gọng', icon: <Frame className="w-4 h-4" /> },
               { key: 'lens_order', label: 'Tròng cần đặt', mobileLabel: 'Cần đặt', icon: <Truck className="w-4 h-4" /> },
+              { key: 'lens_catalog', label: 'Danh mục tròng', mobileLabel: 'Danh mục', icon: <Tags className="w-4 h-4" /> },
               { key: 'import', label: 'Phiếu nhập kho', mobileLabel: 'Phiếu nhập', icon: <Upload className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key as any)}
-                className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${
-                  activeTab === tab.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                onClick={() => { setActiveTab(tab.key as any); setSwipedStockId(null); setExpandedStockId(null); }}
+                className={`flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition shrink-0 ${
+                  activeTab === tab.key ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
                 {tab.icon}
                 <span className="sm:hidden">{tab.mobileLabel}</span>
                 <span className="hidden sm:inline">{tab.label}</span>
                 {tab.key === 'lens_order' && lensOrders.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-orange-500 text-white">{lensOrders.length}</span>
+                  <span className="ml-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-orange-500 text-white font-bold">{lensOrders.length}</span>
                 )}
               </button>
             ))}
@@ -931,31 +1134,43 @@ export default function QuanLyKho() {
               {activeTab === 'overview' && alertData && (
                 <div className="space-y-6">
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <Card>
-                      <CardContent className="pt-6 text-center">
-                        <p className="text-3xl font-bold text-red-600">{alertData.summary.het}</p>
-                        <p className="text-sm text-gray-500 mt-1">Đã hết</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6 text-center">
-                        <p className="text-3xl font-bold text-yellow-600">{alertData.summary.sap_het}</p>
-                        <p className="text-sm text-gray-500 mt-1">Sắp hết</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6 text-center">
-                        <p className="text-3xl font-bold text-orange-600">{alertData.pending_lens_orders}</p>
-                        <p className="text-sm text-gray-500 mt-1">Tròng chờ đặt</p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="pt-6 text-center">
-                        <p className="text-3xl font-bold text-blue-600">{lensStocks.length}</p>
-                        <p className="text-sm text-gray-500 mt-1">Dòng kho tròng</p>
-                      </CardContent>
-                    </Card>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-white rounded-2xl border border-red-100 shadow-sm px-4 py-4 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-5 h-5 text-red-600" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-red-600 leading-none">{alertData.summary.het}</p>
+                        <p className="text-xs text-gray-500 mt-1">Đã hết</p>
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-yellow-100 shadow-sm px-4 py-4 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-yellow-100 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-yellow-600 leading-none">{alertData.summary.sap_het}</p>
+                        <p className="text-xs text-gray-500 mt-1">Sắp hết</p>
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-orange-100 shadow-sm px-4 py-4 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+                        <Truck className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-orange-600 leading-none">{alertData.pending_lens_orders}</p>
+                        <p className="text-xs text-gray-500 mt-1">Chờ đặt</p>
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-blue-100 shadow-sm px-4 py-4 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+                        <Package className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-blue-600 leading-none">{lensStocks.length}</p>
+                        <p className="text-xs text-gray-500 mt-1">Dòng kho</p>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Alert List */}
@@ -967,8 +1182,46 @@ export default function QuanLyKho() {
                           Cảnh báo tồn kho ({alertData.summary.total})
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
+                      <CardContent className="p-0 sm:p-6 sm:pt-0">
+                        {/* Mobile card list */}
+                        <div className="sm:hidden divide-y divide-gray-100">
+                          {alertData.alerts.map((a, i) => (
+                            <div key={i} className="flex items-center gap-3 px-4 py-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                    a.loai_hang === 'trong_kinh' ? 'bg-blue-100 text-blue-700' :
+                                    a.loai_hang === 'thuoc' ? 'bg-purple-100 text-purple-700' :
+                                    'bg-orange-100 text-orange-700'
+                                  }`}>
+                                    {a.loai_hang === 'trong_kinh' ? 'Tròng' : a.loai_hang === 'thuoc' ? 'Thuốc' : 'Gọng'}
+                                  </span>
+                                  <span className="font-semibold text-sm text-gray-900 truncate">{a.ten}</span>
+                                </div>
+                                <div className="mt-0.5 font-mono text-[11px] text-gray-500 truncate">{a.chi_tiet}</div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="flex items-center gap-1.5 justify-end">
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-gray-400">Tồn</div>
+                                    <div className="font-bold text-sm">{a.ton_kho}</div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-gray-400">Nhập</div>
+                                    <div className="font-bold text-sm text-blue-600">{a.can_nhap}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-1">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${trangThaiColor(a.trang_thai)}`}>
+                                    {trangThaiLabel(a.trang_thai)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Desktop table */}
+                        <div className="hidden sm:block overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="border-b text-left text-gray-500">
@@ -1007,7 +1260,7 @@ export default function QuanLyKho() {
                   ) : (
                     <Card>
                       <CardContent className="py-12 text-center text-gray-500">
-                        ✅ Tất cả tròng và gọng đều đủ tồn kho
+                        ✅ Tất cả tròng đều đủ tồn kho
                       </CardContent>
                     </Card>
                   )}
@@ -1138,133 +1391,422 @@ export default function QuanLyKho() {
                           })}
                         </div>
                         <div className="text-[11px] text-gray-500 mt-2">
-                          Mẹo: Chưa có NCC → vào <b>Danh mục → Loại tròng</b> chọn NCC cho từng loại tròng.
-                          NCC chưa có SĐT Zalo → vào <b>Danh mục → Nhà cung cấp</b>.
+                          Mẹo: Chưa có NCC cho loại tròng → vào tab <b>Danh mục tròng</b> để gán NCC.
+                          NCC chưa có SĐT Zalo → bổ sung trong <b>Danh mục {'>'} Nhà cung cấp</b>.
                         </div>
                       </div>
                     );
                   })()}
 
-                  <Card>
-                    <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs sm:text-sm">
-                          <thead>
-                            <tr className="border-b bg-gray-50 text-left text-gray-500">
-                              <th className="p-2 sm:p-3 font-medium">Hãng</th>
-                              <th className="p-2 sm:p-3 font-medium">Loại tròng</th>
-                              <th className="p-2 sm:p-3 font-medium font-mono">SPH</th>
-                              <th className="p-2 sm:p-3 font-medium font-mono">CYL</th>
-                              <th className="p-2 sm:p-3 font-medium font-mono">ADD</th>
-                              <th className="p-2 sm:p-3 font-medium text-center">Mắt</th>
-                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn đầu kỳ</th>
-                              <th className="p-2 sm:p-3 font-medium text-center">Tồn</th>
-                              <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn cần có</th>
-                              <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">Nhập</span><span className="hidden sm:inline">Cần nhập</span></th>
-                              <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">TT</span><span className="hidden sm:inline">Trạng thái</span></th>
-                              <th className="p-2 sm:p-3 font-medium text-center"><span className="hidden sm:inline">Thao tác</span></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(() => {
-                              const filteredStocks = brandFilter === 'all'
-                                ? lensStocks
-                                : lensStocks.filter(s => (s.HangTrong?.hang || '') === brandFilter);
-                              if (filteredStocks.length === 0) {
+                  {(() => {
+                    const filteredStocks = brandFilter === 'all'
+                      ? lensStocks
+                      : lensStocks.filter(s => (s.HangTrong?.hang || '') === brandFilter);
+                    const emptyMsg = lensStocks.length === 0
+                      ? 'Chưa có dữ liệu kho tròng. Bấm "Thêm độ mới" để bắt đầu.'
+                      : 'Không có dữ liệu trong bộ lọc đã chọn.';
+                    return (
+                      <>
+                        {/* ---- Mobile card list (hidden on md+) ---- */}
+                        <div className="md:hidden space-y-2">
+                          {filteredStocks.length === 0 ? (
+                            <div className="py-10 text-center text-gray-400 text-sm">{emptyMsg}</div>
+                          ) : (
+                            <>
+                              <p className="text-[11px] text-gray-400 text-right pr-1 select-none">◀ Vuốt trái để thao tác</p>
+                              {filteredStocks.map(stock => {
+                                const isInactive = (stock.HangTrong as any)?.trang_thai === false;
+                                const isSwiped = swipedStockId === stock.id;
+                                const isExpanded = expandedStockId === stock.id;
+                                const actionWidth = isInactive ? 52 : 144;
                                 return (
-                                  <tr><td colSpan={12} className="p-8 text-center text-gray-400">
-                                    {lensStocks.length === 0
-                                      ? 'Chưa có dữ liệu kho tròng. Bấm "Thêm độ mới" để bắt đầu.'
-                                      : 'Không có dổ hiện trong bộ lọc hãng đã chọn.'}
-                                  </td></tr>
+                                  <div key={stock.id} className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                                    {/* Card content – shifts left on swipe */}
+                                    <div
+                                      className={`transition-transform duration-200 ease-out select-none ${isInactive ? 'opacity-60' : ''}`}
+                                      style={{ transform: isSwiped ? `translateX(-${actionWidth}px)` : 'none', touchAction: 'pan-y' }}
+                                      onTouchStart={e => {
+                                        touchStartXRef.current = e.touches[0].clientX;
+                                        touchStartYRef.current = e.touches[0].clientY;
+                                      }}
+                                      onTouchEnd={e => {
+                                        const dx = touchStartXRef.current - e.changedTouches[0].clientX;
+                                        const dy = Math.abs(touchStartYRef.current - e.changedTouches[0].clientY);
+                                        if (Math.abs(dx) > dy && Math.abs(dx) > 30) {
+                                          if (dx > 0) setSwipedStockId(stock.id);
+                                          else setSwipedStockId(null);
+                                        }
+                                      }}
+                                      onClick={() => {
+                                        if (isSwiped) { setSwipedStockId(null); return; }
+                                        setExpandedStockId(isExpanded ? null : stock.id);
+                                      }}
+                                    >
+                                      <div className="px-4 pt-3 pb-2.5">
+                                        {/* Top row: brand tag + name + stock count */}
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              {stock.HangTrong?.hang && (
+                                                <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md uppercase tracking-wide">
+                                                  {stock.HangTrong.hang}
+                                                </span>
+                                              )}
+                                              <span className="font-semibold text-[15px] text-gray-900 leading-tight">
+                                                {stock.HangTrong?.ten_hang}
+                                              </span>
+                                              {isInactive && <span className="text-[9px] bg-gray-200 text-gray-500 px-1 py-0.5 rounded">Ngưng KD</span>}
+                                            </div>
+                                            {/* Degree badge */}
+                                            <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                              <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-lg">
+                                                {formatSph(stock.sph)}
+                                                {stock.cyl !== 0 && ` / ${stock.cyl >= 0 ? '+' : ''}${stock.cyl.toFixed(2)}`}
+                                                {stock.add_power != null && ` ADD${stock.add_power >= 0 ? '+' : ''}${stock.add_power.toFixed(2)}`}
+                                              </span>
+                                              {stock.mat && (
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border font-medium ${stock.mat === 'trai' ? 'bg-sky-50 text-sky-700 border-sky-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
+                                                  {stock.mat === 'trai' ? '👁 Trái' : '👁 Phải'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                          {/* Stock number + status */}
+                                          <div className="text-right shrink-0">
+                                            <div className={`text-3xl font-bold leading-none tabular-nums ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai < stock.muc_ton_can_co ? 'text-amber-500' : 'text-emerald-600'}`}>
+                                              {stock.ton_hien_tai}
+                                            </div>
+                                            <div className="mt-1">
+                                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${trangThaiColor(stock.trang_thai_ton)}`}>
+                                                {trangThaiLabel(stock.trang_thai_ton)}
+                                              </span>
+                                            </div>
+                                            {stock.can_nhap_them > 0 && (
+                                              <div className="text-[11px] text-blue-600 font-semibold mt-0.5">
+                                                +{stock.can_nhap_them} cần nhập
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Expanded details */}
+                                        {isExpanded && (
+                                          <div className="mt-2.5 pt-2.5 border-t border-gray-100 grid grid-cols-3 gap-2 text-center">
+                                            <div>
+                                              <div className="text-[10px] text-gray-400">Tồn đầu kỳ</div>
+                                              <div className="font-semibold text-sm mt-0.5">{stock.ton_dau_ky}</div>
+                                            </div>
+                                            <div>
+                                              <div className="text-[10px] text-gray-400">Tồn cần có</div>
+                                              <div className="font-semibold text-sm mt-0.5">{stock.muc_ton_can_co}</div>
+                                            </div>
+                                            <div>
+                                              <div className="text-[10px] text-gray-400">Cần nhập</div>
+                                              <div className={`font-bold text-sm mt-0.5 ${stock.can_nhap_them > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
+                                                {stock.can_nhap_them > 0 ? `+${stock.can_nhap_them}` : '—'}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Expand/collapse hint */}
+                                        <div className="flex justify-center mt-1.5">
+                                          <span className="text-[10px] text-gray-300">{isExpanded ? '▲ thu gọn' : '▼ chi tiết'}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Action buttons revealed on swipe-left */}
+                                    <div className="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 px-2">
+                                      <button
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          setSwipedStockId(null);
+                                          setSelectedStock(stock);
+                                          setEditStockForm({
+                                            hang_trong_id: String(stock.hang_trong_id),
+                                            sph: String(stock.sph),
+                                            cyl: String(stock.cyl),
+                                            add_power: stock.add_power != null ? String(stock.add_power) : '',
+                                            mat: stock.mat || '',
+                                            ton_dau_ky: String(stock.ton_dau_ky),
+                                            muc_ton_can_co: String(stock.muc_ton_can_co),
+                                          });
+                                          setShowEditStock(true);
+                                        }}
+                                        className="w-10 h-10 rounded-xl bg-blue-500 active:bg-blue-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                                        title="Sửa thông số"
+                                      >
+                                        <Pencil className="w-4 h-4" />
+                                      </button>
+                                      {!isInactive && (
+                                        <>
+                                          <button
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              setSwipedStockId(null);
+                                              setSelectedStock(stock);
+                                              setShowImport(true);
+                                            }}
+                                            className="w-10 h-10 rounded-xl bg-emerald-500 active:bg-emerald-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                                            title="Nhập kho"
+                                          >
+                                            <ArrowDownToLine className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              setSwipedStockId(null);
+                                              setSelectedStock(stock);
+                                              setShowDamaged(true);
+                                            }}
+                                            className="w-10 h-10 rounded-xl bg-red-500 active:bg-red-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                                            title="Xuất hỏng"
+                                          >
+                                            <Ban className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
                                 );
-                              }
-                              return filteredStocks.map(stock => {
-                              const isInactive = (stock.HangTrong as any)?.trang_thai === false;
-                              return (
-                              <tr key={stock.id} className={`border-b hover:bg-gray-50 ${isInactive ? 'opacity-50 bg-gray-50' : ''}`}>
-                                <td className="p-2 sm:p-3 text-xs sm:text-sm text-gray-700">
-                                  {stock.HangTrong?.hang || <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm max-w-[120px] sm:max-w-none truncate">
-                                  {stock.HangTrong?.ten_hang}
-                                  {isInactive && <><span className="ml-1 text-[10px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded sm:hidden">Ngưng</span><span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded hidden sm:inline">Ngưng KD</span></>}
-                                </td>
-                                <td className="p-2 sm:p-3 font-mono">{formatSph(stock.sph)}</td>
-                                <td className="p-2 sm:p-3 font-mono">{stock.cyl !== 0 ? `${stock.cyl >= 0 ? '+' : ''}${stock.cyl.toFixed(2)}` : '-'}</td>
-                                <td className="p-2 sm:p-3 font-mono">{stock.add_power != null ? `${stock.add_power >= 0 ? '+' : ''}${stock.add_power.toFixed(2)}` : '-'}</td>
-                                <td className="p-2 sm:p-3 text-center">
-                                  {stock.mat === 'trai' ? <span className="text-[10px] sm:text-xs bg-blue-100 text-blue-700 px-1 sm:px-1.5 py-0.5 rounded">L</span>
-                                    : stock.mat === 'phai' ? <span className="text-[10px] sm:text-xs bg-green-100 text-green-700 px-1 sm:px-1.5 py-0.5 rounded">R</span>
-                                    : <span className="text-gray-300">-</span>}
-                                </td>
-                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.ton_dau_ky}</td>
-                                <td className="p-2 sm:p-3 text-center">
-                                  <span className={`font-bold text-base sm:text-lg ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai < stock.muc_ton_can_co ? 'text-yellow-600' : 'text-green-600'}`}>
-                                    {stock.ton_hien_tai}
-                                  </span>
-                                </td>
-                                <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_ton_can_co}</td>
-                                <td className="p-2 sm:p-3 text-center">
-                                  {stock.can_nhap_them > 0 ? (
-                                    <span className="font-bold text-blue-600">{stock.can_nhap_them}</span>
+                              })}
+                            </>
+                          )}
+                        </div>
+
+                        {/* ---- Desktop table (hidden on mobile) ---- */}
+                        <Card className="hidden md:block">
+                          <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs sm:text-sm">
+                                <thead>
+                                  <tr className="border-b bg-gray-50 text-left text-gray-500">
+                                    <th className="p-2 sm:p-3 font-medium">Hãng</th>
+                                    <th className="p-2 sm:p-3 font-medium">Loại tròng</th>
+                                    <th className="p-2 sm:p-3 font-medium font-mono">SPH</th>
+                                    <th className="p-2 sm:p-3 font-medium font-mono">CYL</th>
+                                    <th className="p-2 sm:p-3 font-medium font-mono">ADD</th>
+                                    <th className="p-2 sm:p-3 font-medium text-center">Mắt</th>
+                                    <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn đầu kỳ</th>
+                                    <th className="p-2 sm:p-3 font-medium text-center">Tồn</th>
+                                    <th className="p-2 sm:p-3 font-medium text-center hidden sm:table-cell">Tồn cần có</th>
+                                    <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">Nhập</span><span className="hidden sm:inline">Cần nhập</span></th>
+                                    <th className="p-2 sm:p-3 font-medium text-center"><span className="sm:hidden">TT</span><span className="hidden sm:inline">Trạng thái</span></th>
+                                    <th className="p-2 sm:p-3 font-medium text-center"><span className="hidden sm:inline">Thao tác</span></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredStocks.length === 0 ? (
+                                    <tr><td colSpan={12} className="p-8 text-center text-gray-400">{emptyMsg}</td></tr>
                                   ) : (
-                                    <span className="text-gray-300">-</span>
+                                    filteredStocks.map(stock => {
+                                      const isInactive = (stock.HangTrong as any)?.trang_thai === false;
+                                      return (
+                                      <tr key={stock.id} className={`border-b hover:bg-gray-50 ${isInactive ? 'opacity-50 bg-gray-50' : ''}`}>
+                                        <td className="p-2 sm:p-3 text-xs sm:text-sm text-gray-700">
+                                          {stock.HangTrong?.hang || <span className="text-gray-300">—</span>}
+                                        </td>
+                                        <td className="p-2 sm:p-3 font-medium text-xs sm:text-sm max-w-[120px] sm:max-w-none truncate">
+                                          {stock.HangTrong?.ten_hang}
+                                          {isInactive && <><span className="ml-1 text-[10px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded sm:hidden">Ngưng</span><span className="ml-1.5 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded hidden sm:inline">Ngưng KD</span></>}
+                                        </td>
+                                        <td className="p-2 sm:p-3 font-mono">{formatSph(stock.sph)}</td>
+                                        <td className="p-2 sm:p-3 font-mono">{stock.cyl !== 0 ? `${stock.cyl >= 0 ? '+' : ''}${stock.cyl.toFixed(2)}` : '-'}</td>
+                                        <td className="p-2 sm:p-3 font-mono">{stock.add_power != null ? `${stock.add_power >= 0 ? '+' : ''}${stock.add_power.toFixed(2)}` : '-'}</td>
+                                        <td className="p-2 sm:p-3 text-center">
+                                          {stock.mat === 'trai' ? <span className="text-[10px] sm:text-xs bg-blue-100 text-blue-700 px-1 sm:px-1.5 py-0.5 rounded">L</span>
+                                            : stock.mat === 'phai' ? <span className="text-[10px] sm:text-xs bg-green-100 text-green-700 px-1 sm:px-1.5 py-0.5 rounded">R</span>
+                                            : <span className="text-gray-300">-</span>}
+                                        </td>
+                                        <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.ton_dau_ky}</td>
+                                        <td className="p-2 sm:p-3 text-center">
+                                          <span className={`font-bold text-base sm:text-lg ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai < stock.muc_ton_can_co ? 'text-yellow-600' : 'text-green-600'}`}>
+                                            {stock.ton_hien_tai}
+                                          </span>
+                                        </td>
+                                        <td className="p-2 sm:p-3 text-center text-gray-500 hidden sm:table-cell">{stock.muc_ton_can_co}</td>
+                                        <td className="p-2 sm:p-3 text-center">
+                                          {stock.can_nhap_them > 0 ? (
+                                            <span className="font-bold text-blue-600">{stock.can_nhap_them}</span>
+                                          ) : (
+                                            <span className="text-gray-300">-</span>
+                                          )}
+                                        </td>
+                                        <td className="p-2 sm:p-3 text-center">
+                                          <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full ${trangThaiColor(stock.trang_thai_ton)}`}>
+                                            {trangThaiLabel(stock.trang_thai_ton)}
+                                          </span>
+                                        </td>
+                                        <td className="p-1.5 sm:p-3 text-center">
+                                          <div className="flex gap-0.5 sm:gap-1 justify-center">
+                                            <button
+                                              onClick={() => {
+                                                setSelectedStock(stock);
+                                                setEditStockForm({
+                                                  hang_trong_id: String(stock.hang_trong_id),
+                                                  sph: String(stock.sph),
+                                                  cyl: String(stock.cyl),
+                                                  add_power: stock.add_power != null ? String(stock.add_power) : '',
+                                                  mat: stock.mat || '',
+                                                  ton_dau_ky: String(stock.ton_dau_ky),
+                                                  muc_ton_can_co: String(stock.muc_ton_can_co),
+                                                });
+                                                setShowEditStock(true);
+                                              }}
+                                              className="p-1 sm:p-1.5 rounded-lg hover:bg-blue-100 text-blue-600" title="Sửa thông số"
+                                            >
+                                              <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                            </button>
+                                            {!isInactive && (
+                                            <>
+                                            <button
+                                              onClick={() => { setSelectedStock(stock); setShowImport(true); }}
+                                              className="p-1 sm:p-1.5 rounded-lg hover:bg-green-100 text-green-600" title="Nhập kho"
+                                            >
+                                              <ArrowDownToLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                            </button>
+                                            <button
+                                              onClick={() => { setSelectedStock(stock); setShowDamaged(true); }}
+                                              className="p-1 sm:p-1.5 rounded-lg hover:bg-red-100 text-red-600" title="Xuất hỏng"
+                                            >
+                                              <Ban className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                            </button>
+                                            </>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ======================== TAB: DANH MỤC TRÒNG ======================== */}
+              {activeTab === 'lens_catalog' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-lg">
+                      <div className="flex items-center gap-2">
+                        <Tags className="w-5 h-5" />
+                        Danh mục tròng ({filteredLensCatalog.length})
+                      </div>
+                      <div className="flex flex-wrap gap-2 ml-auto w-full sm:w-auto">
+                        <div className="relative flex-1 sm:flex-none">
+                          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
+                          <Input
+                            placeholder="Tìm theo tên tròng, hãng, NCC..."
+                            value={lensCatalogSearch}
+                            onChange={(e) => setLensCatalogSearch(e.target.value)}
+                            className="pl-8 h-9 text-sm w-full sm:w-56"
+                          />
+                        </div>
+                        <Button size="sm" onClick={openCreateLensCatalog}>
+                          <Plus className="w-4 h-4 mr-1" /> Thêm loại tròng
+                        </Button>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-gray-50 text-left text-gray-500">
+                            <th className="p-2 sm:p-3 font-medium">Hãng</th>
+                            <th className="p-2 sm:p-3 font-medium">Loại tròng</th>
+                            <th className="p-2 sm:p-3 font-medium text-right">Giá nhập</th>
+                            <th className="p-2 sm:p-3 font-medium text-right">Giá bán</th>
+                            <th className="p-2 sm:p-3 font-medium">Nhà cung cấp</th>
+                            <th className="p-2 sm:p-3 font-medium text-center">KD</th>
+                            <th className="p-2 sm:p-3 font-medium text-right">Thao tác</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredLensCatalog.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-gray-400">
+                                Chưa có dữ liệu danh mục tròng
+                              </td>
+                            </tr>
+                          ) : (
+                            pagedLensCatalog.map((item) => (
+                              <tr key={item.id} className={`border-b hover:bg-gray-50 ${item.ngung_kinh_doanh ? 'bg-gray-50 opacity-60' : ''}`}>
+                                <td className="p-2 sm:p-3 text-gray-700">{item.hang || '-'}</td>
+                                <td className="p-2 sm:p-3 font-medium">
+                                  {item.ten_hang}
+                                  {item.ngung_kinh_doanh && (
+                                    <span className="ml-2 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">Ngừng kinh doanh</span>
                                   )}
                                 </td>
+                                <td className="p-2 sm:p-3 text-right">{(item.gia_nhap || 0).toLocaleString('vi-VN')}</td>
+                                <td className="p-2 sm:p-3 text-right font-medium">{(item.gia_ban || 0).toLocaleString('vi-VN')}</td>
+                                <td className="p-2 sm:p-3">{item.NhaCungCap?.ten || '-'}</td>
                                 <td className="p-2 sm:p-3 text-center">
-                                  <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full ${trangThaiColor(stock.trang_thai_ton)}`}>
-                                    {trangThaiLabel(stock.trang_thai_ton)}
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${item.ngung_kinh_doanh ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
+                                    {item.ngung_kinh_doanh ? 'Ngừng kinh doanh' : 'Đang kinh doanh'}
                                   </span>
                                 </td>
-                                <td className="p-1.5 sm:p-3 text-center">
-                                  <div className="flex gap-0.5 sm:gap-1 justify-center">
-                                    <button
-                                      onClick={() => {
-                                        setSelectedStock(stock);
-                                        setEditStockForm({
-                                          hang_trong_id: String(stock.hang_trong_id),
-                                          sph: String(stock.sph),
-                                          cyl: String(stock.cyl),
-                                          add_power: stock.add_power != null ? String(stock.add_power) : '',
-                                          mat: stock.mat || '',
-                                          ton_dau_ky: String(stock.ton_dau_ky),
-                                          muc_ton_can_co: String(stock.muc_ton_can_co),
-                                        });
-                                        setShowEditStock(true);
-                                      }}
-                                      className="p-1 sm:p-1.5 rounded-lg hover:bg-blue-100 text-blue-600" title="Sửa thông số"
+                                <td className="p-2 sm:p-3 text-right">
+                                  <div className="flex justify-end gap-1">
+                                    <Button size="sm" variant="outline" onClick={() => openEditLensCatalog(item)}>Sửa</Button>
+                                    <Button size="sm" variant="outline" onClick={() => handleToggleLensCatalogBusiness(item)}>
+                                      {item.ngung_kinh_doanh ? 'Kích hoạt lại' : 'Ngừng KD'}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-red-600 hover:text-red-700"
+                                      onClick={() => handleDeleteLensCatalog(item)}
                                     >
-                                      <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                    </button>
-                                    {!isInactive && (
-                                    <>
-                                    <button
-                                      onClick={() => { setSelectedStock(stock); setShowImport(true); }}
-                                      className="p-1 sm:p-1.5 rounded-lg hover:bg-green-100 text-green-600" title="Nhập kho"
-                                    >
-                                      <ArrowDownToLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => { setSelectedStock(stock); setShowDamaged(true); }}
-                                      className="p-1 sm:p-1.5 rounded-lg hover:bg-red-100 text-red-600" title="Xuất hỏng"
-                                    >
-                                      <Ban className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                    </button>
-                                    </>
-                                    )}
+                                      Xóa
+                                    </Button>
                                   </div>
                                 </td>
                               </tr>
-                              );
-                            });
-                            })()}
-                          </tbody>
-                        </table>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {filteredLensCatalog.length > 0 && (
+                      <div className="flex items-center justify-between pt-3 text-sm text-gray-500">
+                        <span>
+                          Hiển thị {(safeLensCatalogPage - 1) * LENS_CATALOG_PAGE_SIZE + 1}-
+                          {Math.min(safeLensCatalogPage * LENS_CATALOG_PAGE_SIZE, filteredLensCatalog.length)} / {filteredLensCatalog.length}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={safeLensCatalogPage <= 1}
+                            onClick={() => setLensCatalogPage((p) => Math.max(1, p - 1))}
+                          >
+                            Trước
+                          </Button>
+                          <span>Trang {safeLensCatalogPage}/{totalLensCatalogPages}</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={safeLensCatalogPage >= totalLensCatalogPages}
+                            onClick={() => setLensCatalogPage((p) => Math.min(totalLensCatalogPages, p + 1))}
+                          >
+                            Sau
+                          </Button>
+                        </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                    )}
+                  </CardContent>
+                </Card>
               )}
 
               {/* ======================== TAB: KHO GỌNG KÍNH ======================== */}
@@ -1508,7 +2050,7 @@ export default function QuanLyKho() {
                             })}
                           </div>
                           <div className="text-[11px] text-gray-500 mt-2">
-                            Mẹo: NCC chưa có SĐT Zalo → vào <b>Danh mục → Nhà cung cấp</b> để bổ sung.
+                            Mẹo: NCC chưa có SĐT Zalo → bổ sung trong <b>Danh mục {'>'} Nhà cung cấp</b>.
                           </div>
                         </div>
                       );
@@ -1519,70 +2061,142 @@ export default function QuanLyKho() {
                         Không có tròng nào cần đặt
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b bg-gray-50 text-left text-gray-500">
-                              <th className="p-3 font-medium">Hãng</th>
-                              <th className="p-3 font-medium">Loại tròng</th>
-                              <th className="p-3 font-medium font-mono">Độ</th>
-                              <th className="p-3 font-medium text-center">Mắt</th>
-                              <th className="p-3 font-medium text-center">Miếng</th>
-                              <th className="p-3 font-medium">Bệnh nhân</th>
-                              <th className="p-3 font-medium">NCC</th>
-                              <th className="p-3 font-medium text-center">Trạng thái</th>
-                              <th className="p-3 font-medium">Ngày tạo</th>
-                              <th className="p-3 font-medium text-center">Thao tác</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lensOrders.map(order => {
-                              const ncc = order.NhaCungCap || order.HangTrong?.NhaCungCap;
-                              return (
-                              <tr key={order.id} className="border-b hover:bg-gray-50">
-                                <td className="p-3 text-gray-700">{order.HangTrong?.hang || <span className="text-gray-300">—</span>}</td>
-                                <td className="p-3 font-medium">{order.HangTrong?.ten_hang}</td>
-                                <td className="p-3 font-mono text-xs">{formatDo(order.sph, order.cyl, order.add_power)}</td>
-                                <td className="p-3 text-center">
-                                  {order.mat === 'trai' ? '👁️ T' : order.mat === 'phai' ? '👁️ P' : '-'}
-                                </td>
-                                <td className="p-3 text-center font-bold">{order.so_luong_mieng}</td>
-                                <td className="p-3">{order.DonKinh?.BenhNhan?.ten || '-'}</td>
-                                <td className="p-3 text-xs text-gray-600">{ncc?.ten || <span className="text-gray-300">—</span>}</td>
-                                <td className="p-3 text-center">
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${orderStatusColor(order.trang_thai)}`}>
+                      <>
+                        {/* ---- Mobile cards ---- */}
+                        <div className="md:hidden space-y-2">
+                          {lensOrders.map(order => {
+                            const ncc = order.NhaCungCap || order.HangTrong?.NhaCungCap;
+                            return (
+                              <div key={order.id} className="rounded-2xl border border-gray-200 bg-white shadow-sm px-4 py-3">
+                                {/* Header: brand + name + status */}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {order.HangTrong?.hang && (
+                                        <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md uppercase tracking-wide">
+                                          {order.HangTrong.hang}
+                                        </span>
+                                      )}
+                                      <span className="font-semibold text-[15px] text-gray-900">{order.HangTrong?.ten_hang}</span>
+                                    </div>
+                                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-lg">
+                                        {formatDo(order.sph, order.cyl, order.add_power)}
+                                      </span>
+                                      {order.mat && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border font-medium ${order.mat === 'trai' ? 'bg-sky-50 text-sky-700 border-sky-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
+                                          {order.mat === 'trai' ? '👁 Trái' : '👁 Phải'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 font-medium mt-0.5 ${orderStatusColor(order.trang_thai)}`}>
                                     {orderStatusLabel(order.trang_thai)}
                                   </span>
-                                </td>
-                                <td className="p-3 text-gray-500 text-xs">
-                                  {new Date(order.created_at).toLocaleDateString('vi-VN')}
-                                </td>
-                                <td className="p-3 text-center">
-                                  <div className="flex gap-1 justify-center">
+                                </div>
+
+                                {/* Bottom row: meta + action button */}
+                                <div className="mt-2.5 flex items-end justify-between gap-2">
+                                  <div className="text-xs text-gray-500 space-y-0.5">
+                                    <div>
+                                      <span className="font-semibold text-gray-800">{order.so_luong_mieng} miếng</span>
+                                      {ncc && <span className="text-gray-400"> · {ncc.ten}</span>}
+                                    </div>
+                                    {order.DonKinh?.BenhNhan?.ten && (
+                                      <div className="text-gray-400">BN: {order.DonKinh.BenhNhan.ten}</div>
+                                    )}
+                                    <div className="text-gray-300">{new Date(order.created_at).toLocaleDateString('vi-VN')}</div>
+                                  </div>
+                                  <div className="shrink-0">
                                     {order.trang_thai === 'cho_dat' && (
                                       <button
                                         onClick={() => handleUpdateOrderStatus([order.id], 'da_dat')}
-                                        className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                                        className="px-3.5 py-1.5 text-xs bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 active:scale-95 transition-transform font-semibold"
                                       >
-                                        Đã đặt
+                                        Đã đặt ✓
                                       </button>
                                     )}
                                     {order.trang_thai === 'da_dat' && (
                                       <button
                                         onClick={() => handleUpdateOrderStatus([order.id], 'da_nhan')}
-                                        className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                                        className="px-3.5 py-1.5 text-xs bg-emerald-100 text-emerald-700 rounded-xl hover:bg-emerald-200 active:scale-95 transition-transform font-semibold"
                                       >
-                                        Đã nhận
+                                        Đã nhận ✓
                                       </button>
                                     )}
                                   </div>
-                                </td>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* ---- Desktop table ---- */}
+                        <div className="hidden md:block overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b bg-gray-50 text-left text-gray-500">
+                                <th className="p-3 font-medium">Hãng</th>
+                                <th className="p-3 font-medium">Loại tròng</th>
+                                <th className="p-3 font-medium font-mono">Độ</th>
+                                <th className="p-3 font-medium text-center">Mắt</th>
+                                <th className="p-3 font-medium text-center">Miếng</th>
+                                <th className="p-3 font-medium">Bệnh nhân</th>
+                                <th className="p-3 font-medium">NCC</th>
+                                <th className="p-3 font-medium text-center">Trạng thái</th>
+                                <th className="p-3 font-medium">Ngày tạo</th>
+                                <th className="p-3 font-medium text-center">Thao tác</th>
                               </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody>
+                              {lensOrders.map(order => {
+                                const ncc = order.NhaCungCap || order.HangTrong?.NhaCungCap;
+                                return (
+                                <tr key={order.id} className="border-b hover:bg-gray-50">
+                                  <td className="p-3 text-gray-700">{order.HangTrong?.hang || <span className="text-gray-300">—</span>}</td>
+                                  <td className="p-3 font-medium">{order.HangTrong?.ten_hang}</td>
+                                  <td className="p-3 font-mono text-xs">{formatDo(order.sph, order.cyl, order.add_power)}</td>
+                                  <td className="p-3 text-center">
+                                    {order.mat === 'trai' ? '👁️ T' : order.mat === 'phai' ? '👁️ P' : '-'}
+                                  </td>
+                                  <td className="p-3 text-center font-bold">{order.so_luong_mieng}</td>
+                                  <td className="p-3">{order.DonKinh?.BenhNhan?.ten || '-'}</td>
+                                  <td className="p-3 text-xs text-gray-600">{ncc?.ten || <span className="text-gray-300">—</span>}</td>
+                                  <td className="p-3 text-center">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${orderStatusColor(order.trang_thai)}`}>
+                                      {orderStatusLabel(order.trang_thai)}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-gray-500 text-xs">
+                                    {new Date(order.created_at).toLocaleDateString('vi-VN')}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <div className="flex gap-1 justify-center">
+                                      {order.trang_thai === 'cho_dat' && (
+                                        <button
+                                          onClick={() => handleUpdateOrderStatus([order.id], 'da_dat')}
+                                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                                        >
+                                          Đã đặt
+                                        </button>
+                                      )}
+                                      {order.trang_thai === 'da_dat' && (
+                                        <button
+                                          onClick={() => handleUpdateOrderStatus([order.id], 'da_nhan')}
+                                          className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                                        >
+                                          Đã nhận
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>
@@ -1903,6 +2517,103 @@ export default function QuanLyKho() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* ======================== DIALOG: CRUD DANH MỤC TRÒNG ======================== */}
+          <Dialog
+            open={showLensCatalogDialog}
+            onOpenChange={(open) => {
+              setShowLensCatalogDialog(open);
+              if (!open) resetLensCatalogForm();
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editingLensCatalog ? 'Sửa loại tròng' : 'Thêm loại tròng'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Hãng</Label>
+                    <Input
+                      value={lensCatalogForm.hang}
+                      onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, hang: e.target.value })}
+                      placeholder="VD: Essilor"
+                    />
+                  </div>
+                  <div>
+                    <Label>Nhà cung cấp</Label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 mt-1"
+                      value={lensCatalogForm.nha_cung_cap_id}
+                      onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, nha_cung_cap_id: e.target.value })}
+                    >
+                      <option value="">-- Chọn NCC --</option>
+                      {nhaCungCaps.map((ncc) => (
+                        <option key={ncc.id} value={ncc.id}>{ncc.ten}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Tên loại tròng *</Label>
+                  <Input
+                    value={lensCatalogForm.ten_hang}
+                    onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, ten_hang: e.target.value })}
+                    placeholder="VD: AS Crizal Blue UV"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Giá nhập</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={lensCatalogForm.gia_nhap}
+                      onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, gia_nhap: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label>Giá bán</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={lensCatalogForm.gia_ban}
+                      onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, gia_ban: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Mô tả</Label>
+                  <Input
+                    value={lensCatalogForm.mo_ta}
+                    onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, mo_ta: e.target.value })}
+                    placeholder="Mô tả thêm..."
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={lensCatalogForm.ngung_kinh_doanh}
+                    onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, ngung_kinh_doanh: e.target.checked })}
+                  />
+                  Đánh dấu ngừng kinh doanh
+                </label>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setShowLensCatalogDialog(false); resetLensCatalogForm(); }}>
+                  Hủy
+                </Button>
+                <Button onClick={handleSaveLensCatalog}>{editingLensCatalog ? 'Lưu thay đổi' : 'Thêm loại tròng'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* ======================== DIALOG: NHẬP EXCEL ======================== */}
           <Dialog open={showImportExcel} onOpenChange={(open) => { setShowImportExcel(open); if (!open) { setImportRows([]); setImportFileName(''); } }}>
             <DialogContent className="max-w-3xl">

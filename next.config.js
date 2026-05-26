@@ -11,7 +11,8 @@ const withPWA = require('@ducanh2912/next-pwa').default({
     clientsClaim: true,
     cleanupOutdatedCaches: true,
   },
-  reloadOnOnline: true,
+  // Avoid forced hard-reload when network reconnects on mobile wake/resume.
+  reloadOnOnline: false,
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   buildExcludes: [

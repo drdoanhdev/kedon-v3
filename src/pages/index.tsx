@@ -305,7 +305,7 @@ export default function HomePage() {
                 </div>
               </div>
             </Link>
-            <Link href="/quan-ly-kinh" className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow border-l-4 border-pink-500">
+            <Link href="/quan-ly-kho-gong" className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow border-l-4 border-pink-500">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 bg-pink-50 rounded-lg flex items-center justify-center flex-shrink-0"><Glasses className="w-4.5 h-4.5 text-pink-600" /></div>
                 <div className="min-w-0">

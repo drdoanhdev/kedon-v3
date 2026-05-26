@@ -952,6 +952,7 @@ async function processLensInventory(
         console.log(`📦 [Inventory] Gọng: ✅ Đã xuất kho "${fields.ten_gong}" (tồn trước: ${tonTruoc})`);
       }
     } else {
+      warnings.push(`⚠️ Gọng "${fields.ten_gong}" chưa liên kết danh mục kho, chưa trừ tồn. Hãy chọn gọng từ danh mục để đồng bộ kho.`);
       console.log(`📦 [Inventory] Gọng "${fields.ten_gong}" (id=${fields.gong_kinh_id}) NOT FOUND trong GongKinh`);
     }
   }

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -7,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2, Tags, Printer } from 'lucide-react';
+import { Pencil, Trash2, Plus, Pill, Package, Glasses, Frame, Eye, Target, Building2, Tags, Printer, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import axios from 'axios';
@@ -77,6 +78,21 @@ interface GongKinh {
   NhaCungCap?: { id: number; ten: string } | null;
 }
 
+interface GongKinhMediaPreviewItem {
+  id: number;
+  loai_anh: string;
+  status: 'pending' | 'uploaded' | 'failed';
+  read_url: string | null;
+  created_at: string;
+}
+
+interface SelectedFrameImageState {
+  gongKinhId: number;
+  title: string;
+  images: string[];
+  activeIndex: number;
+}
+
 interface MauThiLuc {
   id: number;
   gia_tri: string;
@@ -143,6 +159,15 @@ type TemDataResponse = {
 const QUICK_TEM_TEMPLATE_ID_KEY = 'tem-kinh:quick-template-id';
 const QUICK_TEM_COPIES_KEY = 'tem-kinh:quick-copies';
 const QUICK_TEM_PRINTER_KEY = 'tem-kinh:quick-printer-name';
+const FRAME_PREVIEW_READ_URL_TTL_SECONDS = 20 * 60;
+const FRAME_PREVIEW_SWIPE_THRESHOLD = 45;
+
+function frameMediaKindPriority(kind?: string): number {
+  if (kind === 'mat_truoc') return 0;
+  if (kind === 'mat_trai') return 1;
+  if (kind === 'mat_phai') return 2;
+  return 99;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -387,6 +412,7 @@ async function buildBitmapPayloadFromTemplate(resolvedTemplate: TemDataResponse[
 }
 
 function DanhMucPage() {
+  const router = useRouter();
   const { confirm } = useConfirm();
   const { userRole } = useAuth();
   const isSuperAdmin = userRole === 'superadmin';
@@ -406,6 +432,19 @@ function DanhMucPage() {
   ];
 
   const [activeTab, setActiveTab] = useState('thuoc');
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const tabQuery = Array.isArray(router.query.tab) ? router.query.tab[0] : router.query.tab;
+    if (!tabQuery || typeof tabQuery !== 'string') return;
+
+    const allowedTabs = ['thuoc', 'don-mau', 'hang-trong', 'gong-kinh', 'nhom-gia-gong', 'nha-cung-cap', 'so-kinh', 'thi-luc'];
+    if (!allowedTabs.includes(tabQuery)) return;
+
+    if (activeTab !== tabQuery) {
+      setActiveTab(tabQuery);
+    }
+  }, [router.isReady, router.query.tab, activeTab]);
 
   // Đặt tiêu đề trang tĩnh
   useEffect(() => {
@@ -468,7 +507,11 @@ function DanhMucPage() {
   const [searchGongKinh, setSearchGongKinh] = useState('');
   const [openQuickTemPrintDialog, setOpenQuickTemPrintDialog] = useState(false);
   const [quickTemFrame, setQuickTemFrame] = useState<GongKinh | null>(null);
-  const [selectedFrameImage, setSelectedFrameImage] = useState<{ src: string; title: string } | null>(null);
+  const [selectedFrameImage, setSelectedFrameImage] = useState<SelectedFrameImageState | null>(null);
+  const [selectedFrameImageLoading, setSelectedFrameImageLoading] = useState(false);
+  const [selectedFrameImageError, setSelectedFrameImageError] = useState('');
+  const [selectedFrameTouchStartX, setSelectedFrameTouchStartX] = useState<number | null>(null);
+  const frameImageRequestIdRef = useRef(0);
   const [quickTemTemplates, setQuickTemTemplates] = useState<TemTemplateListItem[]>([]);
   const [quickTemTemplateId, setQuickTemTemplateId] = useState<number | null>(null);
   const [quickTemCopies, setQuickTemCopies] = useState(1);
@@ -922,6 +965,131 @@ function DanhMucPage() {
         ? error.response?.data?.message || error.message
         : 'Lỗi không xác định';
       toast.error(`Lỗi khi xóa gọng kính: ${message}`);
+    }
+  };
+
+  const closeFrameImagePreview = () => {
+    frameImageRequestIdRef.current += 1;
+    setSelectedFrameImage(null);
+    setSelectedFrameImageLoading(false);
+    setSelectedFrameImageError('');
+    setSelectedFrameTouchStartX(null);
+  };
+
+  const showPreviousFramePreviewImage = () => {
+    setSelectedFrameImage((prev) => {
+      if (!prev || prev.images.length === 0) return prev;
+      const nextIndex = (prev.activeIndex - 1 + prev.images.length) % prev.images.length;
+      return { ...prev, activeIndex: nextIndex };
+    });
+  };
+
+  const showNextFramePreviewImage = () => {
+    setSelectedFrameImage((prev) => {
+      if (!prev || prev.images.length === 0) return prev;
+      const nextIndex = (prev.activeIndex + 1) % prev.images.length;
+      return { ...prev, activeIndex: nextIndex };
+    });
+  };
+
+  useEffect(() => {
+    if (!selectedFrameImage || selectedFrameImage.images.length <= 1) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const tagName = activeElement?.tagName?.toLowerCase();
+      const isTypingField = tagName === 'input' || tagName === 'textarea' || Boolean(activeElement?.isContentEditable);
+      if (isTypingField) return;
+
+      event.preventDefault();
+      setSelectedFrameImage((prev) => {
+        if (!prev || prev.images.length <= 1) return prev;
+
+        if (event.key === 'ArrowLeft') {
+          const nextIndex = (prev.activeIndex - 1 + prev.images.length) % prev.images.length;
+          return { ...prev, activeIndex: nextIndex };
+        }
+
+        const nextIndex = (prev.activeIndex + 1) % prev.images.length;
+        return { ...prev, activeIndex: nextIndex };
+      });
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedFrameImage?.gongKinhId, selectedFrameImage?.images.length]);
+
+  const openFrameImagePreview = async (gong: GongKinh) => {
+    if (!gong.hinh_anh_url) return;
+
+    const title = gong.ma_gong ? `${gong.ten_gong} (${gong.ma_gong})` : gong.ten_gong;
+    const fallbackImages = [gong.hinh_anh_url].filter((url): url is string => Boolean(url));
+    const requestId = frameImageRequestIdRef.current + 1;
+    frameImageRequestIdRef.current = requestId;
+
+    setSelectedFrameImage({
+      gongKinhId: gong.id,
+      title,
+      images: fallbackImages,
+      activeIndex: 0,
+    });
+    setSelectedFrameImageLoading(true);
+    setSelectedFrameImageError('');
+    setSelectedFrameTouchStartX(null);
+
+    try {
+      const response = await axios.get('/api/gong-kinh/media', {
+        params: {
+          gong_kinh_id: gong.id,
+          read_url_ttl_seconds: FRAME_PREVIEW_READ_URL_TTL_SECONDS,
+        },
+      });
+
+      if (frameImageRequestIdRef.current !== requestId) return;
+
+      const mediaItems = (Array.isArray(response.data?.data) ? response.data.data : []) as GongKinhMediaPreviewItem[];
+      const sortedImageUrls = mediaItems
+        .filter((item) => item.status === 'uploaded' && typeof item.read_url === 'string' && item.read_url.trim())
+        .sort((a, b) => {
+          const kindDiff = frameMediaKindPriority(a.loai_anh) - frameMediaKindPriority(b.loai_anh);
+          if (kindDiff !== 0) return kindDiff;
+
+          const tA = new Date(a.created_at || '').getTime();
+          const tB = new Date(b.created_at || '').getTime();
+          if (Number.isFinite(tA) && Number.isFinite(tB) && tA !== tB) return tA - tB;
+          return a.id - b.id;
+        })
+        .map((item) => (item.read_url || '').trim());
+
+      const uniqueImageUrls = Array.from(new Set(sortedImageUrls));
+      const nextImages = uniqueImageUrls.length > 0 ? uniqueImageUrls : fallbackImages;
+
+      setSelectedFrameImage((prev) => {
+        if (!prev || prev.gongKinhId !== gong.id) return prev;
+        const currentSrc = prev.images[prev.activeIndex] || '';
+        const keepIndex = currentSrc ? nextImages.indexOf(currentSrc) : -1;
+        return {
+          ...prev,
+          images: nextImages,
+          activeIndex: keepIndex >= 0 ? keepIndex : 0,
+        };
+      });
+    } catch (error) {
+      if (frameImageRequestIdRef.current !== requestId) return;
+      const message = axios.isAxiosError(error)
+        ? error.response?.data?.message || error.message
+        : error instanceof Error
+          ? error.message
+          : 'Lỗi không xác định';
+      setSelectedFrameImageError(`Không tải được ảnh bổ sung: ${message}`);
+    } finally {
+      if (frameImageRequestIdRef.current === requestId) {
+        setSelectedFrameImageLoading(false);
+      }
     }
   };
   // === END: Logic cho Gọng Kính ===
@@ -1713,11 +1881,15 @@ function DanhMucPage() {
         if (!loaded) return;
 
         const { data, copies } = loaded;
+        const printableTemplate = {
+          widthMm: data.resolved_template.widthMm,
+          heightMm: data.resolved_template.heightMm,
+          background: data.resolved_template.background,
+          elements: data.resolved_template.elements,
+        };
+
         const popup = printResolvedTemTemplate({
-          template: {
-            ...data.resolved_template,
-            copies,
-          },
+          template: printableTemplate,
           copies,
         });
 
@@ -1829,9 +2001,7 @@ function DanhMucPage() {
                         className="w-12 h-12 rounded-md overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center disabled:cursor-not-allowed"
                         disabled={!gong.hinh_anh_url}
                         onClick={() => {
-                          if (!gong.hinh_anh_url) return;
-                          const label = gong.ma_gong ? `${gong.ten_gong} (${gong.ma_gong})` : gong.ten_gong;
-                          setSelectedFrameImage({ src: gong.hinh_anh_url, title: label });
+                          void openFrameImagePreview(gong);
                         }}
                         title={gong.hinh_anh_url ? 'Xem ảnh lớn' : 'Chưa có ảnh'}
                       >
@@ -1972,7 +2142,12 @@ function DanhMucPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={Boolean(selectedFrameImage)} onOpenChange={(open) => { if (!open) setSelectedFrameImage(null); }}>
+        <Dialog
+          open={Boolean(selectedFrameImage)}
+          onOpenChange={(open) => {
+            if (!open) closeFrameImagePreview();
+          }}
+        >
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Ảnh gọng kính</DialogTitle>
@@ -1980,19 +2155,116 @@ function DanhMucPage() {
 
             {selectedFrameImage && (
               <div className="space-y-3">
-                <p className="text-sm text-gray-600">{selectedFrameImage.title}</p>
-                <div className="w-full max-h-[70vh] overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
-                  <img
-                    src={selectedFrameImage.src}
-                    alt={`Ảnh lớn ${selectedFrameImage.title}`}
-                    className="mx-auto h-auto max-h-[65vh] w-auto max-w-full rounded-md"
-                  />
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm text-gray-600">{selectedFrameImage.title}</p>
+                  <p className="text-xs text-gray-500 whitespace-nowrap">
+                    Ảnh {Math.min(selectedFrameImage.activeIndex + 1, selectedFrameImage.images.length)} / {selectedFrameImage.images.length}
+                  </p>
                 </div>
+
+                {selectedFrameImageError && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                    {selectedFrameImageError}
+                  </div>
+                )}
+
+                <div className="relative w-full rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  {selectedFrameImage.images.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={showPreviousFramePreviewImage}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 h-9 w-9 rounded-full bg-black/45 text-white hover:bg-black/60 inline-flex items-center justify-center"
+                        title="Ảnh trước"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={showNextFramePreviewImage}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 z-10 h-9 w-9 rounded-full bg-black/45 text-white hover:bg-black/60 inline-flex items-center justify-center"
+                        title="Ảnh sau"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
+                  )}
+
+                  <div
+                    className="w-full max-h-[70vh] overflow-auto rounded-md bg-black/5 flex items-center justify-center"
+                    onTouchStart={(event) => {
+                      setSelectedFrameTouchStartX(event.touches[0]?.clientX ?? null);
+                    }}
+                    onTouchEnd={(event) => {
+                      if (selectedFrameImage.images.length <= 1) {
+                        setSelectedFrameTouchStartX(null);
+                        return;
+                      }
+
+                      if (selectedFrameTouchStartX === null) return;
+                      const endX = event.changedTouches[0]?.clientX ?? selectedFrameTouchStartX;
+                      const delta = endX - selectedFrameTouchStartX;
+                      setSelectedFrameTouchStartX(null);
+
+                      if (Math.abs(delta) < FRAME_PREVIEW_SWIPE_THRESHOLD) return;
+                      if (delta < 0) {
+                        showNextFramePreviewImage();
+                      } else {
+                        showPreviousFramePreviewImage();
+                      }
+                    }}
+                  >
+                    <img
+                      src={selectedFrameImage.images[selectedFrameImage.activeIndex] || selectedFrameImage.images[0]}
+                      alt={`Ảnh lớn ${selectedFrameImage.title}`}
+                      className="mx-auto h-auto max-h-[65vh] w-auto max-w-full rounded-md"
+                    />
+                  </div>
+
+                  {selectedFrameImageLoading && (
+                    <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-black/70 text-white text-[11px] px-2 py-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Đang tải thêm ảnh...
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedFrameImage.images.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {selectedFrameImage.images.map((src, index) => (
+                      <button
+                        key={`${src}-${index}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFrameImage((prev) => {
+                            if (!prev) return prev;
+                            return { ...prev, activeIndex: index };
+                          });
+                        }}
+                        className={`h-14 w-14 flex-shrink-0 rounded-md overflow-hidden border ${
+                          index === selectedFrameImage.activeIndex
+                            ? 'border-blue-500 ring-2 ring-blue-200'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        title={`Xem ảnh ${index + 1}`}
+                      >
+                        <img
+                          src={src}
+                          alt={`Thumbnail ảnh ${index + 1}`}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => setSelectedFrameImage(null)}>
+              <Button variant="outline" onClick={closeFrameImagePreview}>
                 Đóng
               </Button>
             </DialogFooter>
