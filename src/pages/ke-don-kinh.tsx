@@ -10,7 +10,7 @@ import { Textarea } from '../components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Pill, Pencil, Copy, Trash2, FilePlus, Calendar, Phone, MapPin, User, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle, ScanLine, Image as ImageIcon } from 'lucide-react';
+import { Pill, Pencil, Copy, Trash2, Calendar, Phone, MapPin, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle, ScanLine, Image as ImageIcon } from 'lucide-react';
 import SoKinhInput from '../components/SoKinhInput';
 import ThiLucInput from '../components/ThiLucInput';
 import ProtectedRoute from '../components/ProtectedRoute';
@@ -21,6 +21,7 @@ import { isOwnerRole } from '../lib/tenantRoles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import PrintDonKinh from '../components/ke-don/PrintDonKinh';
+import { PatientMobileHeader, PatientDesktopCard } from '../components/PatientPageHeader';
 import DonKinhMediaPanel from '@/components/ke-don/DonKinhImageStripPanel';
 import type { DraftDonKinhUploadItem } from '@/components/ke-don/DonKinhImageStripPanel';
 import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
@@ -682,8 +683,234 @@ export default function KeDonKinh() {
       </div>
     );
   }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
+  // Family summary for header display
+  const [familySummaryText, setFamilySummaryText] = useState('');
+
+  const fetchFamilySummary = useCallback(async () => {
+    if (!benhnhanid) return;
+    try {
+      const res = await axios.get(`/api/benh-nhan/family?benhnhanid=${benhnhanid}`);
+      const group = res.data?.data;
+      if (!group || !group.members?.length) { setFamilySummaryText(''); return; }
+      // Build "Tên (vai trò), Tên 2" — exclude self (current patient)
+      const selfId = parseInt(benhnhanid);
+      const others = (group.members as Array<{ benhnhan_id: number; role?: string; patient?: { ten?: string } }>)
+        .filter((m) => m.benhnhan_id !== selfId)
+        .map((m) => m.patient?.ten ? (m.role ? `${m.patient.ten} (${m.role})` : m.patient.ten) : null)
+        .filter(Boolean);
+      if (others.length === 0) {
+        // Just show group name if no other members
+        setFamilySummaryText(group.name ? `Nhóm: ${group.name}` : '');
+      } else {
+        setFamilySummaryText(others.join(', '));
+      }
+    } catch {
+      setFamilySummaryText('');
+    }
+  }, [benhnhanid]);
+
+  useEffect(() => { void fetchFamilySummary(); }, [fetchFamilySummary]);
+
+  // Mobile header scroll-driven ratio (0 = expanded, 1 = compact)
+  const [mobileHeaderRatio, setMobileHeaderRatio] = useState(0);
+  const mobileHeaderRatioRef = useRef(0);
+
+  // Snap ratio to 0 or 1 với easing khi ngón tay nhả ra giữa chừng
+  const snapRatio = useCallback((target: 0 | 1) => {
+    const from = mobileHeaderRatioRef.current;
+    if (Math.abs(from - target) < 0.01) {
+      mobileHeaderRatioRef.current = target;
+      setMobileHeaderRatio(target);
+      return;
+    }
+    const duration = 200;
+    const startTime = performance.now();
+    const animate = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      const ratio = from + (target - from) * eased;
+      mobileHeaderRatioRef.current = ratio;
+      setMobileHeaderRatio(ratio);
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }, []);
+
+  // Touch refs
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const touchStartRatioRef = useRef(0);
+
+  // Non-passive touch interceptor: header "hấp thụ" scroll trước, sau đó panel mới scroll
+  useEffect(() => {
+    const wrapper = tabViewportRef.current;
+    if (!wrapper) return;
+    const MAX_TRAVEL = 128;
+
+    const getActivePanel = (): HTMLElement | null =>
+      wrapper.querySelector<HTMLElement>(`[data-panel-idx="${mobileTabRef.current}"]`);
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+      touchStartRatioRef.current = mobileHeaderRatioRef.current;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const dx = e.touches[0].clientX - touchStartXRef.current;
+      const dy = e.touches[0].clientY - touchStartYRef.current; // + = ngón xuống = scroll lên
+      const dyUp = -dy; // + = người dùng cuộn lên (thu header)
+
+      // Bỏ qua nếu đây là gesture ngang (chuyển tab)
+      if (Math.abs(dx) > Math.abs(dyUp) * 1.4 && Math.abs(dx) > 8) return;
+
+      const startRatio = touchStartRatioRef.current;
+
+      if (dyUp > 0) {
+        // ── Cuộn lên ──
+        if (startRatio < 1) {
+          // Header chưa compact → hấp thụ scroll, chặn native scroll
+          e.preventDefault();
+          const raw = startRatio + dyUp / MAX_TRAVEL;
+          const newRatio = Math.min(1, raw);
+          mobileHeaderRatioRef.current = newRatio;
+          setMobileHeaderRatio(newRatio);
+
+          // Khi ratio vừa đạt 1: chuyển excess vào scrollTop của panel
+          if (raw > 1) {
+            const panel = getActivePanel();
+            if (panel) {
+              panel.style.overflowY = 'auto'; // mở ngay trước khi React re-render
+              panel.scrollTop = (raw - 1) * MAX_TRAVEL;
+            }
+          }
+        }
+        // startRatio >= 1 → panel scroll natively, không preventDefault
+      } else if (dyUp < 0) {
+        // ── Cuộn xuống ──
+        const panel = getActivePanel();
+        if ((panel?.scrollTop ?? 0) <= 0 && startRatio > 0) {
+          // Panel đang ở đầu và header chưa mở rộng hết → mở rộng header
+          e.preventDefault();
+          const newRatio = Math.max(0, startRatio + dyUp / MAX_TRAVEL);
+          mobileHeaderRatioRef.current = newRatio;
+          setMobileHeaderRatio(newRatio);
+        }
+      }
+    };
+
+    const onTouchEnd = () => {
+      const r = mobileHeaderRatioRef.current;
+      if (r > 0 && r < 1) {
+        // Snap về trạng thái gần nhất
+        snapRatio(r >= 0.5 ? 1 : 0);
+      }
+    };
+
+    wrapper.addEventListener('touchstart', onTouchStart, { passive: true });
+    wrapper.addEventListener('touchmove', onTouchMove, { passive: false });
+    wrapper.addEventListener('touchend', onTouchEnd, { passive: true });
+    wrapper.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      wrapper.removeEventListener('touchstart', onTouchStart);
+      wrapper.removeEventListener('touchmove', onTouchMove);
+      wrapper.removeEventListener('touchend', onTouchEnd);
+      wrapper.removeEventListener('touchcancel', onTouchEnd);
+    };
+  // benhNhan?.id: ProtectedRoute shows loading spinner first → tabViewportRef.current
+  // is null on first mount. Re-run when patient loads so the wrapper is available.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapRatio, benhNhan?.id]);
+
+  // Patient notes management dialog state
+  const [openNotesDialog, setOpenNotesDialog] = useState(false);
+  const [allPatientNotes, setAllPatientNotes] = useState<PatientNote[]>([]);
+  const [noteFormContent, setNoteFormContent] = useState('');
+  const [noteFormType, setNoteFormType] = useState<'important' | 'normal'>('normal');
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [notesSaving, setNotesSaving] = useState(false);
+
+  const fetchAllNotes = useCallback(async () => {
+    if (!benhnhanid) return;
+    try {
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0`);
+      const notes: PatientNote[] = res.data?.data || [];
+      setAllPatientNotes(notes);
+      return notes;
+    } catch {
+      return [];
+    }
+  }, [benhnhanid]);
+
+  const openNotesManagement = useCallback(async () => {
+    const notes = await fetchAllNotes();
+    // Auto-select most important note
+    const importantNote = notes?.find((n) => n.note_type === 'important');
+    const firstNote = importantNote || notes?.[0] || null;
+    if (firstNote) {
+      setEditingNoteId(firstNote.id);
+      setNoteFormContent(firstNote.content);
+      setNoteFormType(firstNote.note_type);
+    } else {
+      setEditingNoteId(null);
+      setNoteFormContent('');
+      setNoteFormType('normal');
+    }
+    setOpenNotesDialog(true);
+  }, [fetchAllNotes]);
+
+  const saveNote = useCallback(async () => {
+    if (!benhnhanid || !noteFormContent.trim()) {
+      toast.error('Vui lòng nhập nội dung ghi chú');
+      return;
+    }
+    setNotesSaving(true);
+    try {
+      if (editingNoteId) {
+        await axios.put('/api/benh-nhan/notes', { id: editingNoteId, content: noteFormContent.trim(), note_type: noteFormType });
+        toast.success('Đã cập nhật ghi chú');
+      } else {
+        await axios.post('/api/benh-nhan/notes', { benhnhanid: parseInt(benhnhanid), content: noteFormContent.trim(), note_type: noteFormType });
+        toast.success('Đã thêm ghi chú');
+      }
+      // Refresh notes in header
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      setPatientNotes(res.data?.data || []);
+      await fetchAllNotes();
+      setEditingNoteId(null);
+      setNoteFormContent('');
+      setNoteFormType('normal');
+    } catch {
+      toast.error('Lỗi khi lưu ghi chú');
+    } finally {
+      setNotesSaving(false);
+    }
+  }, [benhnhanid, editingNoteId, noteFormContent, noteFormType, fetchAllNotes]);
+
+  const deleteNote = useCallback(async (id: number) => {
+    if (!await confirm('Xóa ghi chú này?')) return;
+    try {
+      await axios.delete(`/api/benh-nhan/notes?id=${id}`);
+      toast.success('Đã xóa ghi chú');
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      setPatientNotes(res.data?.data || []);
+      await fetchAllNotes();
+      if (editingNoteId === id) {
+        setEditingNoteId(null);
+        setNoteFormContent('');
+        setNoteFormType('normal');
+      }
+    } catch {
+      toast.error('Lỗi khi xóa');
+    }
+  }, [benhnhanid, editingNoteId, fetchAllNotes, confirm]);
+
   // Mobile tab: 0 = Đơn kính (form), 1 = Đơn cũ, 2 = Lịch hẹn, 3 = Ảnh
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2 | 3>(0);
+  // ref để closures trong non-passive touch listeners không bị stale
+  const mobileTabRef = useRef<0 | 1 | 2 | 3>(0);
+  useEffect(() => { mobileTabRef.current = mobileTab; }, [mobileTab]);
   const mobileTabLabels = ['Đơn kính', 'Đơn cũ', 'Lịch hẹn', 'Ảnh'] as const;
   // Desktop left sidebar tab: 'don_cu' | 'lich_hen' | 'anh'
   const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'lich_hen' | 'anh'>('don_cu');
@@ -1191,7 +1418,7 @@ export default function KeDonKinh() {
     }
   };
 
-  // Điều hướng Enter giống Tab cho các ô kê đơn kính
+  // Điều hướng Enter theo thứ tự data-order (MP→MT theo cặp chỉ số)
   useEffect(() => {
     const selector = 'input[data-nav="presc"], select[data-nav="presc"], textarea[data-nav="presc"]';
     const isVisible = (el: HTMLElement) => {
@@ -1206,7 +1433,15 @@ export default function KeDonKinh() {
       if (!target) return;
       if (target.getAttribute('data-nav') !== 'presc') return;
       e.preventDefault();
-      const inputs = Array.from(document.querySelectorAll<HTMLElement>(selector)).filter(isVisible);
+      // Sort by data-order numerically (float) so MP→MT pairs are respected
+      const inputs = Array.from(document.querySelectorAll<HTMLElement>(selector))
+        .filter(isVisible)
+        .filter((el) => el.getAttribute('data-order') !== null)
+        .sort((a, b) => {
+          const oa = parseFloat(a.getAttribute('data-order') || '999');
+          const ob = parseFloat(b.getAttribute('data-order') || '999');
+          return oa - ob;
+        });
       const idx = inputs.indexOf(target);
       if (idx >= 0 && idx < inputs.length - 1) {
         const next = inputs[idx + 1];
@@ -1942,92 +2177,24 @@ export default function KeDonKinh() {
 
         {/* Main content area */}
         <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
-            {/* Patient info — Mobile: fixed header (không scroll) */}
-            {benhNhan ? (
-              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5 flex items-center gap-3 shadow-sm">
-                <div className="h-10 w-10 rounded-full bg-white/20 border border-white/35 text-white font-bold text-sm flex items-center justify-center flex-shrink-0">
-                  {(benhNhan.ten || '?').trim().charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h1 className="font-extrabold text-base text-white tracking-tight truncate">{benhNhan.ten}</h1>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
-                    <Calendar className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
-                    <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi}t)` : ''}</span>
-                    {benhNhan.dienthoai && <>
-                      <Phone className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
-                      <span className="truncate">{benhNhan.dienthoai}</span>
-                    </>}
-                  </div>
-                  {benhNhan.diachi && (
-                    <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
-                      <MapPin className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
-                      <span className="truncate">{benhNhan.diachi}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  <Link href={`/ke-don?bn=${benhnhanid}`}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label="Kê thuốc"
-                      className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
-                    >
-                      <Pill className="w-[18px] h-[18px]" />
-                    </Button>
-                  </Link>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label="Chỉnh sửa"
-                    className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
-                    onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}
-                  >
-                    <Pencil className="w-[18px] h-[18px]" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="lg:hidden sticky top-0 flex-shrink-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5">
-                <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
-              </div>
-            )}
-
-            <div className="lg:hidden border-t border-white/20 bg-[#1976D2] px-2 pb-2 pt-1.5">
-              <div className="grid grid-cols-4 gap-1">
-                {mobileTabLabels.map((label, idx) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setMobileTab(idx as 0 | 1 | 2 | 3)}
-                    className={`h-8 rounded-lg text-xs font-medium transition-colors ${
-                      mobileTab === idx
-                        ? 'bg-white text-[#1f6cc0]'
-                        : 'text-white/85'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {patientNotes.length > 0 && (
-              <div className="lg:hidden px-2 pt-2 space-y-1">
-                {patientNotes.slice(0, 3).map((note) => (
-                  <div key={note.id} className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-2">
-                    <div className="flex items-start gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-red-700 flex-shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-red-700/90 whitespace-pre-wrap">{note.content}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="lg:hidden">
-              {renderBackgroundUploadNotice()}
-            </div>
+            {/* Patient info — Mobile: sticky header + tabs + notes */}
+            <PatientMobileHeader
+              className="lg:hidden flex-shrink-0"
+              benhNhan={benhNhan}
+              benhnhanid={benhnhanid}
+              patientNotes={patientNotes}
+              onEditPatient={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}
+              onManageNotes={openNotesManagement}
+              switchPageLink={`/ke-don?bn=${benhnhanid}`}
+              switchPageIcon={<Pill className="w-[18px] h-[18px]" />}
+              switchPageLabel="Kê thuốc"
+              mobileTab={mobileTab}
+              mobileTabLabels={mobileTabLabels}
+              onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
+              mobileHeaderRatio={mobileHeaderRatio}
+              familySummaryText={familySummaryText}
+              renderBackgroundUploadNotice={renderBackgroundUploadNotice}
+            />
 
             {/* Scrollable content area (chứa form, payment, history, lịch hẹn) */}
             <div
@@ -2039,64 +2206,29 @@ export default function KeDonKinh() {
               onTouchCancel={onTabTouchEnd}
             >
             <div
-              className={`absolute inset-0 min-h-0 overflow-y-auto overscroll-y-contain px-2 py-2 flex flex-col gap-2 ${mobileTab === 0 ? 'pointer-events-auto' : 'pointer-events-none'} lg:static lg:inset-auto lg:p-4 lg:gap-4 lg:pointer-events-auto`}
+              data-panel-idx="0"
+              className={`absolute inset-0 overscroll-y-contain px-2 py-2 flex flex-col gap-2 ${mobileTab === 0 ? 'pointer-events-auto' : 'pointer-events-none'} lg:static lg:inset-auto lg:p-4 lg:gap-4 lg:pointer-events-auto lg:overflow-y-auto`}
               style={{
+                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${-mobileTab * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
               }}
             >
 
-            {/* Patient info — Desktop card */}
-            {benhNhan ? (
-              <div className="hidden lg:flex bg-white rounded-xl shadow-sm p-3 items-center gap-3 border border-gray-200">
-                {/* Avatar */}
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                  <User className="w-5 h-5 text-blue-600" />
-                </div>
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <h1 className="font-extrabold text-base text-blue-700 tracking-tight truncate leading-tight">{benhNhan.ten}</h1>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 flex-wrap">
-                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3 text-gray-400" />{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi} tuổi)` : ''}</span>
-                    {benhNhan.dienthoai && <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-gray-400" />{benhNhan.dienthoai}</span>}
-                    {benhNhan.diachi && <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-gray-400" />{benhNhan.diachi}</span>}
-                  </div>
-                </div>
-                {/* Actions */}
-                <div className="flex gap-1 flex-shrink-0">
-                  <Link href={`/ke-don?bn=${benhnhanid}`}>
-                    <Button className="h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs px-2" size="sm">
-                      Kê thuốc
-                    </Button>
-                  </Link>
-                  <Button variant="outline" size="sm" className="h-8 text-xs px-2" onClick={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}>
-                    <Pencil className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="hidden lg:block bg-white rounded-xl shadow-sm p-4 border border-gray-200">
-                <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
-              </div>
-            )}
-
-            {patientNotes.length > 0 && (
-              <div className="hidden lg:block space-y-2">
-                {patientNotes.map((note) => (
-                  <div key={note.id} className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-red-700 whitespace-pre-wrap">{note.content}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="hidden lg:block">
-              {renderBackgroundUploadNotice()}
-            </div>
+            {/* Patient info — Desktop card + notes + background upload */}
+            <PatientDesktopCard
+              className="hidden lg:block"
+              benhNhan={benhNhan}
+              benhnhanid={benhnhanid}
+              patientNotes={patientNotes}
+              onEditPatient={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}
+              onManageNotes={openNotesManagement}
+              switchPageLink={`/ke-don?bn=${benhnhanid}`}
+              switchPageLabel="Kê thuốc"
+              familySummaryText={familySummaryText}
+              renderBackgroundUploadNotice={renderBackgroundUploadNotice}
+            />
 
             {/* Form kê đơn kính - Responsive Layout */}
             <div className="space-y-4">
@@ -2138,21 +2270,6 @@ export default function KeDonKinh() {
                       className="w-full bg-transparent border-0 outline-none px-0 py-1 text-[16px] leading-6 placeholder:text-gray-400 focus:ring-0"
                       placeholder="Nhập chẩn đoán..."
                     />
-                    <div className="border-t border-gray-100 mt-1 pt-1 flex items-start gap-1">
-                      <span className="text-[15px] font-extrabold text-gray-900 leading-6 pt-1 shrink-0">Ghi chú:</span>
-                      <textarea
-                        rows={1}
-                        value={form.ghichu || ''}
-                        onChange={(e) => {
-                          setForm({ ...form, ghichu: e.target.value });
-                          e.target.style.height = 'auto';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                        }}
-                        onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-                        className="flex-1 min-w-0 min-h-[28px] resize-none bg-transparent border-0 outline-none px-1 py-1 text-[15px] leading-6 placeholder:text-gray-400 focus:ring-0 overflow-hidden"
-                        placeholder="Ghi chú thêm..."
-                      />
-                    </div>
                   </div>
 
                   {/* Desktop: original bordered layout */}
@@ -2181,21 +2298,6 @@ export default function KeDonKinh() {
                           step="60"
                         />
                       </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <label className="text-xs font-medium text-gray-700 uppercase shrink-0 pt-2">Ghi chú</label>
-                      <textarea
-                        rows={1}
-                        value={form.ghichu || ''}
-                        onChange={(e) => {
-                          setForm({ ...form, ghichu: e.target.value });
-                          e.target.style.height = 'auto';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                        }}
-                        onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-                        className="flex-1 min-h-[36px] min-w-0 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow resize-none overflow-hidden"
-                        placeholder="Ghi chú thêm..."
-                      />
                     </div>
                   </div>
 
@@ -2263,10 +2365,10 @@ export default function KeDonKinh() {
                           <div className="grid grid-cols-[3rem_1fr_1fr]">
                             <div className="px-1 py-1.5 border-r border-gray-200 flex items-center"><span className="text-[10px] font-medium text-gray-600 leading-tight">PD/2</span></div>
                             <div className="px-1 py-1.5 border-r border-gray-200">
-                              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" value={form.pd_mp || ''} onChange={(e) => setForm({ ...form, pd_mp: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" value={form.pd_mp || ''} onChange={(e) => setForm({ ...form, pd_mp: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-nav="presc" data-order="10.1" />
                             </div>
                             <div className="px-1 py-1.5">
-                              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" value={form.pd_mt || ''} onChange={(e) => setForm({ ...form, pd_mt: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" value={form.pd_mt || ''} onChange={(e) => setForm({ ...form, pd_mt: e.target.value })} placeholder="mm" className="h-9 w-full bg-white border border-gray-300 rounded-lg px-2 text-sm text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" data-nav="presc" data-order="10.2" />
                             </div>
                           </div>
                         </div>
@@ -2352,7 +2454,7 @@ export default function KeDonKinh() {
 
           <td className="px-1.5 py-1 border-b border-r border-gray-300 bg-white">
             <SoKinhInput
-              dataNavOrder={8}
+              dataNavOrder={9}
               onCommitNext={() => {
                 const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="10"]');
                 n?.focus(); (n as HTMLInputElement)?.select?.();
@@ -2373,6 +2475,8 @@ export default function KeDonKinh() {
               onChange={(e) => setForm({ ...form, pd_mp: e.target.value })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="mm"
+              data-nav="presc"
+              data-order="10.1"
             />
           </td>
         </tr>
@@ -2413,7 +2517,7 @@ export default function KeDonKinh() {
 
           <td className="px-1.5 py-1 border-r border-gray-300 bg-white">
             <SoKinhInput
-              dataNavOrder={9}
+              dataNavOrder={8}
               onCommitNext={() => {
                 const n = document.querySelector<HTMLElement>('[data-nav="presc"][data-order="9"]');
                 n?.focus(); (n as HTMLInputElement)?.select?.();
@@ -2448,6 +2552,8 @@ export default function KeDonKinh() {
               onChange={(e) => setForm({ ...form, pd_mt: e.target.value })}
               className="h-7 w-full bg-white border border-gray-300 rounded-md px-2 text-sm text-gray-900 text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="mm"
+              data-nav="presc"
+              data-order="10.2"
             />
           </td>
         </tr>
@@ -2686,6 +2792,27 @@ export default function KeDonKinh() {
                       </div>
                     </div>
                   </div>
+              </div>
+
+              {/* Ghi chú đơn kính — dưới phần Sản phẩm, trên Thanh toán (cả mobile & desktop) */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0 pt-1.5">Ghi chú</span>
+                  <textarea
+                    rows={1}
+                    value={form.ghichu || ''}
+                    onChange={(e) => {
+                      setForm({ ...form, ghichu: e.target.value });
+                      e.target.style.height = 'auto';
+                      e.target.style.height = e.target.scrollHeight + 'px';
+                    }}
+                    onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                    className="flex-1 min-w-0 min-h-[28px] resize-none bg-transparent border-0 outline-none px-0 py-1 text-sm leading-6 placeholder:text-gray-400 focus:ring-0 overflow-hidden"
+                    placeholder="Ghi chú thêm về đơn kính..."
+                    data-nav="presc"
+                    data-order="16"
+                  />
+                </div>
               </div>
 
               {/* Mobile Thanh toán + History + Appointment - ẩn trên desktop */}
@@ -2961,8 +3088,10 @@ export default function KeDonKinh() {
 
             {/* Panel 1: Đơn cũ (mobile viewport track) */}
             <div
-              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 1 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              data-panel-idx="1"
+              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 ${mobileTab === 1 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
+                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(1 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
@@ -2973,8 +3102,10 @@ export default function KeDonKinh() {
 
             {/* Panel 2: Lịch hẹn (mobile viewport track) */}
             <div
-              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 2 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              data-panel-idx="2"
+              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 ${mobileTab === 2 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
+                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(2 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
@@ -3057,8 +3188,10 @@ export default function KeDonKinh() {
 
             {/* Panel 3: Ảnh đơn kính (mobile viewport track) */}
             <div
-              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              data-panel-idx="3"
+              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
+                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(3 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
@@ -3431,6 +3564,97 @@ export default function KeDonKinh() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpenHenDialog(false)}>Hủy</Button>
             <Button onClick={saveHenDialog}>{editHenForm ? 'Lưu thay đổi' : 'Lưu lịch hẹn'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notes Management Dialog */}
+      <Dialog open={openNotesDialog} onOpenChange={(v) => { setOpenNotesDialog(v); if (!v) { setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal'); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ghi chú bệnh nhân</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            {/* List of existing notes */}
+            {allPatientNotes.length > 0 && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {allPatientNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className={`flex items-start gap-2 rounded-lg px-3 py-2 cursor-pointer transition-colors border ${
+                      editingNoteId === note.id
+                        ? 'bg-blue-50 border-blue-300'
+                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    }`}
+                    onClick={() => {
+                      setEditingNoteId(note.id);
+                      setNoteFormContent(note.content);
+                      setNoteFormType(note.note_type);
+                    }}
+                  >
+                    <AlertTriangle className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${note.note_type === 'important' ? 'text-red-500' : 'text-amber-500'}`} />
+                    <p className={`flex-1 text-xs leading-snug ${note.note_type === 'important' ? 'text-red-700 font-semibold' : 'text-gray-700'}`}>
+                      {note.content}
+                    </p>
+                    <button
+                      type="button"
+                      className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
+                      onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }}
+                      aria-label="Xóa ghi chú"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Editor */}
+            <div className="space-y-2 border-t border-gray-100 pt-3">
+              <Label>{editingNoteId ? 'Sửa ghi chú' : 'Thêm ghi chú mới'}</Label>
+              <textarea
+                rows={3}
+                value={noteFormContent}
+                onChange={(e) => setNoteFormContent(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Nhập nội dung ghi chú..."
+              />
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={noteFormType === 'normal'}
+                    onChange={() => setNoteFormType('normal')}
+                    className="text-blue-600"
+                  />
+                  <span className="text-sm text-gray-600">Thường</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={noteFormType === 'important'}
+                    onChange={() => setNoteFormType('important')}
+                    className="text-red-600"
+                  />
+                  <span className="text-sm text-red-700 font-medium">Quan trọng</span>
+                </label>
+                {editingNoteId && (
+                  <button
+                    type="button"
+                    className="ml-auto text-xs text-gray-400 hover:text-gray-600"
+                    onClick={() => { setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal'); }}
+                  >
+                    + Ghi chú mới
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpenNotesDialog(false)}>Đóng</Button>
+            <Button onClick={saveNote} disabled={notesSaving || !noteFormContent.trim()}>
+              {notesSaving ? 'Đang lưu...' : editingNoteId ? 'Cập nhật' : 'Thêm'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Phone, MapPin, Pill, History, Activity, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useFooter } from '../contexts/FooterContext';
 import { searchByStartsWith } from '@/lib/utils';
 import PrintDonThuoc from '../components/ke-don/PrintDonThuoc';
+import { PatientMobileHeader, PatientDesktopCard } from '../components/PatientPageHeader';
 import DonKinhMediaPanel, { type DraftDonKinhUploadItem } from '../components/ke-don/DonKinhImageStripPanel';
 import PatientMediaTimeline from '../components/media/PatientMediaTimeline';
 
@@ -1325,88 +1326,20 @@ export default function KeDon() {
         {/* Mobile layout - Clinical blue theme */}
   <div className="block lg:hidden bg-[#f5f6f8] min-h-screen">
 
-          {/* Patient Mini Card - Mobile (sticky full-bleed header replacement) */}
-          {benhNhan ? (
-            <div className="sticky top-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5 flex items-center gap-3 shadow-sm">
-              <div className="h-10 w-10 rounded-full bg-white/20 border border-white/35 text-white font-bold text-sm flex items-center justify-center flex-shrink-0">
-                {(benhNhan.ten || '?').trim().charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h1 className="font-extrabold text-base text-white tracking-tight truncate">{benhNhan.ten}</h1>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
-                  <Calendar className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
-                  <span>{benhNhan.namsinh}{benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi}t)` : ''}</span>
-                  <Phone className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
-                  <span className="truncate">{benhNhan.dienthoai}</span>
-                </div>
-                {benhNhan.diachi && (
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-white/85">
-                    <MapPin className="w-3.5 h-3.5 text-white/70 flex-shrink-0" />
-                    <span className="truncate">{benhNhan.diachi}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-1 flex-shrink-0">
-                <Link href={`/ke-don-kinh?bn=${benhnhanid}`}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label="Kê thuốc"
-                    className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
-                  >
-                    <Pill className="w-[18px] h-[18px]" />
-                  </Button>
-                </Link>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Chỉnh sửa"
-                  className="h-9 w-9 p-0 min-w-0 rounded-lg border-white/25 bg-white/15 text-white/90 hover:bg-white/25 hover:text-white"
-                  onClick={openEditPatientDialog}
-                >
-                  <Pencil className="w-[18px] h-[18px]" />
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="sticky top-0 z-40 bg-[#1976D2] border-b border-[#1565C0] px-3 py-2.5">
-              <p className="text-sm text-white/80">Không tìm thấy thông tin bệnh nhân.</p>
-            </div>
-          )}
-
-          <div className="border-t border-white/20 bg-[#1976D2] px-2 pb-2 pt-1.5">
-            <div className="grid grid-cols-4 gap-1">
-              {mobileTabLabels.map((label, idx) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => setMobileTab(idx as 0 | 1 | 2 | 3)}
-                  className={`h-8 rounded-lg text-xs font-medium transition-colors ${
-                    mobileTab === idx
-                      ? 'bg-white text-[#1f6cc0]'
-                      : 'text-white/85'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {patientNotes.length > 0 && (
-            <div className="px-2 pt-2 space-y-1">
-              {patientNotes.slice(0, 3).map((note) => (
-                <div key={note.id} className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-2">
-                  <div className="flex items-start gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-700 flex-shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-red-700/90 whitespace-pre-wrap">{note.content}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {renderBackgroundUploadNotice()}
+          {/* Patient Mobile Header — sticky bar + tabs + notes */}
+          <PatientMobileHeader
+            benhNhan={benhNhan}
+            benhnhanid={benhnhanid}
+            patientNotes={patientNotes}
+            onEditPatient={openEditPatientDialog}
+            switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
+            switchPageIcon={<Glasses className="w-[18px] h-[18px]" />}
+            switchPageLabel="Kê đơn kính"
+            mobileTab={mobileTab}
+            mobileTabLabels={mobileTabLabels}
+            onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
+            renderBackgroundUploadNotice={renderBackgroundUploadNotice}
+          />
 
           {/* Vuốt ngang viewport bên dưới để chuyển tab. */}
 
@@ -2280,57 +2213,16 @@ export default function KeDon() {
 
     {/* ═══ MIDDLE: Prescription Core ═══ */}
     <section className="flex-1 overflow-y-auto clinical-scrollbar p-4 flex flex-col gap-3 bg-[#f5f6f8]">
-      {/* Patient Mini Card */}
-      {benhNhan ? (
-        <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center text-xl">
-              👤
-            </div>
-            <div>
-              <h1 className="font-extrabold text-base text-blue-700 tracking-tight">{benhNhan.ten}</h1>
-              <div className="flex gap-3 mt-0.5 flex-wrap">
-                <span className="text-xs font-medium px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">ID: {benhNhan.id}</span>
-                {benhNhan.tuoi !== undefined && (
-                  <span className="text-xs font-medium text-gray-600">{benhNhan.tuoi} tuổi</span>
-                )}
-                <span className="text-xs font-medium text-gray-600">NS: {benhNhan.namsinh}</span>
-                <span className="text-xs font-medium text-gray-600">SĐT: {benhNhan.dienthoai}</span>
-                <span className="text-xs font-medium text-gray-600">{benhNhan.diachi}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Link href={`/ke-don-kinh?bn=${benhnhanid}`}>
-              <Button className="h-8 bg-orange-500 hover:bg-orange-600 text-white text-xs px-3" size="sm">
-                Kê đơn kính
-              </Button>
-            </Link>
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={openEditPatientDialog}>
-              <Pencil className="w-3 h-3 mr-1" /> Sửa
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-400">Không tìm thấy thông tin bệnh nhân.</p>
-        </div>
-      )}
-
-      {patientNotes.length > 0 && (
-        <div className="space-y-2">
-          {patientNotes.map((note) => (
-            <div key={note.id} className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-700 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-red-700 whitespace-pre-wrap">{note.content}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {renderBackgroundUploadNotice()}
+      {/* Patient Desktop Card — info + notes + background upload */}
+      <PatientDesktopCard
+        benhNhan={benhNhan}
+        benhnhanid={benhnhanid}
+        patientNotes={patientNotes}
+        onEditPatient={openEditPatientDialog}
+        switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
+        switchPageLabel="Kê đơn kính"
+        renderBackgroundUploadNotice={renderBackgroundUploadNotice}
+      />
 
       {/* Diagnosis & Date Row */}
       <div className="grid grid-cols-3 gap-3">
