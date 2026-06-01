@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -362,6 +362,7 @@ export default function KeDon() {
   const [dsDienTien, setDsDienTien] = useState<DienTien[]>([]);
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
   const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
+  const [familySummaryText, setFamilySummaryText] = useState('');
   const [dsChon, setDsChon] = useState<ChiTietDonThuoc[]>([]);
   const [newDienTien, setNewDienTien] = useState({ noidung: '', ngay: new Date().toISOString().slice(0, 10) });
   const [ngayKham, setNgayKham] = useState(() => {
@@ -530,7 +531,180 @@ export default function KeDon() {
   }, []);
   // Mobile tabs: 0 = Đơn thuốc, 1 = Đơn cũ, 2 = Diễn tiến, 3 = Ảnh
   const [mobileTab, setMobileTab] = useState<0 | 1 | 2 | 3>(0);
+  const mobileTabRef = useRef<0 | 1 | 2 | 3>(0);
+  useEffect(() => { mobileTabRef.current = mobileTab; }, [mobileTab]);
   const mobileTabLabels = ['Đơn thuốc', 'Đơn cũ', 'Diễn tiến', 'Ảnh'] as const;
+
+  // ── Mobile header scroll-driven animation ──────────────────────
+  const [mobileHeaderRatio, setMobileHeaderRatio] = useState(0);
+  const mobileHeaderRatioRef = useRef(0);
+
+  const snapRatio = useCallback((target: 0 | 1) => {
+    const from = mobileHeaderRatioRef.current;
+    if (Math.abs(from - target) < 0.01) {
+      mobileHeaderRatioRef.current = target;
+      setMobileHeaderRatio(target);
+      return;
+    }
+    const duration = 200;
+    const startTime = performance.now();
+    const animate = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const ratio = from + (target - from) * eased;
+      mobileHeaderRatioRef.current = ratio;
+      setMobileHeaderRatio(ratio);
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }, []);
+
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const touchStartRatioRef = useRef(0);
+  const mobileWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const wrapper = mobileWrapperRef.current;
+    if (!wrapper) return;
+    const MAX_TRAVEL = 128;
+
+    const getActivePanel = (): HTMLElement | null =>
+      wrapper.querySelector<HTMLElement>(`[data-panel-idx="${mobileTabRef.current}"]`);
+
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+      touchStartRatioRef.current = mobileHeaderRatioRef.current;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const dx = e.touches[0].clientX - touchStartXRef.current;
+      const dy = e.touches[0].clientY - touchStartYRef.current;
+      const dyUp = -dy;
+      if (Math.abs(dx) > Math.abs(dyUp) * 1.4 && Math.abs(dx) > 8) return;
+      const startRatio = touchStartRatioRef.current;
+      const panel = getActivePanel();
+      const touchInPanel = panel?.contains(e.target as Node) ?? false;
+      if (dyUp > 0) {
+        if (startRatio < 1) {
+          e.preventDefault();
+          const raw = startRatio + dyUp / MAX_TRAVEL;
+          const newRatio = Math.min(1, raw);
+          mobileHeaderRatioRef.current = newRatio;
+          setMobileHeaderRatio(newRatio);
+          if (raw > 1) {
+            if (panel) { panel.style.overflowY = 'auto'; panel.scrollTop = (raw - 1) * MAX_TRAVEL; }
+          }
+        } else if (!touchInPanel) {
+          // Header compact nhưng touch trên vùng header → chặn native scroll
+          e.preventDefault();
+        }
+      } else if (dyUp < 0) {
+        if ((panel?.scrollTop ?? 0) <= 0 && startRatio > 0) {
+          e.preventDefault();
+          mobileHeaderRatioRef.current = Math.max(0, startRatio + dyUp / MAX_TRAVEL);
+          setMobileHeaderRatio(mobileHeaderRatioRef.current);
+        } else if (!touchInPanel) {
+          // Touch trên header → chặn native scroll
+          e.preventDefault();
+        }
+      }
+    };
+
+    const onTouchEnd = () => {
+      const r = mobileHeaderRatioRef.current;
+      if (r > 0 && r < 1) snapRatio(r >= 0.5 ? 1 : 0);
+    };
+
+    wrapper.addEventListener('touchstart', onTouchStart, { passive: true });
+    wrapper.addEventListener('touchmove', onTouchMove, { passive: false });
+    wrapper.addEventListener('touchend', onTouchEnd, { passive: true });
+    wrapper.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    return () => {
+      wrapper.removeEventListener('touchstart', onTouchStart);
+      wrapper.removeEventListener('touchmove', onTouchMove);
+      wrapper.removeEventListener('touchend', onTouchEnd);
+      wrapper.removeEventListener('touchcancel', onTouchEnd);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapRatio, benhNhan?.id]);
+
+  // ── Family summary fetch ────────────────────────────────────────
+  const fetchFamilySummary = useCallback(async () => {
+    if (!benhnhanid) return;
+    try {
+      const res = await axios.get(`/api/benh-nhan/family?benhnhanid=${benhnhanid}`);
+      const group = res.data?.data;
+      if (!group?.members?.length) { setFamilySummaryText(''); return; }
+      const selfId = parseInt(benhnhanid);
+      const others = (group.members as Array<{ benhnhan_id: number; role?: string; patient?: { ten?: string } }>)
+        .filter((m) => m.benhnhan_id !== selfId)
+        .map((m) => m.patient?.ten ? (m.role ? `${m.patient.ten} (${m.role})` : m.patient.ten) : null)
+        .filter(Boolean);
+      setFamilySummaryText(others.length > 0 ? others.join(', ') : (group.name ? `Nhóm: ${group.name}` : ''));
+    } catch { setFamilySummaryText(''); }
+  }, [benhnhanid]);
+
+  useEffect(() => { void fetchFamilySummary(); }, [fetchFamilySummary]);
+
+  // ── Notes management ────────────────────────────────────────────
+  const [openNotesDialog, setOpenNotesDialog] = useState(false);
+  const [allPatientNotes, setAllPatientNotes] = useState<PatientNote[]>([]);
+  const [noteFormContent, setNoteFormContent] = useState('');
+  const [noteFormType, setNoteFormType] = useState<'important' | 'normal'>('normal');
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [notesSaving, setNotesSaving] = useState(false);
+
+  const fetchAllNotes = useCallback(async () => {
+    if (!benhnhanid) return [];
+    try {
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0`);
+      const notes: PatientNote[] = res.data?.data || [];
+      setAllPatientNotes(notes);
+      return notes;
+    } catch { return []; }
+  }, [benhnhanid]);
+
+  const openNotesManagement = useCallback(async () => {
+    const notes = await fetchAllNotes();
+    const first = notes.find((n) => n.note_type === 'important') || notes[0] || null;
+    setEditingNoteId(first?.id ?? null);
+    setNoteFormContent(first?.content ?? '');
+    setNoteFormType(first?.note_type ?? 'normal');
+    setOpenNotesDialog(true);
+  }, [fetchAllNotes]);
+
+  const saveNote = useCallback(async () => {
+    if (!benhnhanid || !noteFormContent.trim()) { toast.error('Vui lòng nhập nội dung'); return; }
+    setNotesSaving(true);
+    try {
+      if (editingNoteId) {
+        await axios.put('/api/benh-nhan/notes', { id: editingNoteId, content: noteFormContent.trim(), note_type: noteFormType });
+        toast.success('Đã cập nhật ghi chú');
+      } else {
+        await axios.post('/api/benh-nhan/notes', { benhnhanid: parseInt(benhnhanid), content: noteFormContent.trim(), note_type: noteFormType });
+        toast.success('Đã thêm ghi chú');
+      }
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      setPatientNotes(res.data?.data || []);
+      await fetchAllNotes();
+      setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal');
+    } catch { toast.error('Lỗi khi lưu ghi chú'); }
+    finally { setNotesSaving(false); }
+  }, [benhnhanid, editingNoteId, noteFormContent, noteFormType, fetchAllNotes]);
+
+  const deleteNote = useCallback(async (id: number) => {
+    if (!await confirm('Xóa ghi chú này?')) return;
+    try {
+      await axios.delete(`/api/benh-nhan/notes?id=${id}`);
+      toast.success('Đã xóa');
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      setPatientNotes(res.data?.data || []);
+      await fetchAllNotes();
+      if (editingNoteId === id) { setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal'); }
+    } catch { toast.error('Lỗi khi xóa'); }
+  }, [benhnhanid, editingNoteId, fetchAllNotes, confirm]);
   const [desktopLeftTab, setDesktopLeftTab] = useState<'don_cu' | 'dien_bien' | 'anh'>('don_cu');
   const [tabDragX, setTabDragX] = useState(0);
   const [tabDragging, setTabDragging] = useState(false);
@@ -845,6 +1019,9 @@ export default function KeDon() {
       setSotienDaThanhToanInput('');
       setEditDonThuocId(null);
       setGhiNo(false);
+      setActiveDonThuocMediaId(null);
+      setDraftQueueResetToken((prev) => prev + 1);
+      setDraftMediaQueue([]);
       // Cập nhật ngày giờ về thời gian hiện tại khi sao chép đơn
       const now = new Date();
       const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000)); // UTC+7
@@ -862,6 +1039,9 @@ export default function KeDon() {
     setSotienDaThanhToan(0);
     setSotienDaThanhToanInput('');
     setGhiNo(false);
+    setActiveDonThuocMediaId(null);
+    setDraftQueueResetToken((prev) => prev + 1);
+    setDraftMediaQueue([]);
     // Cập nhật ngày giờ về thời gian hiện tại
     const now = new Date();
     const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000)); // UTC+7
@@ -909,6 +1089,28 @@ export default function KeDon() {
     setNgayKham(vietnamTime.toISOString().slice(0, 16)); // Reset về ngày giờ hiện tại theo UTC+7
     toast.success('Đã reset form đơn thuốc');
   }, []);
+
+  // Tiêu đề động cho panel ảnh mobile
+  const mobileMediaPanelTitle = useMemo(() => {
+    if (!editDonThuocId) return 'Thêm ảnh vào đơn mới';
+    const dt = new Date(ngayKham);
+    const label = dt.toLocaleDateString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const time = dt.toLocaleTimeString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `Thêm ảnh vào đơn ngày ${label} ${time}`;
+  }, [editDonThuocId, ngayKham]);
+
+  const mobileMediaDraftNotice = (!editDonThuocId && !activeDonThuocMediaId)
+    ? 'Ảnh sẽ bị mất nếu không lưu đơn thuốc.'
+    : undefined;
 
   const xoaDon = useCallback(
     async (id: number) => {
@@ -1324,30 +1526,31 @@ export default function KeDon() {
   <div className="flex flex-col lg:block">
 
         {/* Mobile layout - Clinical blue theme */}
-  <div className="block lg:hidden bg-[#f5f6f8] min-h-screen">
+  <div ref={mobileWrapperRef} className="block lg:hidden bg-[#f5f6f8] h-[calc(100dvh-68px)] flex flex-col overflow-hidden">
 
-          {/* Patient Mobile Header — sticky bar + tabs + notes */}
+          {/* Patient Mobile Header — sticky + scroll-driven animation */}
           <PatientMobileHeader
+            className="flex-shrink-0"
             benhNhan={benhNhan}
             benhnhanid={benhnhanid}
             patientNotes={patientNotes}
             onEditPatient={openEditPatientDialog}
+            onManageNotes={openNotesManagement}
             switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
             switchPageIcon={<Glasses className="w-[18px] h-[18px]" />}
             switchPageLabel="Kê đơn kính"
             mobileTab={mobileTab}
             mobileTabLabels={mobileTabLabels}
             onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
+            mobileHeaderRatio={mobileHeaderRatio}
+            familySummaryText={familySummaryText}
             renderBackgroundUploadNotice={renderBackgroundUploadNotice}
           />
 
-          {/* Vuốt ngang viewport bên dưới để chuyển tab. */}
-
-          {/* Swipeable viewport (4 panels: Đơn thuốc | Đơn cũ | Diễn tiến | Ảnh) — mỗi panel cuộn dọc độc lập */}
+          {/* Swipeable viewport (4 panels: Đơn thuốc | Đơn cũ | Diễn tiến | Ảnh) */}
           <div
             ref={viewportRef}
-            className="overflow-hidden"
-            style={{ height: 'calc(100dvh - 64px - 68px - 46px)' }}
+            className="relative flex-1 min-h-0 overflow-hidden"
             onTouchStart={onTabTouchStart}
             onTouchMove={onTabTouchMove}
             onTouchEnd={onTabTouchEnd}
@@ -1363,7 +1566,11 @@ export default function KeDon() {
             >
 
           {/* === Panel 0: Đơn thuốc === */}
-          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-2">
+          <div
+            data-panel-idx="0"
+            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
+            className="flex-shrink-0 h-full p-2 space-y-2"
+          >
 
           {/* Diagnosis & Date - Mobile flat style */}
           <div className="px-1">
@@ -1872,25 +2079,15 @@ export default function KeDon() {
             </div>
           </div>
 
-          <DonKinhMediaPanel
-            donKinhId={null}
-            mediaOwnerId={activeDonThuocMediaId || editDonThuocId}
-            apiBasePath="/api/don-thuoc/media"
-            ownerIdField="don_thuoc_id"
-            ownerLabel="đơn thuốc"
-            missingOwnerMessage="Chưa có đơn thuốc đang chọn."
-            mediaKind="don_thuoc"
-            enableDraftWhenNoDonKinhId
-            draftQueueResetToken={draftQueueResetToken}
-            onDraftQueueChange={setDraftMediaQueue}
-            className="mt-2"
-          />
-
           {/* === End Panel 0 === */}
           </div>
 
           {/* === Panel 1: Đơn cũ — mỗi đơn là 1 card độc lập === */}
-          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-0.5">
+          <div
+            data-panel-idx="1"
+            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
+            className="flex-shrink-0 h-full p-2 space-y-0.5"
+          >
             {dsDonCu.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">Chưa có đơn thuốc nào.</div>
             ) : (
@@ -1961,7 +2158,11 @@ export default function KeDon() {
           </div>
 
           {/* === Panel 2: Diễn tiến — mỗi ghi chú là 1 card độc lập === */}
-          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2 space-y-2">
+          <div
+            data-panel-idx="2"
+            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
+            className="flex-shrink-0 h-full p-2 space-y-2"
+          >
             <div className="flex justify-end">
               <Dialog open={openDialog} onOpenChange={setOpenDialog}>
                 <DialogTrigger asChild>
@@ -2030,12 +2231,31 @@ export default function KeDon() {
           </div>
 
           {/* === Panel 3: Ảnh đơn thuốc === */}
-          <div style={{ width: '100vw' }} className="flex-shrink-0 h-full overflow-y-auto p-2">
+          <div
+            data-panel-idx="3"
+            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
+            className="flex-shrink-0 h-full p-2 space-y-2"
+          >
+            <DonKinhMediaPanel
+              donKinhId={null}
+              mediaOwnerId={activeDonThuocMediaId || editDonThuocId}
+              apiBasePath="/api/don-thuoc/media"
+              ownerIdField="don_thuoc_id"
+              ownerLabel="đơn thuốc"
+              missingOwnerMessage="Chưa có đơn thuốc đang chọn."
+              mediaKind="don_thuoc"
+              enableDraftWhenNoDonKinhId
+              draftQueueResetToken={draftQueueResetToken}
+              onDraftQueueChange={setDraftMediaQueue}
+              headerTitle={mobileMediaPanelTitle}
+              draftNoticeText={mobileMediaDraftNotice}
+            />
             <PatientMediaTimeline
               patientId={patientIdNumber}
               sourceFilter="don_thuoc"
               hideHeader
               onCountChange={setImageTabCount}
+              ownerIdFilter={activeDonThuocMediaId || editDonThuocId || null}
             />
           </div>
 
@@ -2219,8 +2439,10 @@ export default function KeDon() {
         benhnhanid={benhnhanid}
         patientNotes={patientNotes}
         onEditPatient={openEditPatientDialog}
+        onManageNotes={openNotesManagement}
         switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
         switchPageLabel="Kê đơn kính"
+        familySummaryText={familySummaryText}
         renderBackgroundUploadNotice={renderBackgroundUploadNotice}
       />
 
@@ -2778,6 +3000,71 @@ export default function KeDon() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpenEditPatient(false)}>Hủy</Button>
             <Button onClick={savePatientInfo}>Lưu</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notes Management Dialog */}
+      <Dialog open={openNotesDialog} onOpenChange={(v) => { setOpenNotesDialog(v); if (!v) { setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal'); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ghi chú bệnh nhân</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            {allPatientNotes.length > 0 && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {allPatientNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className={`flex items-start gap-2 rounded-lg px-3 py-2 cursor-pointer transition-colors border ${
+                      editingNoteId === note.id ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    }`}
+                    onClick={() => { setEditingNoteId(note.id); setNoteFormContent(note.content); setNoteFormType(note.note_type); }}
+                  >
+                    <AlertTriangle className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${note.note_type === 'important' ? 'text-red-500' : 'text-amber-500'}`} />
+                    <p className={`flex-1 text-xs leading-snug ${note.note_type === 'important' ? 'text-red-700 font-semibold' : 'text-gray-700'}`}>
+                      {note.content}
+                    </p>
+                    <button type="button" className="text-gray-300 hover:text-red-400 flex-shrink-0"
+                      onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }}>
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="space-y-2 border-t border-gray-100 pt-3">
+              <Label>{editingNoteId ? 'Sửa ghi chú' : 'Thêm ghi chú mới'}</Label>
+              <textarea
+                rows={3}
+                value={noteFormContent}
+                onChange={(e) => setNoteFormContent(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Nhập nội dung ghi chú..."
+              />
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={noteFormType === 'normal'} onChange={() => setNoteFormType('normal')} />
+                  <span className="text-sm text-gray-600">Thường</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={noteFormType === 'important'} onChange={() => setNoteFormType('important')} />
+                  <span className="text-sm text-red-700 font-medium">Quan trọng</span>
+                </label>
+                {editingNoteId && (
+                  <button type="button" className="ml-auto text-xs text-gray-400 hover:text-gray-600"
+                    onClick={() => { setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal'); }}>
+                    + Ghi chú mới
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpenNotesDialog(false)}>Đóng</Button>
+            <Button onClick={saveNote} disabled={notesSaving || !noteFormContent.trim()}>
+              {notesSaving ? 'Đang lưu...' : editingNoteId ? 'Cập nhật' : 'Thêm'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

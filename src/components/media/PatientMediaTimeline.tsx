@@ -58,6 +58,7 @@ interface PatientMediaTimelineProps {
   sourceFilter?: TimelineSourceFilter;
   hideHeader?: boolean;
   onCountChange?: (count: number) => void;
+  ownerIdFilter?: number | null;
 }
 
 const READ_URL_TTL_SECONDS = 1200;
@@ -119,6 +120,7 @@ export default function PatientMediaTimeline({
   sourceFilter = 'all',
   hideHeader = false,
   onCountChange,
+  ownerIdFilter,
 }: PatientMediaTimelineProps) {
   const [items, setItems] = useState<TimelineMediaItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -240,10 +242,15 @@ export default function PatientMediaTimeline({
     return () => window.clearTimeout(timer);
   }, [hasPending, patientId]);
 
+  const filteredItems = useMemo(() => {
+    if (ownerIdFilter == null) return items;
+    return items.filter((item) => item.sourceOwnerId === ownerIdFilter);
+  }, [items, ownerIdFilter]);
+
   const groups = useMemo<TimelineGroup[]>(() => {
     const map = new Map<string, TimelineGroup>();
 
-    for (const item of items) {
+    for (const item of filteredItems) {
       const dateKey = toDateKey(item.timelineAt);
       if (!map.has(dateKey)) {
         map.set(dateKey, {
@@ -256,31 +263,31 @@ export default function PatientMediaTimeline({
     }
 
     return Array.from(map.values());
-  }, [items]);
+  }, [filteredItems]);
 
   const itemIndexMap = useMemo(() => {
     const map = new Map<string, number>();
-    items.forEach((item, idx) => map.set(item.key, idx));
+    filteredItems.forEach((item, idx) => map.set(item.key, idx));
     return map;
-  }, [items]);
+  }, [filteredItems]);
 
-  const previewItem = previewIndex !== null && previewIndex >= 0 && previewIndex < items.length
-    ? items[previewIndex]
+  const previewItem = previewIndex !== null && previewIndex >= 0 && previewIndex < filteredItems.length
+    ? filteredItems[previewIndex]
     : null;
 
   const showPreviousPreview = () => {
-    if (items.length === 0) return;
+    if (filteredItems.length === 0) return;
     setPreviewIndex((prev) => {
       if (prev === null) return 0;
-      return (prev - 1 + items.length) % items.length;
+      return (prev - 1 + filteredItems.length) % filteredItems.length;
     });
   };
 
   const showNextPreview = () => {
-    if (items.length === 0) return;
+    if (filteredItems.length === 0) return;
     setPreviewIndex((prev) => {
       if (prev === null) return 0;
-      return (prev + 1) % items.length;
+      return (prev + 1) % filteredItems.length;
     });
   };
 
@@ -318,7 +325,7 @@ export default function PatientMediaTimeline({
               <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
               <h3 className={`font-bold text-gray-900 ${dense ? 'text-xs' : 'text-sm'} truncate`}>{title}</h3>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700 font-semibold shrink-0">
-                {items.length}
+                {filteredItems.length}
               </span>
             </div>
             <button
@@ -343,9 +350,13 @@ export default function PatientMediaTimeline({
           <div className="mx-1 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-2 py-2 text-xs text-gray-500">
             Chưa có bệnh nhân để xem timeline ảnh.
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 || filteredItems.length === 0 ? (
           <div className="mx-1 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-2 py-2 text-xs text-gray-500">
-            {loading ? 'Đang tải timeline ảnh...' : 'Chưa có ảnh theo timeline.'}
+            {loading
+              ? 'Đang tải timeline ảnh...'
+              : filteredItems.length === 0 && ownerIdFilter != null
+                ? 'Đơn hiện tại chưa có ảnh.'
+                : 'Chưa có ảnh theo timeline.'}
           </div>
         ) : (
           <div className="space-y-2">
@@ -408,7 +419,7 @@ export default function PatientMediaTimeline({
                   onTouchStart={onPreviewTouchStart}
                   onTouchEnd={onPreviewTouchEnd}
                 >
-                  {items.length > 1 && (
+                  {filteredItems.length > 1 && (
                     <>
                       <button
                         type="button"

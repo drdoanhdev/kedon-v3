@@ -56,6 +56,8 @@ interface DonKinhMediaPanelProps {
   enableDraftWhenNoDonKinhId?: boolean;
   draftQueueResetToken?: number;
   onDraftQueueChange?: (items: DraftDonKinhUploadItem[]) => void;
+  headerTitle?: string;
+  draftNoticeText?: string;
 }
 
 export interface DraftDonKinhUploadItem {
@@ -204,6 +206,8 @@ export default function DonKinhMediaPanel({
   enableDraftWhenNoDonKinhId = true,
   draftQueueResetToken,
   onDraftQueueChange,
+  headerTitle,
+  draftNoticeText,
 }: DonKinhMediaPanelProps) {
   const [items, setItems] = useState<DonKinhMediaItem[]>([]);
   const [draftItems, setDraftItems] = useState<DraftDonKinhPreviewItem[]>([]);
@@ -548,9 +552,11 @@ export default function DonKinhMediaPanel({
     <>
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 py-2 px-0 space-y-2 ${className}`} data-no-tab-swipe>
         <div className="flex items-center justify-between gap-2 px-3">
-          <div className="min-w-0 flex items-center gap-2">
-            <h3 className="font-bold text-gray-900 text-sm tracking-tight">Ảnh {ownerLabel}</h3>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-semibold">
+          <div className="min-w-0 flex items-center gap-2 flex-wrap">
+            <h3 className="font-bold text-gray-900 text-sm tracking-tight">
+              {headerTitle ?? `Ảnh ${ownerLabel}`}
+            </h3>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-semibold flex-shrink-0">
               {activeCount}/{MAX_MEDIA_ITEMS}
             </span>
           </div>
@@ -636,7 +642,12 @@ export default function DonKinhMediaPanel({
               ))}
             </div>
 
-            {draftItems.length > 0 && (
+            {draftNoticeText && (
+              <p className="px-3 text-[11px] text-amber-600 font-medium">
+                {draftNoticeText}
+              </p>
+            )}
+            {!draftNoticeText && draftItems.length > 0 && (
               <p className="px-3 text-[11px] text-gray-500">
                 Ảnh tạm chỉ lưu trong phiên hiện tại. Bấm Lưu đơn để tải ảnh lên hệ thống.
               </p>

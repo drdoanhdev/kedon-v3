@@ -740,10 +740,11 @@ export default function KeDonKinh() {
   const touchStartXRef = useRef(0);
   const touchStartYRef = useRef(0);
   const touchStartRatioRef = useRef(0);
+  const mobileContentRef = useRef<HTMLDivElement | null>(null);
 
   // Non-passive touch interceptor: header "hấp thụ" scroll trước, sau đó panel mới scroll
   useEffect(() => {
-    const wrapper = tabViewportRef.current;
+    const wrapper = mobileContentRef.current;
     if (!wrapper) return;
     const MAX_TRAVEL = 128;
 
@@ -758,13 +759,15 @@ export default function KeDonKinh() {
 
     const onTouchMove = (e: TouchEvent) => {
       const dx = e.touches[0].clientX - touchStartXRef.current;
-      const dy = e.touches[0].clientY - touchStartYRef.current; // + = ngón xuống = scroll lên
-      const dyUp = -dy; // + = người dùng cuộn lên (thu header)
+      const dy = e.touches[0].clientY - touchStartYRef.current;
+      const dyUp = -dy;
 
       // Bỏ qua nếu đây là gesture ngang (chuyển tab)
       if (Math.abs(dx) > Math.abs(dyUp) * 1.4 && Math.abs(dx) > 8) return;
 
       const startRatio = touchStartRatioRef.current;
+      const panel = getActivePanel();
+      const touchInPanel = panel?.contains(e.target as Node) ?? false;
 
       if (dyUp > 0) {
         // ── Cuộn lên ──
@@ -776,25 +779,27 @@ export default function KeDonKinh() {
           mobileHeaderRatioRef.current = newRatio;
           setMobileHeaderRatio(newRatio);
 
-          // Khi ratio vừa đạt 1: chuyển excess vào scrollTop của panel
           if (raw > 1) {
-            const panel = getActivePanel();
             if (panel) {
-              panel.style.overflowY = 'auto'; // mở ngay trước khi React re-render
+              panel.style.overflowY = 'auto';
               panel.scrollTop = (raw - 1) * MAX_TRAVEL;
             }
           }
+        } else if (!touchInPanel) {
+          // Header compact nhưng touch trên vùng header → chặn native scroll
+          e.preventDefault();
         }
-        // startRatio >= 1 → panel scroll natively, không preventDefault
+        // else: startRatio = 1 và touch trong panel → panel scroll natively
       } else if (dyUp < 0) {
         // ── Cuộn xuống ──
-        const panel = getActivePanel();
         if ((panel?.scrollTop ?? 0) <= 0 && startRatio > 0) {
-          // Panel đang ở đầu và header chưa mở rộng hết → mở rộng header
           e.preventDefault();
           const newRatio = Math.max(0, startRatio + dyUp / MAX_TRAVEL);
           mobileHeaderRatioRef.current = newRatio;
           setMobileHeaderRatio(newRatio);
+        } else if (!touchInPanel) {
+          // Touch trên header → chặn native scroll
+          e.preventDefault();
         }
       }
     };
@@ -802,7 +807,6 @@ export default function KeDonKinh() {
     const onTouchEnd = () => {
       const r = mobileHeaderRatioRef.current;
       if (r > 0 && r < 1) {
-        // Snap về trạng thái gần nhất
         snapRatio(r >= 0.5 ? 1 : 0);
       }
     };
@@ -818,8 +822,7 @@ export default function KeDonKinh() {
       wrapper.removeEventListener('touchend', onTouchEnd);
       wrapper.removeEventListener('touchcancel', onTouchEnd);
     };
-  // benhNhan?.id: ProtectedRoute shows loading spinner first → tabViewportRef.current
-  // is null on first mount. Re-run when patient loads so the wrapper is available.
+  // mobileContentRef bao gồm cả header và viewport; re-run khi patient load.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapRatio, benhNhan?.id]);
 
@@ -1913,10 +1916,13 @@ export default function KeDonKinh() {
 
   // Sao chép đơn kính
   const handleCopy = () => {
-  const now = new Date();
-  const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000)); // UTC+7
-  setForm({ ...form, id: undefined, ngaykham: vietnamTime.toISOString().slice(0, 16) });
+    const now = new Date();
+    const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000)); // UTC+7
+    setForm({ ...form, id: undefined, ngaykham: vietnamTime.toISOString().slice(0, 16) });
     setIsEditing(false);
+    setActiveDonKinhMediaId(null);
+    setDraftQueueResetToken((prev) => prev + 1);
+    setDraftMediaQueue([]);
     toast.success('Đã sao chép đơn kính');
   };
 
@@ -1997,6 +2003,26 @@ export default function KeDonKinh() {
     setDraftQueueResetToken((prev) => prev + 1);
     setDraftMediaQueue([]);
   };
+
+  // Tiêu đề động cho panel ảnh mobile
+  const mobileMediaPanelTitle = useMemo(() => {
+    if (!activeDonKinhMediaId || !form.ngaykham) return 'Thêm ảnh vào đơn mới';
+    const dt = new Date(form.ngaykham);
+    const label = dt.toLocaleDateString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const time = dt.toLocaleTimeString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `Thêm ảnh vào đơn ngày ${label} ${time}`;
+  }, [activeDonKinhMediaId, form.ngaykham]);
+
+  const mobileMediaDraftNotice = activeDonKinhMediaId ? undefined : 'Ảnh sẽ bị mất nếu không lưu đơn kính.';
 
   // Chọn đơn từ lịch sử
   const handleSelectDon = (don: DonKinh) => {
@@ -2176,7 +2202,7 @@ export default function KeDonKinh() {
         </aside>
 
         {/* Main content area */}
-        <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
+        <div ref={mobileContentRef} className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
             {/* Patient info — Mobile: sticky header + tabs + notes */}
             <PatientMobileHeader
               className="lg:hidden flex-shrink-0"
@@ -2967,13 +2993,6 @@ export default function KeDonKinh() {
                   ) : null}
                 </div>
 
-                <DonKinhMediaPanel
-                  donKinhId={activeDonKinhMediaId}
-                  className="mt-3"
-                  onDraftQueueChange={setDraftMediaQueue}
-                  draftQueueResetToken={draftQueueResetToken}
-                />
-
                 {/* Mobile History Section */}
                 <div className="hidden">
                   <History items={donKinhs} onSelect={handleSelectDon} highlightId={highlightId} />
@@ -3189,7 +3208,7 @@ export default function KeDonKinh() {
             {/* Panel 3: Ảnh đơn kính (mobile viewport track) */}
             <div
               data-panel-idx="3"
-              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 space-y-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
                 overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(3 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
@@ -3197,11 +3216,19 @@ export default function KeDonKinh() {
                 willChange: 'transform',
               }}
             >
+              <DonKinhMediaPanel
+                donKinhId={activeDonKinhMediaId}
+                onDraftQueueChange={setDraftMediaQueue}
+                draftQueueResetToken={draftQueueResetToken}
+                headerTitle={mobileMediaPanelTitle}
+                draftNoticeText={mobileMediaDraftNotice}
+              />
               <PatientMediaTimeline
                 patientId={patientIdNumber}
                 sourceFilter="don_kinh"
                 hideHeader
                 onCountChange={setImageTabCount}
+                ownerIdFilter={activeDonKinhMediaId}
               />
             </div>
             </div>
