@@ -3220,6 +3220,7 @@ export default function KeDonKinh() {
                 donKinhId={activeDonKinhMediaId}
                 onDraftQueueChange={setDraftMediaQueue}
                 draftQueueResetToken={draftQueueResetToken}
+                onPhotoAdded={() => setMobileTab(0)}
                 headerTitle={mobileMediaPanelTitle}
                 draftNoticeText={mobileMediaDraftNotice}
               />

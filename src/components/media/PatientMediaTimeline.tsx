@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { Calendar, ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from 'lucide-react';
 
@@ -64,6 +64,12 @@ interface PatientMediaTimelineProps {
 const READ_URL_TTL_SECONDS = 1200;
 const SWIPE_THRESHOLD = 36;
 
+/** Badge màu cho từng nguồn ảnh */
+const SOURCE_BADGE: Record<TimelineSource, { label: string; className: string }> = {
+  don_thuoc: { label: '💊', className: 'bg-green-600/80 text-white' },
+  don_kinh:  { label: '👓', className: 'bg-blue-600/80  text-white' },
+};
+
 function toTimelineAt(capturedAt: string | null, createdAt: string): string {
   return capturedAt || createdAt;
 }
@@ -112,6 +118,11 @@ function sortTimelineItems(items: TimelineMediaItem[]): TimelineMediaItem[] {
   });
 }
 
+/** Khoảng cách giữa 2 ngón tay */
+function getTouchDist(t1: React.Touch, t2: React.Touch): number {
+  return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+}
+
 export default function PatientMediaTimeline({
   patientId,
   className = '',
@@ -127,7 +138,19 @@ export default function PatientMediaTimeline({
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
+  // ── Lightbox touch state ─────────────────────────────────────────
+  const [pinchScale, setPinchScale] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [lightboxDragY, setLightboxDragY] = useState(0);
+  const lightboxTouchRef = useRef<{
+    startTouches: Array<{ x: number; y: number }>;
+    startScale: number;
+    startPanX: number;
+    startPanY: number;
+    startDist: number;
+    mode: 'idle' | 'pinch' | 'swipe_h' | 'swipe_v' | 'pan';
+  } | null>(null);
 
   const fetchTimeline = async () => {
     if (!patientId) {
@@ -148,10 +171,7 @@ export default function PatientMediaTimeline({
       requestEntries.push({
         source: 'don_thuoc',
         request: axios.get('/api/don-thuoc/media', {
-          params: {
-            benhnhan_id: patientId,
-            read_url_ttl_seconds: READ_URL_TTL_SECONDS,
-          },
+          params: { benhnhan_id: patientId, read_url_ttl_seconds: READ_URL_TTL_SECONDS },
         }),
       });
     }
@@ -160,10 +180,7 @@ export default function PatientMediaTimeline({
       requestEntries.push({
         source: 'don_kinh',
         request: axios.get('/api/don-kinh/media', {
-          params: {
-            benhnhan_id: patientId,
-            read_url_ttl_seconds: READ_URL_TTL_SECONDS,
-          },
+          params: { benhnhan_id: patientId, read_url_ttl_seconds: READ_URL_TTL_SECONDS },
         }),
       });
     }
@@ -275,8 +292,17 @@ export default function PatientMediaTimeline({
     ? filteredItems[previewIndex]
     : null;
 
+  const closePreview = () => {
+    setPreviewIndex(null);
+    setPinchScale(1);
+    setPanOffset({ x: 0, y: 0 });
+    setLightboxDragY(0);
+    lightboxTouchRef.current = null;
+  };
+
   const showPreviousPreview = () => {
     if (filteredItems.length === 0) return;
+    setPinchScale(1); setPanOffset({ x: 0, y: 0 });
     setPreviewIndex((prev) => {
       if (prev === null) return 0;
       return (prev - 1 + filteredItems.length) % filteredItems.length;
@@ -285,36 +311,109 @@ export default function PatientMediaTimeline({
 
   const showNextPreview = () => {
     if (filteredItems.length === 0) return;
+    setPinchScale(1); setPanOffset({ x: 0, y: 0 });
     setPreviewIndex((prev) => {
       if (prev === null) return 0;
       return (prev + 1) % filteredItems.length;
     });
   };
 
-  const closePreview = () => {
-    setPreviewIndex(null);
-    setTouchStartX(null);
-  };
+  // ── Lightbox touch handlers ──────────────────────────────────────
 
-  const onPreviewTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    setTouchStartX(event.touches[0]?.clientX ?? null);
-  };
-
-  const onPreviewTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (touchStartX === null) return;
-    const dx = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
-    setTouchStartX(null);
-    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
-    if (dx < 0) {
-      showNextPreview();
-    } else {
-      showPreviousPreview();
+  const onLightboxTouchStart = (e: React.TouchEvent) => {
+    const touches = e.touches;
+    if (touches.length === 2) {
+      const dist = getTouchDist(touches[0] as unknown as React.Touch, touches[1] as unknown as React.Touch);
+      lightboxTouchRef.current = {
+        startTouches: [
+          { x: touches[0].clientX, y: touches[0].clientY },
+          { x: touches[1].clientX, y: touches[1].clientY },
+        ],
+        startScale: pinchScale, startPanX: panOffset.x, startPanY: panOffset.y,
+        startDist: dist, mode: 'pinch',
+      };
+    } else if (touches.length === 1) {
+      lightboxTouchRef.current = {
+        startTouches: [{ x: touches[0].clientX, y: touches[0].clientY }],
+        startScale: pinchScale, startPanX: panOffset.x, startPanY: panOffset.y,
+        startDist: 0, mode: 'idle',
+      };
     }
+  };
+
+  const onLightboxTouchMove = (e: React.TouchEvent) => {
+    const ref = lightboxTouchRef.current;
+    if (!ref) return;
+
+    if (e.touches.length === 2 && ref.mode !== 'swipe_h' && ref.mode !== 'swipe_v') {
+      const dist = getTouchDist(e.touches[0] as unknown as React.Touch, e.touches[1] as unknown as React.Touch);
+      if (ref.startDist === 0) return;
+      const newScale = Math.min(4, Math.max(1, ref.startScale * (dist / ref.startDist)));
+      setPinchScale(newScale);
+      ref.mode = 'pinch';
+      return;
+    }
+
+    if (e.touches.length === 1 && ref.startTouches.length >= 1) {
+      const dx = e.touches[0].clientX - ref.startTouches[0].x;
+      const dy = e.touches[0].clientY - ref.startTouches[0].y;
+
+      if (ref.mode === 'idle' && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        if (ref.startScale > 1) {
+          ref.mode = 'pan';
+        } else if (Math.abs(dy) > Math.abs(dx) && dy > 0) {
+          ref.mode = 'swipe_v';
+        } else {
+          ref.mode = 'swipe_h';
+        }
+      }
+
+      if (ref.mode === 'pan') {
+        setPanOffset({ x: ref.startPanX + dx, y: ref.startPanY + dy });
+      } else if (ref.mode === 'swipe_v' && dy > 0) {
+        setLightboxDragY(dy);
+      }
+    }
+  };
+
+  const onLightboxTouchEnd = (e: React.TouchEvent) => {
+    const ref = lightboxTouchRef.current;
+    if (!ref) return;
+
+    if (ref.mode === 'swipe_v') {
+      if (lightboxDragY > 100) {
+        closePreview();
+      } else {
+        setLightboxDragY(0);
+      }
+    } else if (ref.mode === 'swipe_h' && e.changedTouches.length > 0) {
+      const dx = e.changedTouches[0].clientX - ref.startTouches[0].x;
+      if (Math.abs(dx) < SWIPE_THRESHOLD) { lightboxTouchRef.current = null; return; }
+      if (dx < 0) showNextPreview();
+      else showPreviousPreview();
+    } else if (ref.mode === 'pinch' && pinchScale < 1.12) {
+      setPinchScale(1);
+      setPanOffset({ x: 0, y: 0 });
+    }
+
+    lightboxTouchRef.current = null;
   };
 
   const gridClassName = dense
     ? 'grid grid-cols-2 gap-1'
     : 'grid grid-cols-3 sm:grid-cols-4 gap-1';
+
+  const lightboxContentStyle: React.CSSProperties = lightboxDragY > 0
+    ? {
+        transform: `translateY(${lightboxDragY}px)`,
+        transition: 'none',
+        opacity: Math.max(0.25, 1 - lightboxDragY / 280),
+      }
+    : {
+        transform: 'translateY(0)',
+        transition: 'transform 0.22s ease, opacity 0.22s ease',
+        opacity: 1,
+      };
 
   return (
     <>
@@ -368,6 +467,7 @@ export default function PatientMediaTimeline({
                 <div className={gridClassName}>
                   {group.items.map((item) => {
                     const index = itemIndexMap.get(item.key) ?? 0;
+                    const badge = SOURCE_BADGE[item.source];
                     return (
                       <button
                         type="button"
@@ -384,6 +484,12 @@ export default function PatientMediaTimeline({
                             {getStatusText(item.status)}
                           </div>
                         )}
+                        {/* Badge nguồn ảnh — chỉ hiển thị khi filter = 'all' */}
+                        {sourceFilter === 'all' && (
+                          <span className={`absolute bottom-1 left-1 text-[10px] px-1 py-0.5 rounded font-bold leading-none ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -394,32 +500,54 @@ export default function PatientMediaTimeline({
         )}
       </div>
 
+      {/* ── Lightbox ── */}
       {previewItem && typeof document !== 'undefined'
         ? createPortal(
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4" data-no-tab-swipe>
-              <div className="absolute inset-0 bg-black/80" onClick={closePreview} />
+              <div
+                className="absolute inset-0 bg-black/80"
+                style={{ opacity: lightboxDragY > 0 ? Math.max(0.1, 1 - lightboxDragY / 280) : undefined }}
+                onClick={closePreview}
+              />
 
-              <div className="relative z-10 w-full max-w-5xl">
+              <div className="relative z-10 w-full max-w-5xl" style={lightboxContentStyle}>
+                {/* Top bar */}
                 <div className="flex items-center justify-between text-white mb-2">
-                  <div className="text-xs sm:text-sm truncate pr-2">
-                    {formatDateLabel(previewItem.timelineAt)} {formatTimeLabel(previewItem.timelineAt)}
+                  <div className="text-xs sm:text-sm truncate pr-2 flex items-center gap-2">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${SOURCE_BADGE[previewItem.source].className}`}>
+                      {previewItem.sourceLabel}
+                    </span>
+                    <span>{formatDateLabel(previewItem.timelineAt)} {formatTimeLabel(previewItem.timelineAt)}</span>
+                    {pinchScale > 1 && (
+                      <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
+                        {pinchScale.toFixed(1)}×
+                      </span>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={closePreview}
-                    className="h-8 w-8 rounded-lg bg-white/15 text-white hover:bg-white/25 inline-flex items-center justify-center"
-                    title="Đóng"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {pinchScale > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => { setPinchScale(1); setPanOffset({ x: 0, y: 0 }); }}
+                        className="h-8 px-2 rounded-lg bg-white/15 text-white hover:bg-white/25 text-[11px] font-semibold"
+                      >
+                        1×
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={closePreview}
+                      className="h-8 w-8 rounded-lg bg-white/15 text-white hover:bg-white/25 inline-flex items-center justify-center"
+                      title="Đóng"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <div
-                  className="relative rounded-xl overflow-hidden bg-black shadow-2xl"
-                  onTouchStart={onPreviewTouchStart}
-                  onTouchEnd={onPreviewTouchEnd}
-                >
-                  {filteredItems.length > 1 && (
+                {/* Image area */}
+                <div className="relative rounded-xl overflow-hidden bg-black shadow-2xl">
+                  {filteredItems.length > 1 && pinchScale === 1 && (
                     <>
                       <button
                         type="button"
@@ -440,13 +568,43 @@ export default function PatientMediaTimeline({
                     </>
                   )}
 
-                  <div className="w-full flex items-center justify-center bg-black min-h-[45vh] max-h-[78vh]">
+                  {/* Dot indicator */}
+                  {filteredItems.length > 1 && (
+                    <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1 z-10 pointer-events-none">
+                      {filteredItems.map((_, idx) => (
+                        <span
+                          key={idx}
+                          className={`w-1.5 h-1.5 rounded-full transition-colors ${idx === previewIndex ? 'bg-white' : 'bg-white/40'}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <div
+                    className="w-full flex items-center justify-center bg-black min-h-[45vh] max-h-[78vh] overflow-hidden select-none"
+                    onTouchStart={onLightboxTouchStart}
+                    onTouchMove={onLightboxTouchMove}
+                    onTouchEnd={onLightboxTouchEnd}
+                  >
                     {previewItem.status === 'uploaded' && previewItem.readUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={previewItem.readUrl}
                         alt={previewItem.originalFilename || previewItem.key}
-                        className="max-h-[78vh] w-auto object-contain"
+                        draggable={false}
+                        style={{
+                          maxHeight: '78vh',
+                          width: 'auto',
+                          objectFit: 'contain',
+                          transform: `scale(${pinchScale}) translate(${panOffset.x / pinchScale}px, ${panOffset.y / pinchScale}px)`,
+                          transition: lightboxTouchRef.current ? 'none' : 'transform 0.18s ease',
+                          cursor: pinchScale > 1 ? 'move' : 'zoom-in',
+                          touchAction: 'none',
+                        }}
+                        onClick={() => {
+                          if (pinchScale > 1) { setPinchScale(1); setPanOffset({ x: 0, y: 0 }); }
+                          else { setPinchScale(2); setPanOffset({ x: 0, y: 0 }); }
+                        }}
                       />
                     ) : (
                       <div className="px-3 py-10 text-center text-sm text-white/90">
@@ -455,6 +613,10 @@ export default function PatientMediaTimeline({
                     )}
                   </div>
                 </div>
+
+                <p className="text-center text-[10px] text-white/40 mt-1.5 select-none">
+                  Vuốt xuống để đóng
+                </p>
               </div>
             </div>,
             document.body

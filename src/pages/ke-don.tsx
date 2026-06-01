@@ -2247,6 +2247,7 @@ export default function KeDon() {
               enableDraftWhenNoDonKinhId
               draftQueueResetToken={draftQueueResetToken}
               onDraftQueueChange={setDraftMediaQueue}
+              onPhotoAdded={() => setMobileTab(0)}
               headerTitle={mobileMediaPanelTitle}
               draftNoticeText={mobileMediaDraftNotice}
             />
