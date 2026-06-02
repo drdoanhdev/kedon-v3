@@ -750,7 +750,7 @@ export default function DonKinhMediaPanel({
 
   return (
     <>
-      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 py-2 px-0 space-y-2 ${className}`} data-no-tab-swipe>
+      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 py-2 px-0 space-y-2 ${className}`}>
         <div className="flex items-center justify-between gap-2 px-3">
           <div className="min-w-0 flex items-center gap-2 flex-wrap">
             <h3 className="font-bold text-gray-900 text-sm tracking-tight">
@@ -794,12 +794,11 @@ export default function DonKinhMediaPanel({
               : (
                 <>
                   {renderAddButtons()}
-                  <div className="grid grid-cols-2 gap-1 px-0" data-no-tab-swipe>
+                  <div className="grid grid-cols-2 gap-1 px-0">
                     {draftItems.map((item, index) => (
                       <div
                         key={item.tempId}
                         className="relative aspect-square w-full rounded-xl border overflow-hidden bg-gray-100 border-gray-200"
-                        data-no-tab-swipe
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -849,18 +848,16 @@ export default function DonKinhMediaPanel({
             }
 
             {items.length > 0 && (
-              <div className="grid grid-cols-2 gap-1 px-0" data-no-tab-swipe>
+              <div className="grid grid-cols-2 gap-1 px-0">
                 {items.map((item, index) => (
                   <div
                     key={item.id}
                     className="relative aspect-square w-full rounded-xl border overflow-hidden bg-gray-100 border-gray-200"
-                    data-no-tab-swipe
                   >
                     <button
                       type="button"
                       className="absolute inset-0"
                       onClick={() => setPreviewIndex(index)}
-                      data-no-tab-swipe
                     >
                       {item.read_url ? (
                         // eslint-disable-next-line @next/next/no-img-element

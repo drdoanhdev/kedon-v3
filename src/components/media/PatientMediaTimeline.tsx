@@ -417,7 +417,7 @@ export default function PatientMediaTimeline({
 
   return (
     <>
-      <div className={`bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-2 ${className}`} data-no-tab-swipe>
+      <div className={`bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-2 ${className}`}>
         {!hideHeader && (
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex items-center gap-2 min-w-0">
@@ -474,7 +474,6 @@ export default function PatientMediaTimeline({
                         key={item.key}
                         className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100"
                         onClick={() => setPreviewIndex(index)}
-                        data-no-tab-swipe
                       >
                         {item.status === 'uploaded' && item.readUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
