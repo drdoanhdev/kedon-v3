@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Pill, Pencil, Copy, Trash2, Calendar, Phone, MapPin, CalendarDays, Check, X, Clock, MessageSquare, Glasses, History as HistoryIcon, AlertTriangle, ScanLine, Image as ImageIcon } from 'lucide-react';
@@ -26,6 +26,11 @@ import DonKinhMediaPanel from '@/components/ke-don/DonKinhImageStripPanel';
 import type { DraftDonKinhUploadItem } from '@/components/ke-don/DonKinhImageStripPanel';
 import { defaultConfig, type PrintConfig } from '../components/ke-don/CauHinhMauIn';
 import PatientMediaTimeline from '../components/media/PatientMediaTimeline';
+import {
+  PatientFamilyProvider,
+  PatientFamilyMobileChip,
+  PatientFamilyDesktopChip,
+} from '../components/family/PatientFamilyControls';
 import {
   enqueueBackgroundUploadTask,
   getBackgroundUploadTask,
@@ -447,6 +452,7 @@ function extractFrameScanCandidates(rawValue: string): string[] {
 export default function KeDonKinh() {
   const { confirm } = useConfirm();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const benhnhanid = searchParams.get('bn');
   const patientIdNumber = useMemo(() => {
     const parsed = Number.parseInt(benhnhanid || '', 10);
@@ -683,34 +689,6 @@ export default function KeDonKinh() {
       </div>
     );
   }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
-  // Family summary for header display
-  const [familySummaryText, setFamilySummaryText] = useState('');
-
-  const fetchFamilySummary = useCallback(async () => {
-    if (!benhnhanid) return;
-    try {
-      const res = await axios.get(`/api/benh-nhan/family?benhnhanid=${benhnhanid}`);
-      const group = res.data?.data;
-      if (!group || !group.members?.length) { setFamilySummaryText(''); return; }
-      // Build "Tên (vai trò), Tên 2" — exclude self (current patient)
-      const selfId = parseInt(benhnhanid);
-      const others = (group.members as Array<{ benhnhan_id: number; role?: string; patient?: { ten?: string } }>)
-        .filter((m) => m.benhnhan_id !== selfId)
-        .map((m) => m.patient?.ten ? (m.role ? `${m.patient.ten} (${m.role})` : m.patient.ten) : null)
-        .filter(Boolean);
-      if (others.length === 0) {
-        // Just show group name if no other members
-        setFamilySummaryText(group.name ? `Nhóm: ${group.name}` : '');
-      } else {
-        setFamilySummaryText(others.join(', '));
-      }
-    } catch {
-      setFamilySummaryText('');
-    }
-  }, [benhnhanid]);
-
-  useEffect(() => { void fetchFamilySummary(); }, [fetchFamilySummary]);
-
   // Mobile header scroll-driven ratio (0 = expanded, 1 = compact)
   const [mobileHeaderRatio, setMobileHeaderRatio] = useState(0);
   const mobileHeaderRatioRef = useRef(0);
@@ -2066,8 +2044,38 @@ export default function KeDonKinh() {
     );
   }
 
+  const confirmBeforeFamilySwitch = async () => {
+    const hasDraftMedia = draftMediaQueue.length > 0;
+    const hasUnsavedRx = !isEditing && !activeDonKinhMediaId && (
+      (form.chandoan?.trim().length ?? 0) > 0
+      || (form.giatrong ?? 0) > 0
+      || (form.giagong ?? 0) > 0
+      || (form.ten_gong?.trim().length ?? 0) > 0
+    );
+    if (!hasDraftMedia && !hasUnsavedRx) return true;
+    return confirm({
+      title: 'Chuyển sang thành viên khác?',
+      message: hasDraftMedia
+        ? 'Đơn kính hoặc ảnh tạm chưa lưu sẽ bị mất nếu bạn chuyển bệnh nhân.'
+        : 'Đơn kính đang soạn chưa lưu sẽ bị mất nếu bạn chuyển bệnh nhân.',
+      confirmText: 'Chuyển',
+      variant: 'danger',
+    });
+  };
+
+  const handleOpenFamilyMember = (memberPatientId: number) => {
+    if (!memberPatientId || memberPatientId === patientIdNumber) return;
+    router.push(`/ke-don-kinh?bn=${memberPatientId}`);
+  };
+
   return (
     <ProtectedRoute>
+    <PatientFamilyProvider
+      benhnhanId={patientIdNumber}
+      patientName={benhNhan?.ten ?? ''}
+      onSelectMember={handleOpenFamilyMember}
+      beforeMemberSwitch={confirmBeforeFamilySwitch}
+    >
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
       <div className="flex flex-col h-[calc(100dvh-68px)] overflow-hidden lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
         
@@ -2218,7 +2226,7 @@ export default function KeDonKinh() {
               mobileTabLabels={mobileTabLabels}
               onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
               mobileHeaderRatio={mobileHeaderRatio}
-              familySummaryText={familySummaryText}
+              familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
               renderBackgroundUploadNotice={renderBackgroundUploadNotice}
             />
 
@@ -2252,7 +2260,7 @@ export default function KeDonKinh() {
               onManageNotes={openNotesManagement}
               switchPageLink={`/ke-don?bn=${benhnhanid}`}
               switchPageLabel="Kê thuốc"
-              familySummaryText={familySummaryText}
+              familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
               renderBackgroundUploadNotice={renderBackgroundUploadNotice}
             />
 
@@ -3686,6 +3694,7 @@ export default function KeDonKinh() {
           </div>
         </DialogContent>
       </Dialog>
+    </PatientFamilyProvider>
     </ProtectedRoute>
   );
 }

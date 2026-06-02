@@ -28,6 +28,8 @@ interface BaseProps {
   switchPageLabel: string;
   onManageNotes?: () => void;
   familySummaryText?: string;
+  /** Interactive family UI (chip). Takes precedence over familySummaryText when set. */
+  familySection?: React.ReactNode;
   renderBackgroundUploadNotice?: () => React.ReactNode;
 }
 
@@ -64,6 +66,7 @@ export function PatientMobileHeader({
   onTabChange,
   onManageNotes,
   familySummaryText,
+  familySection,
   renderBackgroundUploadNotice,
   mobileHeaderRatio = 0,
   className,
@@ -80,7 +83,7 @@ export function PatientMobileHeader({
     let h = 4; // mt-1 (khoảng cách trên đầu block)
     h += 18;   // row year+phone (luôn hiển thị)
     if (benhNhan.diachi)    h += 2 + 18; // mt-0.5 + address
-    if (familySummaryText)  h += 2 + 18; // mt-0.5 + family
+    if (familySection || familySummaryText) h += 2 + 18; // mt-0.5 + family
     const noteCount = Math.min(2, patientNotes.length);
     if (noteCount > 0) {
       h += 4; // mt-1 trước block notes
@@ -316,8 +319,8 @@ export function PatientMobileHeader({
               </div>
             )}
 
-            {/* Row 4: Family summary */}
-            {familySummaryText && (
+            {/* Row 4: Family */}
+            {familySection ?? (familySummaryText ? (
               <div
                 className="flex items-center gap-2 mt-0.5 text-white/85"
                 style={{ fontSize: '12px' }}
@@ -328,7 +331,7 @@ export function PatientMobileHeader({
                 />
                 <span className="truncate">{familySummaryText}</span>
               </div>
-            )}
+            ) : null)}
 
             {/* Row 5: Notes — no "Ghi chú:" prefix, amber if important */}
             {patientNotes.length > 0 && (
@@ -383,6 +386,7 @@ export function PatientDesktopCard({
   switchPageLabel,
   onManageNotes,
   familySummaryText,
+  familySection,
   renderBackgroundUploadNotice,
   className,
 }: PatientDesktopCardProps) {
@@ -437,13 +441,13 @@ export function PatientDesktopCard({
                 </div>
               </button>
 
-              {/* Family summary row */}
-              {familySummaryText && (
+              {/* Family row */}
+              {familySection ?? (familySummaryText ? (
                 <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500 px-1">
                   <Users className="w-3 h-3 text-gray-400 flex-shrink-0" />
                   <span className="truncate">{familySummaryText}</span>
                 </div>
-              )}
+              ) : null)}
 
               {/* Notes inline inside card — clickable to open notes dialog */}
               {patientNotes.length > 0 && (

@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
 import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import Link from 'next/link';
@@ -24,6 +24,11 @@ import PrintDonThuoc from '../components/ke-don/PrintDonThuoc';
 import { PatientMobileHeader, PatientDesktopCard } from '../components/PatientPageHeader';
 import DonKinhMediaPanel, { type DraftDonKinhUploadItem } from '../components/ke-don/DonKinhImageStripPanel';
 import PatientMediaTimeline from '../components/media/PatientMediaTimeline';
+import {
+  PatientFamilyProvider,
+  PatientFamilyMobileChip,
+  PatientFamilyDesktopChip,
+} from '../components/family/PatientFamilyControls';
 
 interface Thuoc {
   id: number;
@@ -311,6 +316,7 @@ function MobileDrugRow({ item, stock, onTap, onDelete, onIncrement, onDecrement 
 export default function KeDon() {
   const { confirm } = useConfirm();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const benhnhanid = searchParams.get('bn');
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
   const { setLai: setFooterLai } = useFooter();
@@ -362,7 +368,6 @@ export default function KeDon() {
   const [dsDienTien, setDsDienTien] = useState<DienTien[]>([]);
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
   const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
-  const [familySummaryText, setFamilySummaryText] = useState('');
   const [dsChon, setDsChon] = useState<ChiTietDonThuoc[]>([]);
   const [newDienTien, setNewDienTien] = useState({ noidung: '', ngay: new Date().toISOString().slice(0, 10) });
   const [ngayKham, setNgayKham] = useState(() => {
@@ -629,24 +634,6 @@ export default function KeDon() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapRatio, benhNhan?.id]);
-
-  // ── Family summary fetch ────────────────────────────────────────
-  const fetchFamilySummary = useCallback(async () => {
-    if (!benhnhanid) return;
-    try {
-      const res = await axios.get(`/api/benh-nhan/family?benhnhanid=${benhnhanid}`);
-      const group = res.data?.data;
-      if (!group?.members?.length) { setFamilySummaryText(''); return; }
-      const selfId = parseInt(benhnhanid);
-      const others = (group.members as Array<{ benhnhan_id: number; role?: string; patient?: { ten?: string } }>)
-        .filter((m) => m.benhnhan_id !== selfId)
-        .map((m) => m.patient?.ten ? (m.role ? `${m.patient.ten} (${m.role})` : m.patient.ten) : null)
-        .filter(Boolean);
-      setFamilySummaryText(others.length > 0 ? others.join(', ') : (group.name ? `Nhóm: ${group.name}` : ''));
-    } catch { setFamilySummaryText(''); }
-  }, [benhnhanid]);
-
-  useEffect(() => { void fetchFamilySummary(); }, [fetchFamilySummary]);
 
   // ── Notes management ────────────────────────────────────────────
   const [openNotesDialog, setOpenNotesDialog] = useState(false);
@@ -1419,6 +1406,28 @@ export default function KeDon() {
     return () => document.removeEventListener('keydown', handler);
   }, [editDonThuocId, luuDonThuoc]);
 
+  const confirmBeforeFamilySwitch = useCallback(async () => {
+    const hasDraftMedia = draftMediaQueue.length > 0;
+    const hasUnsavedRx = !editDonThuocId && (dsChon.length > 0 || chandoan.trim().length > 0);
+    if (!hasDraftMedia && !hasUnsavedRx) return true;
+    return confirm({
+      title: 'Chuyển sang thành viên khác?',
+      message: hasDraftMedia
+        ? 'Đơn thuốc hoặc ảnh tạm chưa lưu sẽ bị mất nếu bạn chuyển bệnh nhân.'
+        : 'Đơn thuốc đang soạn chưa lưu sẽ bị mất nếu bạn chuyển bệnh nhân.',
+      confirmText: 'Chuyển',
+      variant: 'danger',
+    });
+  }, [chandoan, confirm, draftMediaQueue.length, dsChon.length, editDonThuocId]);
+
+  const handleOpenFamilyMember = useCallback(
+    (memberPatientId: number) => {
+      if (!memberPatientId || memberPatientId === patientIdNumber) return;
+      router.push(`/ke-don?bn=${memberPatientId}`);
+    },
+    [patientIdNumber, router],
+  );
+
   if (!benhnhanid) {
     return (
       <div className="p-4">
@@ -1522,6 +1531,12 @@ export default function KeDon() {
 
   return (
     <ProtectedRoute>
+    <PatientFamilyProvider
+      benhnhanId={patientIdNumber}
+      patientName={benhNhan?.ten ?? ''}
+      onSelectMember={handleOpenFamilyMember}
+      beforeMemberSwitch={confirmBeforeFamilySwitch}
+    >
   {/* Mobile: Stack layout, Desktop: Keep current grid (lg and up) */}
   <div className="flex flex-col lg:block">
 
@@ -1543,7 +1558,7 @@ export default function KeDon() {
             mobileTabLabels={mobileTabLabels}
             onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
             mobileHeaderRatio={mobileHeaderRatio}
-            familySummaryText={familySummaryText}
+            familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
             renderBackgroundUploadNotice={renderBackgroundUploadNotice}
           />
 
@@ -2443,7 +2458,7 @@ export default function KeDon() {
         onManageNotes={openNotesManagement}
         switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
         switchPageLabel="Kê đơn kính"
-        familySummaryText={familySummaryText}
+        familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
         renderBackgroundUploadNotice={renderBackgroundUploadNotice}
       />
 
@@ -3069,6 +3084,7 @@ export default function KeDon() {
           </div>
         </DialogContent>
       </Dialog>
+    </PatientFamilyProvider>
     </ProtectedRoute>
   );
 }

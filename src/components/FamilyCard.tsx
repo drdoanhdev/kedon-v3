@@ -33,67 +33,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { usePermissions } from "@/hooks/usePermissions";
-
-// =========================================================================
-// Types
-// =========================================================================
-
-type FamilyRole = "father" | "mother" | "child" | "spouse" | "other" | null;
-
-const ROLE_LABELS: Record<NonNullable<FamilyRole>, string> = {
-  father: "Bố",
-  mother: "Mẹ",
-  child: "Con",
-  spouse: "Vợ/Chồng",
-  other: "Khác",
-};
-
-const ROLE_OPTIONS: { value: FamilyRole; label: string }[] = [
-  { value: null, label: "— Bỏ trống —" },
-  { value: "father", label: "Bố" },
-  { value: "mother", label: "Mẹ" },
-  { value: "child", label: "Con" },
-  { value: "spouse", label: "Vợ/Chồng" },
-  { value: "other", label: "Khác" },
-];
-
-interface PatientLite {
-  id: number;
-  ten: string | null;
-  namsinh?: string | null;
-  dienthoai?: string | null;
-  diachi?: string | null;
-}
-
-interface FamilyMember {
-  id: string;
-  benhnhan_id: number;
-  role: FamilyRole;
-  is_primary: boolean;
-  created_at: string;
-  patient: PatientLite | null;
-}
-
-interface FamilyGroup {
-  id: string;
-  name: string;
-  phone: string | null;
-  address: string | null;
-  note: string | null;
-  branch_id: string | null;
-  created_at: string;
-  updated_at: string;
-  members: FamilyMember[];
-}
-
-interface SearchHit {
-  id: number;
-  ten: string | null;
-  namsinh: string | null;
-  dienthoai: string | null;
-  diachi: string | null;
-  family_group_id: string | null;
-}
+import type { FamilyGroup, FamilyMember, FamilyRole, SearchHit } from "@/components/family/types";
+import {
+  ROLE_OPTIONS,
+  calcAge,
+  formatRole,
+  sortFamilyMembers,
+} from "@/components/family/familyUtils";
+import { invalidateFamilyCache, usePatientFamily } from "@/components/family/usePatientFamily";
 
 export interface FamilyCardProps {
   /** ID bệnh nhân đang xem hồ sơ */
@@ -103,60 +50,28 @@ export interface FamilyCardProps {
   /** Callback khi click vào tên 1 thành viên khác trong nhóm.
    *  Nếu trả về undefined / không truyền: dùng default behaviour (focus query). */
   onSelectMember?: (memberPatientId: number) => void;
-  /** Mặc định true: hiển thị nút mở/đóng card. */
+  /** Mở modal quản lý ngay khi mount (dùng từ desktop strip). */
+  autoOpenManage?: boolean;
+  onAutoOpenManageHandled?: () => void;
+  /** Mở modal thêm thành viên ngay khi mount. */
+  autoOpenAdd?: boolean;
+  onAutoOpenAddHandled?: () => void;
+  autoOpenCreate?: boolean;
+  onAutoOpenCreateHandled?: () => void;
+  autoOpenLink?: boolean;
+  onAutoOpenLinkHandled?: () => void;
+  /** Đang nằm trong bottom sheet mobile — sub-modal mở ở layer riêng. */
+  embeddedInSheet?: boolean;
+  onRequestDialogMode?: (intent: "manage" | "add" | "create" | "link") => void;
+  /** Chỉ hiển thị modal, ẩn card (mobile sau khi đóng sheet). */
+  dialogOnlyMode?: boolean;
+  onModalSessionEnd?: () => void;
   className?: string;
 }
 
-// =========================================================================
-// Helpers
-// =========================================================================
 
-function calcAge(namsinh?: string | null): string {
-  if (!namsinh) return "";
-  const m = String(namsinh).match(/(\d{4})/);
-  if (!m) return "";
-  const year = parseInt(m[1], 10);
-  const now = new Date().getFullYear();
-  if (year > 1900 && year <= now) return `${now - year} tuổi`;
-  return "";
-}
-
-function formatRole(role: FamilyRole): string {
-  if (!role) return "";
-  return ROLE_LABELS[role] || "";
-}
-
-// =========================================================================
-// Module-level cache (clear khi mutate)
-// =========================================================================
-
-interface CacheEntry {
-  data: FamilyGroup | null;
-  fetchedAt: number;
-}
-const FAMILY_CACHE_TTL = 30_000; // 30s
-const familyCache = new Map<number, CacheEntry>(); // benhnhan_id -> entry
-
-function getCached(benhnhanId: number): FamilyGroup | null | undefined {
-  const e = familyCache.get(benhnhanId);
-  if (!e) return undefined;
-  if (Date.now() - e.fetchedAt > FAMILY_CACHE_TTL) {
-    familyCache.delete(benhnhanId);
-    return undefined;
-  }
-  return e.data;
-}
-function setCached(benhnhanId: number, data: FamilyGroup | null) {
-  familyCache.set(benhnhanId, { data, fetchedAt: Date.now() });
-}
-/** Clear cache cho tất cả thành viên của 1 nhóm + bệnh nhân liên quan. */
-function invalidateFamilyCache(memberPatientIds: number[] = []) {
-  if (memberPatientIds.length === 0) {
-    familyCache.clear();
-    return;
-  }
-  for (const id of memberPatientIds) familyCache.delete(id);
-}
+// Re-export for consumers
+export type { FamilyGroup, FamilyMember, FamilyRole } from "@/components/family/types";
 
 // =========================================================================
 // Main component
@@ -166,63 +81,83 @@ export default function FamilyCard({
   benhnhanId,
   patientName,
   onSelectMember,
+  autoOpenManage = false,
+  onAutoOpenManageHandled,
+  autoOpenAdd = false,
+  onAutoOpenAddHandled,
+  autoOpenCreate = false,
+  onAutoOpenCreateHandled,
+  autoOpenLink = false,
+  onAutoOpenLinkHandled,
+  embeddedInSheet = false,
+  onRequestDialogMode,
+  dialogOnlyMode = false,
+  onModalSessionEnd,
   className,
 }: FamilyCardProps) {
   const { has, loading: permLoading } = usePermissions();
   const canEdit = !permLoading && has("manage_patients");
-  const confirm = useConfirm();
+  const { confirm } = useConfirm();
 
-  // Lấy cache nếu có (để click-through giữa member tức thì)
-  const cached = getCached(benhnhanId);
-  const [loading, setLoading] = useState(cached === undefined);
-  const [family, setFamily] = useState<FamilyGroup | null>(cached ?? null);
+  const { family, loading, refetchAndInvalidate } = usePatientFamily(benhnhanId);
 
   const [showCreate, setShowCreate] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showLinkExisting, setShowLinkExisting] = useState(false);
   const [showManage, setShowManage] = useState(false);
 
-  const fetchFamily = useCallback(
-    async (opts?: { background?: boolean }) => {
-      if (!benhnhanId) return;
-      if (!opts?.background) setLoading(true);
-      try {
-        const res = await axios.get(
-          `/api/benh-nhan/family?benhnhanid=${benhnhanId}&_t=${Date.now()}`
-        );
-        const data: FamilyGroup | null = res.data?.data || null;
-        setFamily(data);
-        setCached(benhnhanId, data);
-      } catch {
-        // 401/403/branch issues: để layout/middleware xử lý
-        setFamily(null);
-      } finally {
-        setLoading(false);
+  const endModalSession = useCallback(() => {
+    if (dialogOnlyMode) onModalSessionEnd?.();
+  }, [dialogOnlyMode, onModalSessionEnd]);
+
+  const requestDialog = useCallback(
+    (intent: "manage" | "add" | "create" | "link") => {
+      if (embeddedInSheet && onRequestDialogMode) {
+        onRequestDialogMode(intent);
+        return true;
       }
+      return false;
     },
-    [benhnhanId]
+    [embeddedInSheet, onRequestDialogMode],
   );
 
-  // Lần đầu mount cho benhnhanId này:
-  //  - Không có cache -> fetch foreground (show skeleton)
-  //  - Có cache  -> render ngay, revalidate ở background
-  useEffect(() => {
-    const c = getCached(benhnhanId);
-    if (c !== undefined) {
-      setFamily(c);
-      setLoading(false);
-      fetchFamily({ background: true });
-    } else {
-      fetchFamily();
-    }
-  }, [benhnhanId, fetchFamily]);
+  const openManageFlow = useCallback(() => {
+    if (requestDialog("manage")) return;
+    setShowManage(true);
+  }, [requestDialog]);
 
-  // Sau mỗi mutation: invalidate cache của tất cả member trong nhóm rồi refetch.
-  const refetchAndInvalidate = useCallback(async () => {
-    const ids = family ? family.members.map((m) => m.benhnhan_id) : [benhnhanId];
-    invalidateFamilyCache([...ids, benhnhanId]);
-    await fetchFamily();
-  }, [benhnhanId, family, fetchFamily]);
+  const openAddFlow = useCallback(() => {
+    if (requestDialog("add")) return;
+    setShowAddMember(true);
+  }, [requestDialog]);
+
+  const openCreateFlow = useCallback(() => {
+    if (requestDialog("create")) return;
+    setShowCreate(true);
+  }, [requestDialog]);
+
+  const openLinkFlow = useCallback(() => {
+    if (requestDialog("link")) return;
+    setShowLinkExisting(true);
+  }, [requestDialog]);
+
+  useEffect(() => {
+    if (!autoOpenManage || loading) return;
+    setShowManage(true);
+    onAutoOpenManageHandled?.();
+  }, [autoOpenManage, loading, onAutoOpenManageHandled]);
+
+  useEffect(() => {
+    if (!autoOpenLink || loading) return;
+    setShowLinkExisting(true);
+    onAutoOpenLinkHandled?.();
+  }, [autoOpenLink, loading, onAutoOpenLinkHandled]);
+
+  useEffect(() => {
+    if (!autoOpenCreate || loading) return;
+    setShowCreate(true);
+    onAutoOpenCreateHandled?.();
+  }, [autoOpenCreate, loading, onAutoOpenCreateHandled]);
 
   const handleSelectMember = useCallback(
     (memberPatientId: number) => {
@@ -257,6 +192,27 @@ export default function FamilyCard({
     [family, confirm, refetchAndInvalidate]
   );
 
+  useEffect(() => {
+    if (!autoOpenAdd || loading || !family) return;
+    setShowAddMember(true);
+    onAutoOpenAddHandled?.();
+  }, [autoOpenAdd, family, loading, onAutoOpenAddHandled]);
+
+  if (
+    dialogOnlyMode
+    && !loading
+    && !showCreate
+    && !showAddMember
+    && !showLinkExisting
+    && !showManage
+    && !autoOpenManage
+    && !autoOpenAdd
+    && !autoOpenCreate
+    && !autoOpenLink
+  ) {
+    return null;
+  }
+
   // ----- Render -----
 
   if (loading) {
@@ -290,7 +246,7 @@ export default function FamilyCard({
                 size="sm"
                 variant="outline"
                 disabled={!canEdit}
-                onClick={() => setShowCreate(true)}
+                onClick={() => openCreateFlow()}
               >
                 <Plus className="w-4 h-4 mr-1" /> Tạo gia đình mới
               </Button>
@@ -298,7 +254,7 @@ export default function FamilyCard({
                 size="sm"
                 variant="outline"
                 disabled={!canEdit}
-                onClick={() => setShowLinkExisting(true)}
+                onClick={() => openLinkFlow()}
               >
                 <SearchIcon className="w-4 h-4 mr-1" /> Liên kết gia đình có sẵn
               </Button>
@@ -315,20 +271,22 @@ export default function FamilyCard({
           <CreateFamilyModal
             patientName={patientName}
             benhnhanId={benhnhanId}
-            onClose={() => setShowCreate(false)}
+            onClose={() => { setShowCreate(false); endModalSession(); }}
             onCreated={async () => {
               setShowCreate(false);
               await refetchAndInvalidate();
+              endModalSession();
             }}
           />
         )}
         {showLinkExisting && (
           <LinkExistingFamilyModal
             benhnhanId={benhnhanId}
-            onClose={() => setShowLinkExisting(false)}
+            onClose={() => { setShowLinkExisting(false); endModalSession(); }}
             onLinked={async () => {
               setShowLinkExisting(false);
               await refetchAndInvalidate();
+              endModalSession();
             }}
           />
         )}
@@ -337,10 +295,7 @@ export default function FamilyCard({
   }
 
   // Có family
-  const sortedMembers = [...family.members].sort((a, b) => {
-    if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
-    return a.created_at.localeCompare(b.created_at);
-  });
+  const sortedMembers = sortFamilyMembers(family.members);
 
   return (
     <>
@@ -410,7 +365,7 @@ export default function FamilyCard({
             size="sm"
             variant="outline"
             disabled={!canEdit}
-            onClick={() => setShowAddMember(true)}
+            onClick={() => openAddFlow()}
           >
             <Plus className="w-4 h-4 mr-1" /> Thêm người thân
           </Button>
@@ -418,7 +373,7 @@ export default function FamilyCard({
             size="sm"
             variant="ghost"
             disabled={!canEdit}
-            onClick={() => setShowManage(true)}
+            onClick={() => openManageFlow()}
           >
             <Settings className="w-4 h-4 mr-1" /> Quản lý
           </Button>
@@ -430,10 +385,11 @@ export default function FamilyCard({
           familyId={family.id}
           excludePatientId={benhnhanId}
           existingMemberIds={family.members.map((m) => m.benhnhan_id)}
-          onClose={() => setShowAddMember(false)}
+          onClose={() => { setShowAddMember(false); endModalSession(); }}
           onAdded={async () => {
             setShowAddMember(false);
             await refetchAndInvalidate();
+            endModalSession();
           }}
         />
       )}
@@ -441,11 +397,12 @@ export default function FamilyCard({
       {showManage && (
         <ManageFamilyModal
           family={family}
-          onClose={() => setShowManage(false)}
+          onClose={() => { setShowManage(false); endModalSession(); }}
           onChanged={refetchAndInvalidate}
           onDeleted={async () => {
             setShowManage(false);
             await refetchAndInvalidate();
+            endModalSession();
           }}
           onRemoveMember={handleRemoveMember}
         />
@@ -925,7 +882,7 @@ function ManageFamilyModal({
   onDeleted: () => void;
   onRemoveMember: (memberPatientId: number, memberName: string) => void;
 }) {
-  const confirm = useConfirm();
+  const { confirm } = useConfirm();
   const [editMode, setEditMode] = useState(false);
   const [name, setName] = useState(family.name);
   const [phone, setPhone] = useState(family.phone || "");
