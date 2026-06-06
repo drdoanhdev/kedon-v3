@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Pagination, SimplePagination } from '@/components/ui/pagination';
-import { Trash2, Pencil, Phone, MessageSquare, MessageCircle } from 'lucide-react';
+import { Trash2, Pencil, Phone, MessageSquare, MessageCircle, Search } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -114,165 +114,35 @@ function normalizeZaloPhone(phone: string | null | undefined): string {
 
 interface MobileDonKinhOrderCardProps {
   dk: DonKinh;
-  showProfitUnlocked: boolean;
+  showProfit: boolean;
   isExpanded: boolean;
-  isProfitRevealed: boolean;
   onToggleExpand: (id: number) => void;
-  onRevealProfit: (id: number) => void;
   onDelete: (id: number) => Promise<void>;
   formatMoney: (amount: number) => string;
   formatTime: (value: string) => string;
 }
 
-const PROFIT_REVEAL_WIDTH = 92;
-const PROFIT_SWIPE_THRESHOLD = 38;
-
 const MobileDonKinhOrderCard = React.memo(function MobileDonKinhOrderCard({
   dk,
-  showProfitUnlocked,
+  showProfit,
   isExpanded,
-  isProfitRevealed,
   onToggleExpand,
-  onRevealProfit,
   onDelete,
   formatMoney,
   formatTime,
 }: MobileDonKinhOrderCardProps) {
-  const swipeRef = useRef<HTMLDivElement | null>(null);
-  const pointerIdRef = useRef<number | null>(null);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const startOffsetRef = useRef(0);
-  const currentOffsetRef = useRef(0);
-  const lockAxisRef = useRef<'x' | 'y' | null>(null);
-  const draggingRef = useRef(false);
-  const frameRef = useRef<number | null>(null);
-  const suppressToggleClickRef = useRef(false);
-
   const totalAmount = dk.giatrong + dk.giagong;
   const debtAmount = totalAmount - dk.sotien_da_thanh_toan;
   const isDebt = debtAmount > 0;
-  const rightInfoWidthClass = isDebt ? 'w-[104px]' : 'w-[88px]';
-  const rightInfoPaddingClass = isDebt ? 'pr-[110px]' : 'pr-[94px]';
+  const rightInfoWidthClass = showProfit ? 'w-[112px]' : isDebt ? 'w-[104px]' : 'w-[88px]';
+  const rightInfoPaddingClass = showProfit ? 'pr-[118px]' : isDebt ? 'pr-[110px]' : 'pr-[94px]';
   const rawPhone = (dk.benhnhan.dienthoai || '').trim();
   const dialPhone = normalizeDialPhone(rawPhone);
   const zaloPhone = normalizeZaloPhone(rawPhone);
   const hasPhone = dialPhone.length > 0;
 
-  const applyOffset = useCallback((offset: number, animate: boolean) => {
-    const node = swipeRef.current;
-    if (!node) return;
-    node.style.transition = animate
-      ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
-      : 'none';
-    node.style.transform = `translate3d(${offset}px, 0, 0)`;
-    currentOffsetRef.current = offset;
-  }, []);
-
-  useEffect(() => {
-    const targetOffset = isProfitRevealed && showProfitUnlocked ? -PROFIT_REVEAL_WIDTH : 0;
-    applyOffset(targetOffset, true);
-  }, [applyOffset, isProfitRevealed, showProfitUnlocked]);
-
-  useEffect(() => {
-    return () => {
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-      }
-    };
-  }, []);
-
-  const queueOffset = useCallback((offset: number) => {
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current);
-    }
-    frameRef.current = requestAnimationFrame(() => {
-      applyOffset(offset, false);
-      frameRef.current = null;
-    });
-  }, [applyOffset]);
-
-  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!showProfitUnlocked) return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    suppressToggleClickRef.current = false;
-    pointerIdRef.current = e.pointerId;
-    draggingRef.current = true;
-    lockAxisRef.current = null;
-    startXRef.current = e.clientX;
-    startYRef.current = e.clientY;
-    startOffsetRef.current = isProfitRevealed ? -PROFIT_REVEAL_WIDTH : 0;
-    applyOffset(startOffsetRef.current, false);
-  }, [applyOffset, isProfitRevealed, showProfitUnlocked]);
-
-  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingRef.current || pointerIdRef.current !== e.pointerId) return;
-
-    const deltaX = e.clientX - startXRef.current;
-    const deltaY = e.clientY - startYRef.current;
-
-    if (!lockAxisRef.current) {
-      const absX = Math.abs(deltaX);
-      const absY = Math.abs(deltaY);
-      if (absX < 7 && absY < 7) return;
-      lockAxisRef.current = absX > absY ? 'x' : 'y';
-      if (lockAxisRef.current === 'x' && swipeRef.current) {
-        suppressToggleClickRef.current = true;
-        swipeRef.current.setPointerCapture(e.pointerId);
-        swipeRef.current.style.willChange = 'transform';
-      }
-    }
-
-    if (lockAxisRef.current !== 'x') return;
-    if (deltaX > 0) return;
-
-    const nextOffset = Math.max(
-      -PROFIT_REVEAL_WIDTH,
-      startOffsetRef.current + deltaX
-    );
-    queueOffset(nextOffset);
-  }, [queueOffset]);
-
-  const finalizeSwipe = useCallback((pointerId: number) => {
-    if (!draggingRef.current || pointerIdRef.current !== pointerId) return;
-
-    const lockAxis = lockAxisRef.current;
-    draggingRef.current = false;
-    pointerIdRef.current = null;
-    lockAxisRef.current = null;
-
-    if (swipeRef.current?.hasPointerCapture(pointerId)) {
-      swipeRef.current.releasePointerCapture(pointerId);
-    }
-    if (swipeRef.current) {
-      swipeRef.current.style.willChange = 'auto';
-    }
-
-    if (lockAxis !== 'x') return;
-
-    if (!isProfitRevealed && currentOffsetRef.current <= -PROFIT_SWIPE_THRESHOLD) {
-      onRevealProfit(dk.id);
-      return;
-    }
-
-    const targetOffset = isProfitRevealed && showProfitUnlocked ? -PROFIT_REVEAL_WIDTH : 0;
-    applyOffset(targetOffset, true);
-  }, [applyOffset, dk.id, isProfitRevealed, onRevealProfit, showProfitUnlocked]);
-
-  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    finalizeSwipe(e.pointerId);
-  }, [finalizeSwipe]);
-
-  const onPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    finalizeSwipe(e.pointerId);
-  }, [finalizeSwipe]);
-
   const handleToggleExpand = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    if (suppressToggleClickRef.current) {
-      suppressToggleClickRef.current = false;
-      return;
-    }
     onToggleExpand(dk.id);
   }, [dk.id, onToggleExpand]);
 
@@ -281,24 +151,7 @@ const MobileDonKinhOrderCard = React.memo(function MobileDonKinhOrderCard({
       className={`relative overflow-hidden rounded-2xl border shadow-sm ${isDebt ? 'border-amber-400 bg-amber-50/50' : 'border-slate-200 bg-white'}`}
       onClick={handleToggleExpand}
     >
-      {showProfitUnlocked && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-[92px] items-center justify-center border-l border-emerald-200 bg-emerald-50">
-          <div className="text-center">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Lãi</p>
-            <p className="text-sm font-bold text-emerald-700">{formatMoney(dk.lai)}k</p>
-          </div>
-        </div>
-      )}
-
-      <div
-        ref={swipeRef}
-        className="relative"
-        style={{ transform: 'translate3d(0px, 0, 0)', touchAction: 'pan-y' }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-      >
+      <div className="relative">
         <CardContent className="space-y-2.5 p-3">
           <div className="relative">
             <div className={`absolute right-0 top-0 text-right ${rightInfoWidthClass}`}>
@@ -307,6 +160,13 @@ const MobileDonKinhOrderCard = React.memo(function MobileDonKinhOrderCard({
               {isDebt && (
                 <p className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                   Nợ: {formatMoney(debtAmount)}k
+                </p>
+              )}
+              {showProfit && (
+                <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  isDebt ? 'bg-yellow-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {formatMoney(dk.lai)}k{isDebt ? '/ngày' : ''}
                 </p>
               )}
             </div>
@@ -454,6 +314,33 @@ const MobileDonKinhOrderCard = React.memo(function MobileDonKinhOrderCard({
 
 MobileDonKinhOrderCard.displayName = 'MobileDonKinhOrderCard';
 
+function MobileHeaderIconButton({
+  children,
+  active = false,
+  onClick,
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  onClick: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+        active
+          ? 'bg-white text-[#1f6cc0] shadow-sm ring-2 ring-white/70'
+          : 'bg-white/15 text-white hover:bg-white/25'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 type MobileQuickFilter = 'all' | 'debt';
 
 export default function DonKinhPage() {
@@ -470,9 +357,9 @@ export default function DonKinhPage() {
   // Profit reveal
   const [showProfit, setShowProfit] = useState(false);
   const [mobileQuickFilter, setMobileQuickFilter] = useState<MobileQuickFilter>('all');
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
-  const [revealedProfitCardId, setRevealedProfitCardId] = useState<number | null>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const { has } = usePermissions();
   const canViewProfit = has('view_revenue');
   const { isMultiBranch } = useBranch();
@@ -496,21 +383,21 @@ export default function DonKinhPage() {
 
   useEffect(() => {
     setExpandedCardId(null);
-    setRevealedProfitCardId(null);
   }, [currentPage, rowsPerPage, searchDebounced, debtFilter]);
-
-  useEffect(() => {
-    if (!showProfit) {
-      setRevealedProfitCardId(null);
-    }
-  }, [showProfit]);
 
   useEffect(() => {
     if (!canViewProfit && showProfit) {
       setShowProfit(false);
-      setRevealedProfitCardId(null);
     }
   }, [canViewProfit, showProfit]);
+
+  useEffect(() => {
+    if (!showMobileSearch) return;
+    const timer = window.setTimeout(() => {
+      mobileSearchInputRef.current?.focus();
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [showMobileSearch]);
 
   const applyMobileQuickFilter = useCallback((next: MobileQuickFilter) => {
     setMobileQuickFilter(next);
@@ -526,17 +413,25 @@ export default function DonKinhPage() {
 
   const toggleExpandedCard = useCallback((id: number) => {
     setExpandedCardId((prev) => (prev === id ? null : id));
-    setRevealedProfitCardId(null);
   }, []);
 
-  const revealMobileProfit = useCallback((id: number) => {
+  const toggleMobileSearch = useCallback(() => {
+    setShowMobileSearch((prev) => {
+      if (prev) {
+        setSearch('');
+      }
+      return !prev;
+    });
+  }, []);
+
+  const toggleShowProfit = useCallback(() => {
     if (!canViewProfit) {
       toast.error('Bạn không có quyền xem lãi');
       return;
     }
-    if (!showProfit) setShowProfit(true);
-    setExpandedCardId(null);
-    setRevealedProfitCardId(id);
+    const nextShowProfit = !showProfit;
+    setShowProfit(nextShowProfit);
+    toast.success(nextShowProfit ? 'Đã bật xem lãi' : 'Đã tắt xem lãi');
   }, [canViewProfit, showProfit]);
 
   const handleProfitViewChange = useCallback((value: 'basic' | 'profit') => {
@@ -611,7 +506,6 @@ export default function DonKinhPage() {
       if (res.status === 200) {
         setDonKinhs((prev) => prev.filter((dk) => dk.id !== id));
         setExpandedCardId((prev) => (prev === id ? null : prev));
-        setRevealedProfitCardId((prev) => (prev === id ? null : prev));
         toast.success('Đã xóa đơn kính');
       }
     } catch (error: unknown) {
@@ -632,15 +526,6 @@ export default function DonKinhPage() {
   const filtered = useMemo(() => donKinhs, [donKinhs]);
   const totalPages = useMemo(() => Math.ceil(total / rowsPerPage), [total, rowsPerPage]);
   const paginated = useMemo(() => filtered, [filtered]);
-  const mobileTodayLabel = useMemo(() => new Date().toLocaleDateString('vi-VN'), []);
-  const mobileDebtCount = useMemo(
-    () => filtered.filter((dk) => (dk.giatrong + dk.giagong - dk.sotien_da_thanh_toan) > 0).length,
-    [filtered]
-  );
-  const mobileTotalAmount = useMemo(
-    () => filtered.reduce((sum, dk) => sum + dk.giatrong + dk.giagong, 0),
-    [filtered]
-  );
   const mobileGroupedByDay = useMemo(() => {
     const grouped = new Map<string, {
       key: string;
@@ -690,112 +575,72 @@ export default function DonKinhPage() {
           <>
             {/* Mobile Header */}
             <div className="sticky top-0 z-40 -mx-4 block border-b border-[#1565C0] bg-gradient-to-r from-[#1f78d1] via-[#2d80d7] to-[#1f6cc0] text-white shadow-sm md:hidden">
-              <div className="px-4 pb-2 pt-2.5">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h1 className="text-xl font-extrabold leading-tight tracking-tight text-white">Đơn kính</h1>
-                  </div>
-                  <span className="text-[11px] text-white/90">{mobileTodayLabel}</span>
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
-                  <span className="rounded-full bg-white/15 px-2 py-0.5">● {filtered.length} đơn kính</span>
-                  <span className="rounded-full bg-white/15 px-2 py-0.5">● Nợ: {mobileDebtCount}</span>
-                  <span className="rounded-full bg-white/15 px-2 py-0.5">● Tổng: {formatMoney(mobileTotalAmount)}k</span>
-                </div>
+              <div className="flex items-center justify-between px-4 py-2">
+                <h1 className="text-xl font-extrabold leading-tight tracking-tight text-white">Đơn kính</h1>
+                <MobileHeaderIconButton
+                  ariaLabel="Tìm kiếm"
+                  active={showMobileSearch}
+                  onClick={toggleMobileSearch}
+                >
+                  <Search className="h-4 w-4" />
+                </MobileHeaderIconButton>
               </div>
 
-              <div className="border-t border-white/20 bg-black/10 px-2 pb-2 pt-1.5">
-                <div className="grid grid-cols-2 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => applyMobileQuickFilter('all')}
-                    className={`h-8 rounded-lg text-xs font-medium ${mobileQuickFilter === 'all' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
-                  >
-                    Tất cả
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyMobileQuickFilter('debt')}
-                    className={`h-8 rounded-lg text-xs font-medium ${mobileQuickFilter === 'debt' ? 'bg-white text-[#1f6cc0]' : 'text-white/85'}`}
-                  >
-                    Còn nợ
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Mobile Controls */}
-            <div className="block md:hidden -mt-1">
-              <div className="rounded-xl border border-slate-200 bg-[#f3f1ec] p-2.5">
-                <div className="flex items-center gap-2">
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-out ${
+                  showMobileSearch ? 'max-h-14 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <div className="px-4 pb-2">
                   <Input
+                    ref={mobileSearchInputRef}
                     placeholder="Tìm tên, mã BN, SĐT..."
                     value={search}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       setSearch(e.target.value);
                     }}
-                    className="h-9 border-slate-300 bg-white"
+                    className="h-9 border-white/30 bg-white text-slate-900 placeholder:text-slate-400"
                   />
+                </div>
+              </div>
 
-                  <Button
+              <div className="flex items-center gap-2 border-t border-white/20 bg-black/10 px-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => applyMobileQuickFilter('all')}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    mobileQuickFilter === 'all'
+                      ? 'bg-white text-[#1f6cc0]'
+                      : 'bg-white/15 text-white/90'
+                  }`}
+                >
+                  Tất cả
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyMobileQuickFilter('debt')}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    mobileQuickFilter === 'debt'
+                      ? 'bg-white text-[#1f6cc0]'
+                      : 'bg-white/15 text-white/90'
+                  }`}
+                >
+                  Còn nợ
+                </button>
+                <div className="flex-1" />
+                {canViewProfit && (
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9"
-                    onClick={() => setShowMobileFilters((prev) => !prev)}
+                    onClick={toggleShowProfit}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      showProfit
+                        ? 'bg-amber-400 text-amber-950 font-semibold shadow-sm'
+                        : 'bg-white/15 text-white/90'
+                    }`}
                   >
-                    Bộ lọc
-                  </Button>
-                </div>
-
-                {showMobileFilters && (
-                  <div className="mt-2.5 space-y-2">
-                    <div className="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-2.5 py-2">
-                      <label className="text-sm font-medium text-slate-700">Chỉ hiện đơn còn nợ</label>
-                      <Switch
-                        checked={debtFilter === true}
-                        onCheckedChange={(checked: boolean) => {
-                          setDebtFilter(checked ? true : null);
-                          setMobileQuickFilter(checked ? 'debt' : 'all');
-                          setCurrentPage(1);
-                        }}
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      {canViewProfit && (
-                        <select
-                          value={showProfit ? 'profit' : 'basic'}
-                          onChange={(e) => handleProfitViewChange(e.target.value as 'basic' | 'profit')}
-                          className="h-9 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm"
-                        >
-                          <option value="basic">Xem: Mặc định</option>
-                          <option value="profit">Xem: Có lãi</option>
-                        </select>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-9"
-                        onClick={() => {
-                          setSearch('');
-                          setDebtFilter(null);
-                          setMobileQuickFilter('all');
-                          setCurrentPage(1);
-                        }}
-                      >
-                        Xóa lọc
-                      </Button>
-                    </div>
-                  </div>
+                    Xem
+                  </button>
                 )}
-
-                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                  <span>Hiển thị {filtered.length} đơn · trang {currentPage}</span>
-                  <span>{canViewProfit ? '← vuốt trái để xem lãi' : 'Không có quyền xem lãi'}</span>
-                </div>
               </div>
             </div>
 
@@ -837,7 +682,6 @@ export default function DonKinhPage() {
               className="block md:hidden space-y-2.5"
               onClick={() => {
                 setExpandedCardId(null);
-                setRevealedProfitCardId(null);
               }}
             >
               {mobileGroupedByDay.map((group) => (
@@ -852,11 +696,9 @@ export default function DonKinhPage() {
                       <MobileDonKinhOrderCard
                         key={dk.id}
                         dk={dk}
-                        showProfitUnlocked={showProfit}
+                        showProfit={showProfit}
                         isExpanded={expandedCardId === dk.id}
-                        isProfitRevealed={revealedProfitCardId === dk.id}
                         onToggleExpand={toggleExpandedCard}
-                        onRevealProfit={revealMobileProfit}
                         onDelete={handleDelete}
                         formatMoney={formatMoney}
                         formatTime={formatOrderTime}
@@ -876,9 +718,7 @@ export default function DonKinhPage() {
 
               {paginated.length > 0 && (
                 <div className="rounded-lg bg-slate-100 px-3 py-2 text-center text-[11px] text-slate-500">
-                  {canViewProfit
-                    ? '← Vuốt trái để xem lãi đơn · Chạm bệnh nhân để xem chi tiết và thao tác'
-                    : 'Chạm bệnh nhân để xem chi tiết và thao tác'}
+                  Chạm bệnh nhân để xem chi tiết và thao tác
                 </div>
               )}
             </div>

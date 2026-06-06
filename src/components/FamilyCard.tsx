@@ -14,7 +14,6 @@ import {
   Star,
   ArrowRight,
   Search as SearchIcon,
-  Phone,
   Loader2,
   Trash2,
   Pencil,
@@ -40,6 +39,7 @@ import {
   formatRole,
   sortFamilyMembers,
 } from "@/components/family/familyUtils";
+import { PatientSearchHitDetails } from "@/components/family/PatientSearchHitDetails";
 import { invalidateFamilyCache, usePatientFamily } from "@/components/family/usePatientFamily";
 
 export interface FamilyCardProps {
@@ -601,7 +601,7 @@ function AddMemberModal({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Thêm người thân vào gia đình</DialogTitle>
         </DialogHeader>
@@ -652,7 +652,7 @@ function AddMemberModal({
                     return (
                       <li
                         key={h.id}
-                        className={`p-2 flex items-start gap-2 text-sm ${
+                        className={`p-2.5 flex items-start gap-2 text-sm ${
                           inThisGroup ? "bg-gray-50 text-gray-400" : "hover:bg-emerald-50 cursor-pointer"
                         }`}
                         onClick={() => {
@@ -660,17 +660,7 @@ function AddMemberModal({
                           setPicked(h);
                         }}
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{h.ten || `#${h.id}`}</div>
-                          <div className="text-xs text-gray-500 flex flex-wrap gap-x-2">
-                            {h.dienthoai && (
-                              <span className="inline-flex items-center gap-1">
-                                <Phone className="w-3 h-3" /> {h.dienthoai}
-                              </span>
-                            )}
-                            {calcAge(h.namsinh) && <span>{calcAge(h.namsinh)}</span>}
-                          </div>
-                        </div>
+                        <PatientSearchHitDetails patient={h} />
                         {inThisGroup && (
                           <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
                             Đã trong nhóm
@@ -692,12 +682,7 @@ function AddMemberModal({
           {picked && (
             <div className="border rounded p-3 bg-emerald-50/50 space-y-3">
               <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{picked.ten || `#${picked.id}`}</div>
-                  <div className="text-xs text-gray-600">
-                    {picked.dienthoai || "(không có SĐT)"} · {calcAge(picked.namsinh) || "—"}
-                  </div>
-                </div>
+                <PatientSearchHitDetails patient={picked} />
                 <Button size="sm" variant="ghost" onClick={() => setPicked(null)}>
                   Đổi
                 </Button>
