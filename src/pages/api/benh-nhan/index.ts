@@ -103,6 +103,82 @@ function parsePositiveIntQuery(
   return Math.max(min, Math.min(max, parsed));
 }
 
+function parseBoolQuery(value: string | string[] | undefined, fallback: boolean): boolean {
+  const raw = firstQueryValue(value).trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === '0' || raw === 'false' || raw === 'no') return false;
+  if (raw === '1' || raw === 'true' || raw === 'yes') return true;
+  return fallback;
+}
+
+/** Fallback khi DB chưa có RPC: mỗi BN chỉ lấy 1 dòng mới nhất (dùng index). */
+async function fetchLatestVisitDatesFallback(
+  tenantId: string,
+  patientIds: number[],
+): Promise<Record<number, string | null>> {
+  const map: Record<number, string | null> = {};
+  const CHUNK = 25;
+
+  for (let i = 0; i < patientIds.length; i += CHUNK) {
+    const chunk = patientIds.slice(i, i + CHUNK);
+    await Promise.all(chunk.map(async (pid) => {
+      const [thuocRes, kinhRes] = await Promise.all([
+        supabase
+          .from('DonThuoc')
+          .select('ngay_kham')
+          .eq('benhnhanid', pid)
+          .eq('tenant_id', tenantId)
+          .not('ngay_kham', 'is', null)
+          .order('ngay_kham', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('DonKinh')
+          .select('ngaykham')
+          .eq('benhnhanid', pid)
+          .eq('tenant_id', tenantId)
+          .not('ngaykham', 'is', null)
+          .order('ngaykham', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      const thuocDate = thuocRes.data?.ngay_kham ?? null;
+      const kinhDate = kinhRes.data?.ngaykham ?? null;
+      if (thuocDate && kinhDate) {
+        map[pid] = thuocDate > kinhDate ? thuocDate : kinhDate;
+      } else {
+        map[pid] = thuocDate || kinhDate || null;
+      }
+    }));
+  }
+
+  return map;
+}
+
+/** Lấy ngày khám gần nhất — ưu tiên RPC aggregate, fallback indexed limit(1). */
+async function fetchLatestVisitDates(
+  tenantId: string,
+  patientIds: number[],
+): Promise<Record<number, string | null>> {
+  if (patientIds.length === 0) return {};
+
+  const { data, error } = await supabase.rpc('benhnhan_latest_visits', {
+    p_tenant_id: tenantId,
+    p_patient_ids: patientIds,
+  });
+
+  if (!error && Array.isArray(data)) {
+    const map: Record<number, string | null> = {};
+    for (const row of data as { benhnhanid: number; ngay_kham_gan_nhat: string | null }[]) {
+      map[row.benhnhanid] = row.ngay_kham_gan_nhat ?? null;
+    }
+    return map;
+  }
+
+  return fetchLatestVisitDatesFallback(tenantId, patientIds);
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<
@@ -216,38 +292,13 @@ export default async function handler(
           return res.status(400).json({ message: "Error fetching patient list", error: error.message });
         }
 
-        // Lấy ngày khám gần nhất cho tất cả bệnh nhân trong trang
-        const patientIds = (data ?? []).map(bn => bn.id);
+        // Lấy ngày khám gần nhất (tối ưu: RPC hoặc limit 1/BN — không kéo toàn bộ lịch sử đơn)
+        const patientIds = (data ?? []).map((bn) => bn.id);
+        const includeLastVisit = parseBoolQuery(req.query.includeLastVisit, true);
         let ngayKhamMap: Record<number, string | null> = {};
-        
-        if (patientIds.length > 0) {
-          // Lấy ngày khám gần nhất từ DonThuoc
-          const { data: donThuocDates } = await supabase
-            .from("DonThuoc")
-            .select("benhnhanid, ngay_kham")
-            .in("benhnhanid", patientIds)
-            .eq("tenant_id", tenantId)
-            .order("ngay_kham", { ascending: false });
 
-          // Lấy ngày khám gần nhất từ DonKinh
-          const { data: donKinhDates } = await supabase
-            .from("DonKinh")
-            .select("benhnhanid, ngaykham")
-            .in("benhnhanid", patientIds)
-            .eq("tenant_id", tenantId)
-            .order("ngaykham", { ascending: false });
-
-          // Tính ngày khám gần nhất cho mỗi bệnh nhân
-          for (const pid of patientIds) {
-            const thuocDate = donThuocDates?.find(d => d.benhnhanid === pid)?.ngay_kham;
-            const kinhDate = donKinhDates?.find(d => d.benhnhanid === pid)?.ngaykham;
-            
-            if (thuocDate && kinhDate) {
-              ngayKhamMap[pid] = thuocDate > kinhDate ? thuocDate : kinhDate;
-            } else {
-              ngayKhamMap[pid] = thuocDate || kinhDate || null;
-            }
-          }
+        if (includeLastVisit && patientIds.length > 0) {
+          ngayKhamMap = await fetchLatestVisitDates(tenantId, patientIds);
         }
 
         // Thêm trường tuổi và ngày khám gần nhất khi trả về danh sách
