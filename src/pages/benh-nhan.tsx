@@ -44,6 +44,20 @@ interface BenhNhan {
   branch?: { id: string; ten_chi_nhanh: string } | null;
 }
 
+function calcPatientAge(namsinh: string): number {
+  if (!namsinh) return 0;
+  const now = new Date();
+  if (/^\d{4}$/.test(namsinh)) return now.getFullYear() - parseInt(namsinh, 10);
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(namsinh)) {
+    const [d, m, y] = namsinh.split('/').map(Number);
+    let age = now.getFullYear() - y;
+    const birthdayThisYear = new Date(now.getFullYear(), m - 1, d);
+    if (now < birthdayThisYear) age--;
+    return age;
+  }
+  return 0;
+}
+
 interface PatientNote {
   id: number;
   benhnhan_id: number;
@@ -955,24 +969,31 @@ export default function BenhNhanPage() {
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        await axios.put('/api/benh-nhan', finalForm);
+        const res = await axios.put('/api/benh-nhan', finalForm);
+        const updated = (res.data?.data ?? finalForm) as BenhNhan;
         toast.success('Đã cập nhật bệnh nhân');
+        setBenhNhans((prev) => prev.map((bn) => (
+          bn.id === updated.id
+            ? { ...bn, ...updated, tuoi: calcPatientAge(updated.namsinh) }
+            : bn
+        )));
       } else {
-        await axios.post('/api/benh-nhan', finalForm);
+        const res = await axios.post('/api/benh-nhan', finalForm);
+        const created = res.data?.data as BenhNhan;
         toast.success('Đã thêm bệnh nhân');
+        if (created?.id) {
+          const row: BenhNhan = {
+            ...created,
+            tuoi: calcPatientAge(created.namsinh),
+            ngay_kham_gan_nhat: null,
+          };
+          if (currentPage === 1 && !debouncedSearch.trim()) {
+            setBenhNhans((prev) => [row, ...prev].slice(0, rowsPerPage));
+          }
+          setTotal((prev) => prev + 1);
+        }
       }
       setOpen(false);
-      // Thêm cache-busting parameters khi refetch
-      const timestamp = Date.now();
-      const res = await axios.get(`/api/benh-nhan?page=${currentPage}&pageSize=${rowsPerPage}&search=${encodeURIComponent(debouncedSearch)}&_t=${timestamp}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
-      setBenhNhans(res.data.data || []);
-      setTotal(res.data.total || 0);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi: ${message}`);

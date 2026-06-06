@@ -283,84 +283,37 @@ export default async function handler(
       // Xử lý namsinh: giữ nguyên string format vì DB thực tế lưu string
       const namsinhStr = namsinh.trim();
 
-      // WORKAROUND cho primary key conflict: Tìm ID khả dụng
-      let attempts = 0;
-      const maxAttempts = 10;
-      let lastError = null;
+      // Dùng IDENTITY của DB (id tự tăng = mã bệnh nhân) — không query MAX(id) toàn bảng
+      const insertBase = {
+        ten,
+        namsinh: namsinhStr,
+        dienthoai,
+        diachi,
+        tenant_id: tenantId,
+        ...(branchId ? { branch_id: branchId } : {}),
+      };
 
-      while (attempts < maxAttempts) {
-        try {
-          // Lấy max ID hiện tại
-          const { data: maxData } = await supabase
-            .from("BenhNhan")
-            .select("id")
-            .order("id", { ascending: false })
-            .limit(1);
+      let { data, error } = await supabase
+        .from("BenhNhan")
+        .insert([{ ...insertBase, ghichu: ghichu || null }])
+        .select()
+        .single();
 
-          const maxId = maxData && maxData.length > 0 ? maxData[0].id : 0;
-          const nextId = maxId + 1 + attempts; // Tăng dần để tránh conflict
-
-          // Thử insert với ID cụ thể (id sẽ được dùng làm mã bệnh nhân)
-          let { data, error } = await supabase
-            .from("BenhNhan")
-            .insert([{ 
-              id: nextId,
-              ten, 
-              namsinh: namsinhStr,
-              dienthoai, 
-              diachi,
-              ghichu: ghichu || null,
-              tenant_id: tenantId,
-              ...(branchId ? { branch_id: branchId } : {}),
-            }])
-            .select()
-            .single();
-
-          if (error && isMissingGhichuColumn(error)) {
-            const fallback = await supabase
-              .from("BenhNhan")
-              .insert([{ 
-                id: nextId,
-                ten, 
-                namsinh: namsinhStr,
-                dienthoai, 
-                diachi,
-                tenant_id: tenantId,
-                ...(branchId ? { branch_id: branchId } : {}),
-              }])
-              .select()
-              .single();
-            data = fallback.data as any;
-            error = fallback.error as any;
-          }
-
-          if (error) {
-            lastError = error;
-            if (error.message.includes('duplicate key value violates unique constraint')) {
-              attempts++;
-              console.log(`Attempt ${attempts}: ID ${nextId} conflict, trying ${nextId + 1}...`);
-              continue;
-            } else {
-              return res.status(400).json({ message: "Error adding patient", error: error.message });
-            }
-          }
-
-          return res.status(200).json({ message: "Patient added successfully", data });
-        } catch (insertError) {
-          lastError = insertError;
-          attempts++;
-          console.log(`Attempt ${attempts}: Insert failed, retrying...`, insertError);
-        }
+      if (error && isMissingGhichuColumn(error)) {
+        const fallback = await supabase
+          .from("BenhNhan")
+          .insert([insertBase])
+          .select()
+          .single();
+        data = fallback.data as typeof data;
+        error = fallback.error as typeof error;
       }
 
-      // Nếu đã thử hết số lần mà vẫn lỗi
-      const errorMessage = lastError && typeof lastError === 'object' && 'message' in lastError 
-        ? (lastError as any).message 
-        : "Unknown error";
-      return res.status(400).json({ 
-        message: `Error adding patient after ${attempts} attempts`, 
-        error: errorMessage
-      });
+      if (error) {
+        return res.status(400).json({ message: "Error adding patient", error: error.message });
+      }
+
+      return res.status(200).json({ message: "Patient added successfully", data });
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Unknown error";

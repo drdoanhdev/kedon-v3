@@ -6,59 +6,63 @@ import { withDebtFields, calcDebt } from '../../../lib/debt';
 
 // === INVENTORY HELPERS ===
 
-/** Xuất kho thuốc khi tạo/sửa đơn thuốc. Trừ tonkho trên bảng Thuoc. */
+/** Xuất kho thuốc khi tạo/sửa đơn thuốc. Trừ tonkho qua trigger thuoc_xuat_don. */
 async function processThuocInventory(
   tenantId: string,
   donThuocId: number,
   thuocs: { id: number; soluong: number }[]
 ): Promise<string[]> {
   const warnings: string[] = [];
+  if (thuocs.length === 0) return warnings;
+
+  const thuocIds = [...new Set(thuocs.map((t) => t.id))];
+  const { data: thuocRows, error: fetchErr } = await supabase
+    .from('Thuoc')
+    .select('id, tonkho, tenthuoc, la_thu_thuat')
+    .in('id', thuocIds)
+    .eq('tenant_id', tenantId);
+
+  if (fetchErr) {
+    warnings.push(`Lỗi lấy tồn kho thuốc: ${fetchErr.message}`);
+    return warnings;
+  }
+
+  const thuocMap = new Map((thuocRows || []).map((row) => [row.id, row]));
+  const exportRows: { tenant_id: string; don_thuoc_id: number; thuoc_id: number; so_luong: number }[] = [];
 
   for (const t of thuocs) {
-    // Lấy tonkho hiện tại
-    const { data: thuoc } = await supabase
-      .from('Thuoc')
-      .select('tonkho, tenthuoc, la_thu_thuat')
-      .eq('id', t.id)
-      .eq('tenant_id', tenantId)
-      .single();
-
-    // Thủ thuật không cần quản lý tồn kho
+    const thuoc = thuocMap.get(t.id);
     if (thuoc?.la_thu_thuat) continue;
 
     const tonTruoc = thuoc?.tonkho ?? 0;
+    const label = thuoc?.tenthuoc || `#${t.id}`;
     if (tonTruoc <= 0) {
-      warnings.push(`⚠️ ${thuoc?.tenthuoc || `#${t.id}`}: HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất kho, tồn sẽ âm.`);
+      warnings.push(`⚠️ ${label}: HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất kho, tồn sẽ âm.`);
     } else if (tonTruoc < t.soluong) {
-      warnings.push(`⚠️ ${thuoc?.tenthuoc || `#${t.id}`}: Không đủ tồn (cần ${t.soluong}, tồn ${tonTruoc}). Vẫn xuất kho.`);
+      warnings.push(`⚠️ ${label}: Không đủ tồn (cần ${t.soluong}, tồn ${tonTruoc}). Vẫn xuất kho.`);
     }
 
-    // Ghi phiếu xuất
-    const { error: expErr } = await supabase.from('thuoc_xuat_don').insert({
+    exportRows.push({
       tenant_id: tenantId,
       don_thuoc_id: donThuocId,
       thuoc_id: t.id,
       so_luong: t.soluong,
     });
-
-    if (expErr) {
-      // Bảng chưa tồn tại hoặc lỗi → trừ kho trực tiếp
-      console.log(`📦 thuoc_xuat_don INSERT lỗi (${expErr.message}), trừ kho trực tiếp`);
-      await supabase.from('Thuoc').update({
-        tonkho: tonTruoc - t.soluong,
-      }).eq('id', t.id).eq('tenant_id', tenantId);
-    } else {
-      // Verify trigger đã trừ
-      const { data: after } = await supabase
-        .from('Thuoc').select('tonkho').eq('id', t.id).single();
-      if (after && (after.tonkho ?? 0) >= tonTruoc) {
-        // Trigger chưa fire → trừ trực tiếp
-        await supabase.from('Thuoc').update({
-          tonkho: tonTruoc - t.soluong,
-        }).eq('id', t.id).eq('tenant_id', tenantId);
-      }
-    }
   }
+
+  if (exportRows.length === 0) return warnings;
+
+  const { error: bulkErr } = await supabase.from('thuoc_xuat_don').insert(exportRows);
+  if (bulkErr) {
+    // Bảng chưa tồn tại hoặc lỗi bulk → trừ kho trực tiếp từng dòng
+    await Promise.all(exportRows.map((row) => {
+      const tonTruoc = thuocMap.get(row.thuoc_id)?.tonkho ?? 0;
+      return supabase.from('Thuoc').update({
+        tonkho: tonTruoc - row.so_luong,
+      }).eq('id', row.thuoc_id).eq('tenant_id', tenantId);
+    }));
+  }
+
   return warnings;
 }
 
@@ -71,18 +75,27 @@ async function reverseThuocInventory(tenantId: string, donThuocId: number) {
     .eq('don_thuoc_id', donThuocId);
 
   if (exports && exports.length > 0) {
+    const restoreByThuoc = new Map<number, number>();
     for (const exp of exports) {
-      const { data: thuoc } = await supabase
-        .from('Thuoc').select('tonkho').eq('id', exp.thuoc_id).single();
-      if (thuoc) {
-        await supabase.from('Thuoc').update({
-          tonkho: (thuoc.tonkho ?? 0) + exp.so_luong,
-        }).eq('id', exp.thuoc_id).eq('tenant_id', tenantId);
-      }
+      restoreByThuoc.set(exp.thuoc_id, (restoreByThuoc.get(exp.thuoc_id) || 0) + exp.so_luong);
     }
+
+    const thuocIds = [...restoreByThuoc.keys()];
+    const { data: thuocRows } = await supabase
+      .from('Thuoc')
+      .select('id, tonkho')
+      .in('id', thuocIds)
+      .eq('tenant_id', tenantId);
+
+    await Promise.all((thuocRows || []).map((thuoc) => {
+      const addQty = restoreByThuoc.get(thuoc.id) || 0;
+      return supabase.from('Thuoc').update({
+        tonkho: (thuoc.tonkho ?? 0) + addQty,
+      }).eq('id', thuoc.id).eq('tenant_id', tenantId);
+    }));
+
     await supabase.from('thuoc_xuat_don').delete()
       .eq('tenant_id', tenantId).eq('don_thuoc_id', donThuocId);
-    console.log(`🔄 Hoàn kho ${exports.length} dòng thuốc cho đơn #${donThuocId}`);
   }
 }
 
@@ -285,23 +298,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Kiểm tra giới hạn trial trước khi tạo đơn mới
     if (!(await checkTrialLimit(ctx, res))) return;
     try {
-      console.log('🔍 POST /api/don-thuoc - Request body:', JSON.stringify(req.body, null, 2));
-      
       const { benhnhanid, chandoan, ngay_kham, thuocs, sotien_da_thanh_toan } = req.body;
 
-      console.log('🔍 Extracted values:', { benhnhanid, chandoan, thuocs_count: thuocs?.length, sotien_da_thanh_toan });
-
       if (!benhnhanid || !chandoan || !thuocs || (thuocs as ThuocInput[]).length === 0) {
-        console.log('❌ Validation failed:', { benhnhanid, chandoan, thuocs_length: thuocs?.length });
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
       }
 
-      // Validate thuocs
-      console.log('🔍 Validating thuocs:', thuocs);
       for (const t of thuocs as ThuocInput[]) {
-        console.log('🔍 Validating thuoc:', { id: t.id, soluong: t.soluong, isInteger: Number.isInteger(t.soluong) });
         if (!t.id || !Number.isInteger(t.soluong) || t.soluong <= 0) {
-          console.log('❌ Thuoc validation failed:', t);
           return res.status(400).json({ message: "Dữ liệu thuốc không hợp lệ", details: `thuocid: ${t.id}, soluong: ${t.soluong}` });
         }
         if (!Number.isFinite(Number(t.giaban)) || Number(t.giaban) < 0) {
@@ -318,19 +322,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const no = paidRounded < tongtien;
       const trangthai_thanh_toan = paidRounded === 0 && tongtien > 0 ? 'nợ' : (paidRounded >= tongtien ? 'đã trả' : 'nợ');
 
-      console.log('🔍 About to insert DonThuoc:', { benhnhanid, chandoan, tongtien, no });
-
-      // Lấy thông tin gianhap để tính lãi trước khi insert
       const thuocIds = (thuocs as ThuocInput[]).map(t => t.id);
-      const { data: thuocDetailsForProfit, error: thuocDetailsForProfitError } = await supabase
+      const { data: thuocDetails, error: thuocDetailsError } = await supabase
         .from('Thuoc')
-        .select('id, gianhap')
+        .select('id, gianhap, cachdung, donvitinh')
         .in('id', thuocIds);
 
-      if (thuocDetailsForProfitError) {
-        return res.status(400).json({ message: 'Lỗi khi lấy gian nhập thuốc', error: thuocDetailsForProfitError.message });
+      if (thuocDetailsError || !thuocDetails) {
+        return res.status(400).json({ message: 'Lỗi khi lấy thông tin thuốc', error: thuocDetailsError?.message });
       }
-      const gianhapMap = new Map((thuocDetailsForProfit || []).map(t => [t.id, (t as any).gianhap || 0]));
+      const gianhapMap = new Map(thuocDetails.map(t => [t.id, (t as { gianhap?: number }).gianhap || 0]));
       const lineCostMap = new Map((thuocs as ThuocInput[]).map(t => [t.id, normalizeMoney(t.giavon ?? gianhapMap.get(t.id) ?? 0)]));
       const lai = (thuocs as ThuocInput[]).reduce((sum, t) => {
         const lineSell = normalizeMoney(t.giaban);
@@ -370,23 +371,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .single();
 
       if (donthuocError) {
-        console.log('❌ DonThuoc insert error:', donthuocError);
         return res.status(400).json({ message: "Lỗi khi tạo đơn thuốc", error: donthuocError.message });
-      }
-
-      console.log('✅ DonThuoc inserted successfully:', donthuoc);
-
-      // Lấy thông tin chi tiết (bao gồm cachdung, donvitinh) từ bảng Thuoc (không cần gianhap nữa)
-      const { data: thuocDetails, error: thuocDetailsError } = await supabase
-        .from('Thuoc')
-        .select('id, cachdung, donvitinh')
-        .in('id', thuocIds);
-
-      if (thuocDetailsError || !thuocDetails) {
-        console.log('❌ Error fetching thuoc details:', thuocDetailsError);
-        // Rollback the DonThuoc insertion
-        await supabase.from("DonThuoc").delete().eq("id", donthuoc.id);
-        return res.status(400).json({ message: "Lỗi khi lấy thông tin thuốc", error: thuocDetailsError?.message });
       }
 
       const thuocDetailsMap = new Map(thuocDetails.map(t => [t.id, t]));
@@ -411,19 +396,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return insertItem;
       });
 
-      console.log('🔍 About to insert ChiTietDonThuoc:', chiTietInserts);
-
       const { error: chiTietError } = await supabase
         .from("ChiTietDonThuoc")
         .insert(chiTietInserts);
 
       if (chiTietError) {
-        console.log('❌ ChiTietDonThuoc insert error:', chiTietError);
         await supabase.from("DonThuoc").delete().eq("id", donthuoc.id);
         return res.status(400).json({ message: "Lỗi khi tạo chi tiết đơn thuốc", error: chiTietError.message });
       }
-
-      console.log('✅ ChiTietDonThuoc inserted successfully');
 
       // === INVENTORY: Trừ tồn kho thuốc ===
       let inventoryWarnings: string[] = [];
@@ -477,16 +457,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const no = paidRounded < tongtien;
       const trangthai_thanh_toan = paidRounded === 0 && tongtien > 0 ? 'nợ' : (paidRounded >= tongtien ? 'đã trả' : 'nợ');
 
-      // Lấy gianhap để tính lại lãi khi update
       const thuocIdsUpdate = (thuocs as ThuocInput[]).map(t => t.id);
-      const { data: thuocDetailsProfitUpdate, error: thuocDetailsProfitUpdateError } = await supabase
+      const { data: thuocDetailsUpdate, error: thuocDetailsUpdateError } = await supabase
         .from('Thuoc')
-        .select('id, gianhap')
+        .select('id, gianhap, cachdung, donvitinh')
         .in('id', thuocIdsUpdate);
-      if (thuocDetailsProfitUpdateError) {
-        return res.status(400).json({ message: 'Lỗi khi lấy gian nhập thuốc để cập nhật', error: thuocDetailsProfitUpdateError.message });
+      if (thuocDetailsUpdateError || !thuocDetailsUpdate) {
+        return res.status(400).json({ message: 'Lỗi khi lấy thông tin thuốc để cập nhật', error: thuocDetailsUpdateError?.message });
       }
-      const gianhapMapUpdate = new Map((thuocDetailsProfitUpdate || []).map(t => [t.id, (t as any).gianhap || 0]));
+      const gianhapMapUpdate = new Map(thuocDetailsUpdate.map(t => [t.id, (t as { gianhap?: number }).gianhap || 0]));
       const lineCostMapUpdate = new Map((thuocs as ThuocInput[]).map(t => [t.id, normalizeMoney(t.giavon ?? gianhapMapUpdate.get(t.id) ?? 0)]));
       const laiUpdate = (thuocs as ThuocInput[]).reduce((sum, t) => {
         const lineSell = normalizeMoney(t.giaban);
@@ -527,20 +506,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       await supabase.from("ChiTietDonThuoc").delete().eq("donthuocid", id);
 
-      // Lấy thông tin chi tiết (bao gồm cachdung, donvitinh) từ bảng Thuoc
-      const thuocIds = (thuocs as ThuocInput[]).map(t => t.id);
-      const { data: thuocDetails, error: thuocDetailsError } = await supabase
-        .from('Thuoc')
-        .select('id, cachdung, donvitinh')
-        .in('id', thuocIds);
-
-      if (thuocDetailsError || !thuocDetails) {
-        console.log('❌ Error fetching thuoc details for update:', thuocDetailsError);
-        // Note: We don't rollback the DonThuoc update here, but you might want to handle this case
-        return res.status(400).json({ message: "Lỗi khi lấy thông tin thuốc để cập nhật", error: thuocDetailsError?.message });
-      }
-
-      const thuocDetailsMap = new Map(thuocDetails.map(t => [t.id, t]));
+      const thuocDetailsMap = new Map(thuocDetailsUpdate.map(t => [t.id, t]));
       const snapshotSupported = await supportsChiTietPriceSnapshotColumns();
 
       const chiTietInserts = (thuocs as ThuocInput[]).map((t) => {

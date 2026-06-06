@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
@@ -39,6 +39,24 @@ interface LensStock {
     nha_cung_cap_id?: number | null;
     NhaCungCap?: { id: number; ten: string; dien_thoai?: string | null; zalo_phone?: string | null } | null;
   };
+}
+
+interface LensImportRecord {
+  id: number;
+  lens_stock_id: number;
+  so_luong: number;
+  don_gia: number;
+  ghi_chu: string | null;
+  ngay_nhap: string;
+  lens_stock?: {
+    id: number;
+    sph: number;
+    cyl: number;
+    add_power: number | null;
+    mat?: string | null;
+    HangTrong?: { ten_hang: string; hang?: string | null } | null;
+  } | null;
+  NhaCungCap?: { ten: string } | null;
 }
 
 interface LensOrder {
@@ -103,7 +121,7 @@ interface AlertSummary {
 export default function QuanLyKho() {
   const router = useRouter();
   const { confirm } = useConfirm();
-  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'lens_catalog' | 'frame_stock' | 'import'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'lens_nhap' | 'lens_catalog' | 'frame_stock' | 'import'>('lens_stock');
 
   // Data states
   const [alertData, setAlertData] = useState<AlertSummary | null>(null);
@@ -167,6 +185,7 @@ export default function QuanLyKho() {
   const [expandedStockId, setExpandedStockId] = useState<number | null>(null);
   const touchStartXRef = React.useRef<number>(0);
   const touchStartYRef = React.useRef<number>(0);
+  const suppressTapUntilRef = React.useRef<number>(0);
 
   // Frame (gọng) stock states
   interface GongKinhStock {
@@ -233,6 +252,12 @@ export default function QuanLyKho() {
   const [nhaCungCaps, setNhaCungCaps] = useState<{ id: number; ten: string }[]>([]);
   const [catalogItems, setCatalogItems] = useState<{ thuoc: any[]; trong_kinh: any[]; gong_kinh: any[]; vat_tu: any[] }>({ thuoc: [], trong_kinh: [], gong_kinh: [], vat_tu: [] });
 
+  // Quick import: tròng hết / sắp hết
+  const [quickImportQty, setQuickImportQty] = useState<Record<number, string>>({});
+  const [quickImportNote, setQuickImportNote] = useState('');
+  const [quickImportLoading, setQuickImportLoading] = useState(false);
+  const [lensNhapHistory, setLensNhapHistory] = useState<LensImportRecord[]>([]);
+
   // ============================================
   // FETCH DATA
   // ============================================
@@ -298,6 +323,13 @@ export default function QuanLyKho() {
     } catch {}
   }, []);
 
+  const fetchLensNhapHistory = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/inventory/lens-import', { params: { limit: 200 } });
+      setLensNhapHistory(data || []);
+    } catch {}
+  }, []);
+
   const fetchNhaCungCaps = useCallback(async () => {
     try {
       const { data } = await axios.get('/api/nha-cung-cap');
@@ -329,6 +361,7 @@ export default function QuanLyKho() {
       fetchHangTrongs(),
       fetchLensCatalog(),
       fetchReceipts(),
+      fetchLensNhapHistory(),
       fetchNhaCungCaps(),
     ])
       .finally(() => setLoading(false));
@@ -341,15 +374,15 @@ export default function QuanLyKho() {
     const tabQuery = Array.isArray(router.query.tab) ? router.query.tab[0] : router.query.tab;
     if (!tabQuery || typeof tabQuery !== 'string') return;
 
-    const tabMap: Record<string, 'overview' | 'lens_stock' | 'lens_order' | 'lens_catalog' | 'import'> = {
-      overview: 'overview',
+    const tabMap: Record<string, 'lens_stock' | 'lens_order' | 'lens_nhap' | 'lens_catalog'> = {
       stock: 'lens_stock',
       lens_stock: 'lens_stock',
       order: 'lens_order',
       lens_order: 'lens_order',
+      nhap: 'lens_nhap',
+      lens_nhap: 'lens_nhap',
       catalog: 'lens_catalog',
       lens_catalog: 'lens_catalog',
-      import: 'import',
     };
 
     const mapped = tabMap[tabQuery];
@@ -391,6 +424,7 @@ export default function QuanLyKho() {
       setSelectedStock(null);
       fetchLensStocks();
       fetchReceipts();
+      fetchLensNhapHistory();
       fetchAlerts();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Lỗi nhập kho');
@@ -845,6 +879,104 @@ export default function QuanLyKho() {
     return s;
   };
 
+  const sortLowStockRows = (rows: LensStock[]) =>
+    [...rows].sort((a, b) => {
+      const statusCmp = (a.trang_thai_ton === 'HET' ? 0 : 1) - (b.trang_thai_ton === 'HET' ? 0 : 1);
+      if (statusCmp !== 0) return statusCmp;
+
+      const loaiCmp = (a.HangTrong?.loai_trong || '').localeCompare(b.HangTrong?.loai_trong || '', 'vi');
+      if (loaiCmp !== 0) return loaiCmp;
+
+      const brandCmp = (a.HangTrong?.hang || '').localeCompare(b.HangTrong?.hang || '', 'vi');
+      if (brandCmp !== 0) return brandCmp;
+
+      if (a.sph !== b.sph) return a.sph - b.sph;
+      if (a.cyl !== b.cyl) return a.cyl - b.cyl;
+      if ((a.add_power ?? -999) !== (b.add_power ?? -999)) return (a.add_power ?? -999) - (b.add_power ?? -999);
+      return (a.mat || '').localeCompare(b.mat || '');
+    });
+
+  const buildDefaultQuickImportQty = useCallback((rows: LensStock[]) => {
+    const next: Record<number, string> = {};
+    rows.forEach((stock) => {
+      next[stock.id] = String(Math.max(1, stock.can_nhap_them || 1));
+    });
+    return next;
+  }, []);
+
+  const getQuickImportQty = (stock: LensStock) =>
+    quickImportQty[stock.id] ?? String(Math.max(1, stock.can_nhap_them || 1));
+
+  const handleResetQuickImportQty = () => {
+    const rows = sortLowStockRows(
+      lensStocks.filter((s) => s.trang_thai_ton === 'HET' || s.trang_thai_ton === 'SAP_HET')
+    );
+    setQuickImportQty(buildDefaultQuickImportQty(rows));
+  };
+
+  useEffect(() => {
+    const rows = sortLowStockRows(
+      lensStocks.filter((s) => s.trang_thai_ton === 'HET' || s.trang_thai_ton === 'SAP_HET')
+    );
+    setQuickImportQty((prev) => {
+      const next = { ...prev };
+      rows.forEach((stock) => {
+        if (next[stock.id] === undefined) {
+          next[stock.id] = String(Math.max(1, stock.can_nhap_them || 1));
+        }
+      });
+      Object.keys(next).forEach((id) => {
+        if (!rows.some((stock) => stock.id === parseInt(id, 10))) {
+          delete next[parseInt(id, 10)];
+        }
+      });
+      return next;
+    });
+  }, [lensStocks]);
+
+  const handleSubmitQuickImport = async () => {
+    const rows = sortLowStockRows(
+      lensStocks.filter((s) => s.trang_thai_ton === 'HET' || s.trang_thai_ton === 'SAP_HET')
+    );
+    const validLines = rows
+      .map((stock) => ({
+        stock,
+        qty: parseInt(getQuickImportQty(stock), 10) || 0,
+      }))
+      .filter((line) => line.qty > 0);
+
+    if (validLines.length === 0) {
+      toast.error('Không có dòng nào để nhập (đặt số lượng > 0)');
+      return;
+    }
+
+    setQuickImportLoading(true);
+    try {
+      await Promise.all(
+        validLines.map((line) =>
+          axios.post('/api/inventory/lens-import', {
+            lens_stock_id: line.stock.id,
+            so_luong: line.qty,
+            don_gia: 0,
+            ghi_chu: quickImportNote.trim() || 'Nhập nhanh tròng hết/sắp hết',
+          })
+        )
+      );
+
+      toast.success(`Đã nhập kho ${validLines.length} loại tròng`);
+      setQuickImportNote('');
+      handleResetQuickImportQty();
+      fetchLensStocks();
+      fetchAlerts();
+      fetchReceipts();
+      fetchLensNhapHistory();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Lỗi nhập kho nhanh');
+    } finally {
+      setQuickImportLoading(false);
+    }
+  };
+
   const buildStockNeedTextForStocks = (stocks: LensStock[]): string => {
     if (stocks.length === 0) return '';
     const grouped = new Map<string, { do: string; sl: number; mat: string | null; isProgressive: boolean }[]>();
@@ -1059,6 +1191,23 @@ export default function QuanLyKho() {
     return tt;
   };
 
+  const formatMoney = (v: number) => `${(v || 0).toLocaleString('vi-VN')}đ`;
+
+  const formatDate = (d: string | null) => {
+    if (!d) return '-';
+    return new Date(d).toLocaleDateString('vi-VN');
+  };
+
+  const getLensImportLabel = (record: LensImportRecord) => {
+    const stock = record.lens_stock;
+    if (!stock) return `#${record.lens_stock_id}`;
+    const brand = stock.HangTrong?.hang ? `[${stock.HangTrong.hang}] ` : '';
+    const name = stock.HangTrong?.ten_hang || 'Không rõ';
+    const power = formatDo(stock.sph, stock.cyl, stock.add_power);
+    const eye = stock.mat ? ` · ${stock.mat === 'trai' ? 'Mắt trái' : 'Mắt phải'}` : '';
+    return `${brand}${name} · ${power}${eye}`;
+  };
+
   const filteredLensCatalog = lensCatalog.filter((item) => {
     if (!lensCatalogSearch) return true;
     const s = lensCatalogSearch.toLowerCase();
@@ -1077,6 +1226,26 @@ export default function QuanLyKho() {
     safeLensCatalogPage * LENS_CATALOG_PAGE_SIZE
   );
 
+  const lowStockImportRows = useMemo(
+    () => sortLowStockRows(lensStocks.filter((s) => s.trang_thai_ton === 'HET' || s.trang_thai_ton === 'SAP_HET')),
+    [lensStocks]
+  );
+
+  const topStats = useMemo(() => {
+    const pending = lensOrders.filter((o) => o.trang_thai === 'cho_dat').length;
+    const ordered = lensOrders.filter((o) => o.trang_thai === 'da_dat').length;
+    const needImport = lensStocks.reduce((sum, s) => sum + Math.max(0, s.can_nhap_them || 0), 0);
+
+    return {
+      het: alertData?.summary?.het ?? lensStocks.filter((s) => s.trang_thai_ton === 'HET').length,
+      sapHet: alertData?.summary?.sap_het ?? lensStocks.filter((s) => s.trang_thai_ton === 'SAP_HET').length,
+      pending,
+      ordered,
+      needImport,
+      totalRows: lensStocks.length,
+    };
+  }, [alertData, lensOrders, lensStocks]);
+
   // ============================================
   // RENDER
   // ============================================
@@ -1085,16 +1254,23 @@ export default function QuanLyKho() {
       <FeatureGate feature="inventory_lens">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
-          <div className="flex items-center justify-between mb-4 sm:mb-6">
-            <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6 bg-white rounded-xl border px-3 sm:px-4 py-3">
+            <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản lý kho tròng</h1>
               <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">Tồn kho tròng kính</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="text-[11px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">Hết: {topStats.het}</span>
+                <span className="text-[11px] rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5">Sắp hết: {topStats.sapHet}</span>
+                <span className="text-[11px] rounded-full bg-orange-100 text-orange-700 px-2 py-0.5">Chờ đặt: {topStats.pending}</span>
+                <span className="text-[11px] rounded-full bg-blue-100 text-blue-700 px-2 py-0.5">Đã đặt: {topStats.ordered}</span>
+                <span className="text-[11px] rounded-full bg-cyan-100 text-cyan-700 px-2 py-0.5">Cần nhập: {topStats.needImport}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <Button variant="outline" size="sm" onClick={() => { setLensCatalogPage(1); setActiveTab('lens_catalog'); }}>
                 Danh mục tròng
               </Button>
-              <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); fetchLensCatalog(); fetchHangTrongs(); }} variant="outline" size="sm">
+              <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); fetchLensCatalog(); fetchHangTrongs(); fetchLensNhapHistory(); }} variant="outline" size="sm">
                 <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
               </Button>
             </div>
@@ -1103,11 +1279,10 @@ export default function QuanLyKho() {
           {/* Tabs */}
           <div className="flex gap-1 mb-4 sm:mb-6 bg-white rounded-xl p-1 shadow-sm border overflow-x-auto">
             {[
-              { key: 'overview', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
               { key: 'lens_stock', label: 'Kho tròng kính', mobileLabel: 'Kho tròng', icon: <Eye className="w-4 h-4" /> },
               { key: 'lens_order', label: 'Tròng cần đặt', mobileLabel: 'Cần đặt', icon: <Truck className="w-4 h-4" /> },
+              { key: 'lens_nhap', label: 'Lịch sử nhập', mobileLabel: 'Lịch sử', icon: <ArrowDownToLine className="w-4 h-4" /> },
               { key: 'lens_catalog', label: 'Danh mục tròng', mobileLabel: 'Danh mục', icon: <Tags className="w-4 h-4" /> },
-              { key: 'import', label: 'Phiếu nhập kho', mobileLabel: 'Phiếu nhập', icon: <Upload className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -1271,49 +1446,62 @@ export default function QuanLyKho() {
               {activeTab === 'lens_stock' && (
                 <div className="space-y-3 sm:space-y-4">
                   {/* Filters & Actions */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
-                    <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0">
-                      {['all', 'HET', 'SAP_HET', 'DU'].map(f => (
-                        <button
-                          key={f}
-                          onClick={() => setStockFilter(f)}
-                          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
-                            stockFilter === f ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
-                          }`}
-                        >
-                          {f === 'all' ? 'Tất cả' : trangThaiLabel(f)}
-                        </button>
-                      ))}
-                      <select
-                        className="border rounded-lg px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white min-w-0"
-                        value={hangTrongFilter}
-                        onChange={e => setHangTrongFilter(e.target.value)}
-                      >
-                        <option value="all">-- Loại tròng --</option>
-                        {hangTrongs.map(h => (
-                          <option key={h.id} value={h.id}>{h.ten_hang}</option>
+                  <div className="rounded-xl border bg-white p-3 sm:p-3.5 space-y-3">
+                    <div className="flex flex-col gap-2">
+                      <div className="text-[11px] uppercase tracking-wide text-gray-400">Trạng thái tồn</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['all', 'HET', 'SAP_HET', 'DU'].map(f => (
+                          <button
+                            key={f}
+                            onClick={() => setStockFilter(f)}
+                            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
+                              stockFilter === f ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-600 border hover:bg-gray-100'
+                            }`}
+                          >
+                            {f === 'all' ? 'Tất cả' : trangThaiLabel(f)}
+                          </button>
                         ))}
-                      </select>
-                      <select
-                        className="border rounded-lg px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-white min-w-0"
-                        value={brandFilter}
-                        onChange={e => setBrandFilter(e.target.value)}
-                      >
-                        <option value="all">-- Hãng --</option>
-                        {Array.from(new Set(
-                          hangTrongs
-                            .map(h => (h as any).hang as string | null | undefined)
-                            .filter((b): b is string => !!b && b.trim() !== '')
-                        )).sort().map(b => (
-                          <option key={b} value={b}>{b}</option>
-                        ))}
-                      </select>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 sm:pb-0">
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-[11px] text-gray-500">Lọc theo loại tròng</Label>
+                        <select
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-sm bg-white mt-1"
+                          value={hangTrongFilter}
+                          onChange={e => setHangTrongFilter(e.target.value)}
+                        >
+                          <option value="all">Tất cả loại tròng</option>
+                          {hangTrongs.map(h => (
+                            <option key={h.id} value={h.id}>{h.ten_hang}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label className="text-[11px] text-gray-500">Lọc theo hãng</Label>
+                        <select
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-sm bg-white mt-1"
+                          value={brandFilter}
+                          onChange={e => setBrandFilter(e.target.value)}
+                        >
+                          <option value="all">Tất cả hãng</option>
+                          {Array.from(new Set(
+                            hangTrongs
+                              .map(h => (h as any).hang as string | null | undefined)
+                              .filter((b): b is string => !!b && b.trim() !== '')
+                          )).sort().map(b => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <button
                         onClick={() => setShowInactive(!showInactive)}
                         className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition flex items-center gap-1 whitespace-nowrap ${
-                          showInactive ? 'bg-gray-700 text-white' : 'bg-white text-gray-500 border hover:bg-gray-50'
+                          showInactive ? 'bg-gray-700 text-white' : 'bg-gray-50 text-gray-500 border hover:bg-gray-100'
                         }`}
                       >
                         <Ban className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
@@ -1335,6 +1523,134 @@ export default function QuanLyKho() {
                           <ClipboardCopy className="w-3.5 sm:w-4 h-3.5 sm:h-4 mr-0.5 sm:mr-1" /> Cần nhập
                         </Button>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Nhập tròng nhanh — hết + sắp hết */}
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 sm:p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-900">Nhập tròng nhanh</p>
+                        <p className="text-[11px] text-emerald-700">
+                          Danh sách tự động gồm {lowStockImportRows.length} loại tròng đang hết hoặc sắp hết. Chỉnh số lượng từng dòng rồi bấm nhập tất cả.
+                        </p>
+                      </div>
+                      <Button size="sm" variant="outline" className="sm:ml-auto shrink-0" onClick={handleResetQuickImportQty}>
+                        Làm mới số lượng gợi ý
+                      </Button>
+                    </div>
+
+                    {lowStockImportRows.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-emerald-200 bg-white px-3 py-6 text-center text-sm text-gray-500">
+                        Không có tròng hết hoặc sắp hết — kho đang ổn định.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="hidden md:block overflow-x-auto rounded-lg border border-emerald-100 bg-white">
+                          <table className="w-full text-sm">
+                            <thead className="bg-emerald-50/80 text-left text-[11px] uppercase tracking-wide text-gray-500">
+                              <tr>
+                                <th className="px-3 py-2">Hãng</th>
+                                <th className="px-3 py-2">Loại tròng</th>
+                                <th className="px-3 py-2">Độ</th>
+                                <th className="px-3 py-2 text-center">Tồn</th>
+                                <th className="px-3 py-2 text-center">Trạng thái</th>
+                                <th className="px-3 py-2 text-center w-28">SL nhập</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {lowStockImportRows.map((stock) => (
+                                <tr key={stock.id} className="border-t border-emerald-50 hover:bg-emerald-50/30">
+                                  <td className="px-3 py-2 font-medium text-gray-700">{stock.HangTrong?.hang || '—'}</td>
+                                  <td className="px-3 py-2">{stock.HangTrong?.ten_hang || 'Không rõ'}</td>
+                                  <td className="px-3 py-2 font-mono text-xs">
+                                    {formatDo(stock.sph, stock.cyl, stock.add_power)}
+                                    {stock.mat ? ` · ${stock.mat === 'trai' ? 'Mắt trái' : 'Mắt phải'}` : ''}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-semibold">{stock.ton_hien_tai}</td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${trangThaiColor(stock.trang_thai_ton)}`}>
+                                      {trangThaiLabel(stock.trang_thai_ton)}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      className="h-8 text-center"
+                                      value={getQuickImportQty(stock)}
+                                      onChange={(e) =>
+                                        setQuickImportQty((prev) => ({ ...prev, [stock.id]: e.target.value }))
+                                      }
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="md:hidden space-y-2">
+                          {lowStockImportRows.map((stock) => (
+                            <div key={stock.id} className="rounded-lg border border-emerald-100 bg-white p-3 space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {stock.HangTrong?.hang && (
+                                      <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md uppercase">
+                                        {stock.HangTrong.hang}
+                                      </span>
+                                    )}
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${trangThaiColor(stock.trang_thai_ton)}`}>
+                                      {trangThaiLabel(stock.trang_thai_ton)}
+                                    </span>
+                                  </div>
+                                  <div className="font-medium text-sm mt-1">{stock.HangTrong?.ten_hang || 'Không rõ'}</div>
+                                  <div className="font-mono text-xs text-gray-600 mt-0.5">
+                                    {formatDo(stock.sph, stock.cyl, stock.add_power)}
+                                    {stock.mat ? ` · ${stock.mat === 'trai' ? 'Mắt trái' : 'Mắt phải'}` : ''}
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="text-[10px] text-gray-400">Tồn</div>
+                                  <div className="font-bold text-base">{stock.ton_hien_tai}</div>
+                                </div>
+                              </div>
+                              <div>
+                                <Label className="text-[11px] text-gray-500">Số lượng nhập</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  className="mt-1"
+                                  value={getQuickImportQty(stock)}
+                                  onChange={(e) =>
+                                    setQuickImportQty((prev) => ({ ...prev, [stock.id]: e.target.value }))
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+                      <div className="md:col-span-3">
+                        <Label className="text-[11px] text-gray-500">Ghi chú nhập kho</Label>
+                        <Input
+                          className="mt-1"
+                          placeholder="VD: Nhập nhanh lô NCC hôm nay"
+                          value={quickImportNote}
+                          onChange={(e) => setQuickImportNote(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        className="w-full"
+                        onClick={handleSubmitQuickImport}
+                        disabled={quickImportLoading || lowStockImportRows.length === 0}
+                      >
+                        {quickImportLoading ? 'Đang nhập...' : 'Nhập tất cả'}
+                      </Button>
                     </div>
                   </div>
 
@@ -1399,9 +1715,26 @@ export default function QuanLyKho() {
                   })()}
 
                   {(() => {
-                    const filteredStocks = brandFilter === 'all'
-                      ? lensStocks
-                      : lensStocks.filter(s => (s.HangTrong?.hang || '') === brandFilter);
+                    const filteredStocks = lensStocks.filter((s) => {
+                      if (brandFilter !== 'all' && (s.HangTrong?.hang || '') !== brandFilter) return false;
+                      return true;
+                    });
+                    const sortedStocks = [...filteredStocks].sort((a, b) => {
+                      const loaiA = (a.HangTrong?.loai_trong || 'z_khac').toLowerCase();
+                      const loaiB = (b.HangTrong?.loai_trong || 'z_khac').toLowerCase();
+                      const loaiCmp = loaiA.localeCompare(loaiB, 'vi');
+                      if (loaiCmp !== 0) return loaiCmp;
+
+                      const brandA = (a.HangTrong?.hang || '').toLowerCase();
+                      const brandB = (b.HangTrong?.hang || '').toLowerCase();
+                      const brandCmp = brandA.localeCompare(brandB, 'vi');
+                      if (brandCmp !== 0) return brandCmp;
+
+                      if (a.sph !== b.sph) return a.sph - b.sph;
+                      if (a.cyl !== b.cyl) return a.cyl - b.cyl;
+                      if ((a.add_power ?? -999) !== (b.add_power ?? -999)) return (a.add_power ?? -999) - (b.add_power ?? -999);
+                      return (a.mat || '').localeCompare(b.mat || '');
+                    });
                     const emptyMsg = lensStocks.length === 0
                       ? 'Chưa có dữ liệu kho tròng. Bấm "Thêm độ mới" để bắt đầu.'
                       : 'Không có dữ liệu trong bộ lọc đã chọn.';
@@ -1409,21 +1742,21 @@ export default function QuanLyKho() {
                       <>
                         {/* ---- Mobile card list (hidden on md+) ---- */}
                         <div className="md:hidden space-y-2">
-                          {filteredStocks.length === 0 ? (
+                          {sortedStocks.length === 0 ? (
                             <div className="py-10 text-center text-gray-400 text-sm">{emptyMsg}</div>
                           ) : (
                             <>
                               <p className="text-[11px] text-gray-400 text-right pr-1 select-none">◀ Vuốt trái để thao tác</p>
-                              {filteredStocks.map(stock => {
+                              {sortedStocks.map(stock => {
                                 const isInactive = (stock.HangTrong as any)?.trang_thai === false;
                                 const isSwiped = swipedStockId === stock.id;
                                 const isExpanded = expandedStockId === stock.id;
-                                const actionWidth = isInactive ? 52 : 144;
+                                const actionWidth = isInactive ? 64 : 172;
                                 return (
                                   <div key={stock.id} className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                                     {/* Card content – shifts left on swipe */}
                                     <div
-                                      className={`transition-transform duration-200 ease-out select-none ${isInactive ? 'opacity-60' : ''}`}
+                                      className={`relative z-10 transition-transform duration-200 ease-out select-none ${isInactive ? 'opacity-60' : ''}`}
                                       style={{ transform: isSwiped ? `translateX(-${actionWidth}px)` : 'none', touchAction: 'pan-y' }}
                                       onTouchStart={e => {
                                         touchStartXRef.current = e.touches[0].clientX;
@@ -1433,11 +1766,13 @@ export default function QuanLyKho() {
                                         const dx = touchStartXRef.current - e.changedTouches[0].clientX;
                                         const dy = Math.abs(touchStartYRef.current - e.changedTouches[0].clientY);
                                         if (Math.abs(dx) > dy && Math.abs(dx) > 30) {
+                                          suppressTapUntilRef.current = Date.now() + 250;
                                           if (dx > 0) setSwipedStockId(stock.id);
                                           else setSwipedStockId(null);
                                         }
                                       }}
                                       onClick={() => {
+                                        if (Date.now() < suppressTapUntilRef.current) return;
                                         if (isSwiped) { setSwipedStockId(null); return; }
                                         setExpandedStockId(isExpanded ? null : stock.id);
                                       }}
@@ -1459,7 +1794,7 @@ export default function QuanLyKho() {
                                             </div>
                                             {/* Degree badge */}
                                             <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                                              <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-lg">
+                                              <span className="font-mono text-sm font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-lg">
                                                 {formatSph(stock.sph)}
                                                 {stock.cyl !== 0 && ` / ${stock.cyl >= 0 ? '+' : ''}${stock.cyl.toFixed(2)}`}
                                                 {stock.add_power != null && ` ADD${stock.add_power >= 0 ? '+' : ''}${stock.add_power.toFixed(2)}`}
@@ -1475,11 +1810,6 @@ export default function QuanLyKho() {
                                           <div className="text-right shrink-0">
                                             <div className={`text-3xl font-bold leading-none tabular-nums ${stock.ton_hien_tai <= 0 ? 'text-red-600' : stock.ton_hien_tai < stock.muc_ton_can_co ? 'text-amber-500' : 'text-emerald-600'}`}>
                                               {stock.ton_hien_tai}
-                                            </div>
-                                            <div className="mt-1">
-                                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${trangThaiColor(stock.trang_thai_ton)}`}>
-                                                {trangThaiLabel(stock.trang_thai_ton)}
-                                              </span>
                                             </div>
                                             {stock.can_nhap_them > 0 && (
                                               <div className="text-[11px] text-blue-600 font-semibold mt-0.5">
@@ -1509,15 +1839,15 @@ export default function QuanLyKho() {
                                           </div>
                                         )}
 
-                                        {/* Expand/collapse hint */}
-                                        <div className="flex justify-center mt-1.5">
-                                          <span className="text-[10px] text-gray-300">{isExpanded ? '▲ thu gọn' : '▼ chi tiết'}</span>
-                                        </div>
                                       </div>
                                     </div>
 
                                     {/* Action buttons revealed on swipe-left */}
-                                    <div className="absolute right-0 top-0 bottom-0 flex items-center gap-1.5 px-2">
+                                    <div
+                                      className={`absolute right-0 top-0 bottom-0 z-0 flex flex-row justify-center items-center gap-2 px-2 transition-opacity duration-150 ${
+                                        isSwiped ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                                      }`}
+                                    >
                                       <button
                                         onClick={e => {
                                           e.stopPropagation();
@@ -1534,7 +1864,7 @@ export default function QuanLyKho() {
                                           });
                                           setShowEditStock(true);
                                         }}
-                                        className="w-10 h-10 rounded-xl bg-blue-500 active:bg-blue-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                                        className="w-11 h-11 rounded-xl bg-blue-500 active:bg-blue-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
                                         title="Sửa thông số"
                                       >
                                         <Pencil className="w-4 h-4" />
@@ -1548,7 +1878,7 @@ export default function QuanLyKho() {
                                               setSelectedStock(stock);
                                               setShowImport(true);
                                             }}
-                                            className="w-10 h-10 rounded-xl bg-emerald-500 active:bg-emerald-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                                            className="w-11 h-11 rounded-xl bg-emerald-500 active:bg-emerald-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
                                             title="Nhập kho"
                                           >
                                             <ArrowDownToLine className="w-4 h-4" />
@@ -1560,7 +1890,7 @@ export default function QuanLyKho() {
                                               setSelectedStock(stock);
                                               setShowDamaged(true);
                                             }}
-                                            className="w-10 h-10 rounded-xl bg-red-500 active:bg-red-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
+                                            className="w-11 h-11 rounded-xl bg-red-500 active:bg-red-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-transform"
                                             title="Xuất hỏng"
                                           >
                                             <Ban className="w-4 h-4" />
@@ -1597,10 +1927,10 @@ export default function QuanLyKho() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {filteredStocks.length === 0 ? (
+                                  {sortedStocks.length === 0 ? (
                                     <tr><td colSpan={12} className="p-8 text-center text-gray-400">{emptyMsg}</td></tr>
                                   ) : (
-                                    filteredStocks.map(stock => {
+                                    sortedStocks.map(stock => {
                                       const isInactive = (stock.HangTrong as any)?.trang_thai === false;
                                       return (
                                       <tr key={stock.id} className={`border-b hover:bg-gray-50 ${isInactive ? 'opacity-50 bg-gray-50' : ''}`}>
@@ -1689,6 +2019,95 @@ export default function QuanLyKho() {
                     );
                   })()}
                 </div>
+              )}
+
+              {/* ======================== TAB: LỊCH SỬ NHẬP ======================== */}
+              {activeTab === 'lens_nhap' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <ArrowDownToLine className="w-5 h-5" />
+                      Lịch sử nhập kho tròng ({lensNhapHistory.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {lensNhapHistory.length === 0 ? (
+                      <p className="text-center py-8 text-gray-400">Chưa có lịch sử nhập kho tròng</p>
+                    ) : (
+                      <>
+                        <div className="hidden md:block overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b text-left text-gray-500">
+                                <th className="py-2 pr-4">Ngày nhập</th>
+                                <th className="py-2 pr-4">Loại tròng</th>
+                                <th className="py-2 pr-4">Độ</th>
+                                <th className="py-2 pr-4 text-right">Số lượng</th>
+                                <th className="py-2 pr-4 text-right">Đơn giá</th>
+                                <th className="py-2 pr-4 text-right">Thành tiền</th>
+                                <th className="py-2 pr-4">NCC</th>
+                                <th className="py-2">Ghi chú</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {lensNhapHistory.map((record) => {
+                                const stock = record.lens_stock;
+                                return (
+                                  <tr key={record.id} className="border-b last:border-0">
+                                    <td className="py-2 pr-4 whitespace-nowrap">{formatDate(record.ngay_nhap)}</td>
+                                    <td className="py-2 pr-4 font-medium">
+                                      {stock?.HangTrong?.hang && (
+                                        <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md uppercase mr-1">
+                                          {stock.HangTrong.hang}
+                                        </span>
+                                      )}
+                                      {stock?.HangTrong?.ten_hang || `#${record.lens_stock_id}`}
+                                    </td>
+                                    <td className="py-2 pr-4 font-mono text-xs">
+                                      {stock
+                                        ? `${formatDo(stock.sph, stock.cyl, stock.add_power)}${stock.mat ? ` · ${stock.mat === 'trai' ? 'Mắt trái' : 'Mắt phải'}` : ''}`
+                                        : '-'}
+                                    </td>
+                                    <td className="py-2 pr-4 text-right font-bold">{record.so_luong}</td>
+                                    <td className="py-2 pr-4 text-right">{formatMoney(record.don_gia || 0)}</td>
+                                    <td className="py-2 pr-4 text-right">{formatMoney((record.so_luong || 0) * (record.don_gia || 0))}</td>
+                                    <td className="py-2 pr-4 text-gray-500">{record.NhaCungCap?.ten || '-'}</td>
+                                    <td className="py-2 text-gray-500">{record.ghi_chu || '-'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="md:hidden space-y-2">
+                          {lensNhapHistory.map((record) => (
+                            <div key={record.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-[11px] text-gray-400">{formatDate(record.ngay_nhap)}</div>
+                                  <div className="font-medium text-sm mt-0.5">{getLensImportLabel(record)}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="font-bold text-base">{record.so_luong}</div>
+                                  <div className="text-[10px] text-gray-400">miếng</div>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
+                                <span>ĐG: {formatMoney(record.don_gia || 0)}</span>
+                                <span>TT: {formatMoney((record.so_luong || 0) * (record.don_gia || 0))}</span>
+                                {record.NhaCungCap?.ten && <span>NCC: {record.NhaCungCap.ten}</span>}
+                              </div>
+                              {record.ghi_chu && (
+                                <div className="mt-1.5 text-[11px] text-gray-400">{record.ghi_chu}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
               )}
 
               {/* ======================== TAB: DANH MỤC TRÒNG ======================== */}
