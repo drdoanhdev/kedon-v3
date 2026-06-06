@@ -31,6 +31,163 @@ function isMissingGhichuColumn(error: unknown): boolean {
   return text.includes('ghichu') && (text.includes('column') || maybe.code === '42703');
 }
 
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const maybe = error as { message?: string; code?: string };
+  const text = (maybe.message || '').toLowerCase();
+  return maybe.code === '42P01'
+    || maybe.code === 'PGRST205'
+    || text.includes('does not exist')
+    || text.includes('could not find the table')
+    || text.includes('schema cache');
+}
+
+async function deleteOptionalByPatient(
+  table: string,
+  column: string,
+  patientId: number,
+  tenantId?: string,
+): Promise<SupabaseError | null> {
+  let query = supabase.from(table).delete().eq(column, patientId);
+  if (tenantId) query = query.eq('tenant_id', tenantId);
+  const { error } = await query;
+  if (error && isMissingRelationError(error)) return null;
+  return error as SupabaseError | null;
+}
+
+async function reverseDonKinhInventoryForDelete(tenantId: string, donKinhId: number): Promise<void> {
+  try {
+    const { data: lensExports } = await supabase
+      .from('lens_export_sale')
+      .select('lens_stock_id, so_luong')
+      .eq('tenant_id', tenantId)
+      .eq('don_kinh_id', donKinhId);
+
+    for (const exp of lensExports || []) {
+      await supabase.rpc('adjust_lens_stock', { p_lens_stock_id: exp.lens_stock_id, p_delta: exp.so_luong });
+    }
+    await supabase.from('lens_export_sale').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
+
+    const { data: frameExports } = await supabase
+      .from('frame_export')
+      .select('gong_kinh_id, so_luong')
+      .eq('tenant_id', tenantId)
+      .eq('don_kinh_id', donKinhId);
+
+    for (const exp of frameExports || []) {
+      await supabase.rpc('adjust_frame_stock', { p_gong_kinh_id: exp.gong_kinh_id, p_delta: exp.so_luong });
+    }
+    await supabase.from('frame_export').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
+
+    await supabase
+      .from('lens_order')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('don_kinh_id', donKinhId)
+      .in('trang_thai', ['cho_dat']);
+  } catch (err) {
+    console.warn(`Could not reverse inventory for DonKinh #${donKinhId}:`, err);
+  }
+}
+
+async function deletePatientCascade(patientId: number, tenantId: string): Promise<SupabaseError | null> {
+  // NoBenhNhan chỉ có ở một số DB (vd. Sáng Mắt) — xóa trước để không chặn FK
+  {
+    const { error } = await supabase.from('NoBenhNhan').delete().eq('benhnhanid', patientId);
+    if (error && !isMissingRelationError(error)) return error as SupabaseError;
+  }
+
+  const { data: donKinhs, error: donKinhListError } = await supabase
+    .from('DonKinh')
+    .select('id')
+    .eq('benhnhanid', patientId)
+    .eq('tenant_id', tenantId);
+
+  if (donKinhListError) return donKinhListError as SupabaseError;
+
+  for (const dk of donKinhs || []) {
+    {
+      const { error } = await supabase.from('NoBenhNhan').delete().eq('donkinhid', dk.id);
+      if (error && !isMissingRelationError(error)) return error as SupabaseError;
+    }
+
+    await reverseDonKinhInventoryForDelete(tenantId, dk.id);
+
+    const { error: deleteDonKinhError } = await supabase
+      .from('DonKinh')
+      .delete()
+      .eq('id', dk.id)
+      .eq('tenant_id', tenantId);
+
+    if (deleteDonKinhError) return deleteDonKinhError as SupabaseError;
+  }
+
+  const { data: donThuocs, error: donThuocListError } = await supabase
+    .from('DonThuoc')
+    .select('id')
+    .eq('benhnhanid', patientId)
+    .eq('tenant_id', tenantId);
+
+  if (donThuocListError) return donThuocListError as SupabaseError;
+
+  if (donThuocs && donThuocs.length > 0) {
+    const donThuocIds = donThuocs.map((dt) => dt.id);
+
+    {
+      const { error } = await supabase.from('NoBenhNhan').delete().in('donthuocid', donThuocIds);
+      if (error && !isMissingRelationError(error)) return error as SupabaseError;
+    }
+
+    {
+      const { error } = await supabase.from('don_thuoc_media').delete().eq('tenant_id', tenantId).in('don_thuoc_id', donThuocIds);
+      if (error && !isMissingRelationError(error)) return error as SupabaseError;
+    }
+
+    const { error: deleteChiTietError } = await supabase
+      .from('ChiTietDonThuoc')
+      .delete()
+      .in('donthuocid', donThuocIds);
+
+    if (deleteChiTietError) return deleteChiTietError as SupabaseError;
+
+    const { error: deleteDonThuocError } = await supabase
+      .from('DonThuoc')
+      .delete()
+      .eq('benhnhanid', patientId)
+      .eq('tenant_id', tenantId);
+
+    if (deleteDonThuocError) return deleteDonThuocError as SupabaseError;
+  }
+
+  const optionalTables: Array<[string, string, boolean]> = [
+    ['ChoKham', 'benhnhanid', true],
+    ['DienTien', 'benhnhanid', true],
+    ['hen_kham_lai', 'benhnhanid', true],
+    ['family_members', 'benhnhan_id', true],
+    ['patient_notes_simple', 'benhnhan_id', true],
+    ['patient_alerts', 'benhnhan_id', true],
+    ['patient_contact_tasks', 'benhnhan_id', true],
+    ['crm_care_status', 'benhnhan_id', true],
+    ['recent_activity_events', 'patient_id', true],
+    ['patient_transfers', 'benhnhan_id', true],
+    ['don_thuoc_media', 'benhnhan_id', true],
+    ['don_kinh_media', 'benhnhan_id', true],
+  ];
+
+  for (const [table, column, withTenant] of optionalTables) {
+    const err = await deleteOptionalByPatient(table, column, patientId, withTenant ? tenantId : undefined);
+    if (err) return err;
+  }
+
+  const { error: deleteBenhNhanError } = await supabase
+    .from('BenhNhan')
+    .delete()
+    .eq('id', patientId)
+    .eq('tenant_id', tenantId);
+
+  return deleteBenhNhanError as SupabaseError | null;
+}
+
 function escapePostgrestLikeValue(value: string): string {
   return value.replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -487,67 +644,12 @@ export default async function handler(
         return res.status(400).json({ message: "Invalid patient ID format" });
       }
 
-      // XÓA CASCADE: Xóa theo thứ tự để tránh foreign key constraint
-      
-      // 1. Lấy danh sách đơn thuốc của bệnh nhân (trong tenant)
-      const { data: donThuocs } = await supabase
-        .from("DonThuoc")
-        .select("id")
-        .eq("benhnhanid", patientId)
-        .eq("tenant_id", tenantId);
+      const deleteError = await deletePatientCascade(patientId, tenantId);
 
-      if (donThuocs && donThuocs.length > 0) {
-        const donThuocIds = donThuocs.map(dt => dt.id);
-        
-        // 2. Xóa chi tiết đơn thuốc
-        const { error: deleteChiTietError } = await supabase
-          .from("ChiTietDonThuoc")
-          .delete()
-          .in("donthuocid", donThuocIds);
-
-        if (deleteChiTietError) {
-          return res.status(400).json({ 
-            message: "Error deleting prescription details", 
-            error: deleteChiTietError.message 
-          });
-        }
-
-        // 3. Xóa đơn thuốc
-        const { error: deleteDonThuocError } = await supabase
-          .from("DonThuoc")
-          .delete()
-          .eq("benhnhanid", patientId);
-
-        if (deleteDonThuocError) {
-          return res.status(400).json({ 
-            message: "Error deleting prescriptions", 
-            error: deleteDonThuocError.message 
-          });
-        }
-      }
-
-      // 4. Xóa diễn tiến bệnh (nếu có)
-      const { error: deleteDienTienError } = await supabase
-        .from("DienTien")
-        .delete()
-        .eq("benhnhanid", patientId);
-
-      if (deleteDienTienError) {
-        console.log("Warning: Could not delete DienTien records:", deleteDienTienError.message);
-        // Không return error vì có thể table DienTien không tồn tại
-      }
-
-      // 5. Cuối cùng xóa bệnh nhân
-      const { error: deleteBenhNhanError }: { error: SupabaseError | null } = await supabase
-        .from("BenhNhan")
-        .delete()
-        .eq("id", patientId)
-        .eq("tenant_id", tenantId);
-
-      if (deleteBenhNhanError) {
-        return res.status(400).json({ 
-          message: "Error deleting patient", 
-          error: deleteBenhNhanError.message 
+      if (deleteError) {
+        return res.status(400).json({
+          message: "Error deleting patient",
+          error: deleteError.message,
         });
       }
 

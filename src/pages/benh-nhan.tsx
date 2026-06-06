@@ -1045,8 +1045,8 @@ export default function BenhNhanPage() {
         console.error('Response data:', error.response?.data);
         console.error('Response status:', error.response?.status);
       }
-      const message = axios.isAxiosError(error) && error.response?.data?.message 
-        ? error.response.data.message 
+      const message = axios.isAxiosError(error) && error.response?.data
+        ? [error.response.data.message, error.response.data.error].filter(Boolean).join(': ')
         : error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi khi xóa bệnh nhân: ${message}`);
     }
