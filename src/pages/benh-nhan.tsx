@@ -28,7 +28,7 @@ import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
 import ChoKhamPanel, { ChoKhamPanelRef } from '@/components/ChoKhamPanel';
 import FamilyCard from '@/components/FamilyCard';
 import { useBranch } from '../contexts/BranchContext';
-import { pushRecentActivity } from '@/lib/recentActivity';
+import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface BenhNhan {
@@ -542,6 +542,16 @@ export default function BenhNhanPage() {
     setSelectedBenhNhanId(focusId);
     setActiveTab("don-thuoc");
     fetchDonThuoc(focusId);
+
+    const patient = buildActivityPatientRef(findPatientById(focusId));
+    if (patient) {
+      pushRecentActivity({
+        action: 'quick_history_open',
+        patient,
+        source: 'benh-nhan_focus',
+      });
+    }
+
     pendingFocusPatientIdRef.current = null;
 
     const params = new URLSearchParams(window.location.search);
@@ -551,7 +561,7 @@ export default function BenhNhanPage() {
       const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
       router.replace(nextUrl, undefined, { shallow: true });
     }
-  }, [benhNhans, fetchDonThuoc, router.isReady, router.pathname]);
+  }, [benhNhans, fetchDonThuoc, findPatientById, router.isReady, router.pathname]);
 
   const handleSelectBenhNhan = useCallback(
     (benhnhanid: number) => {
@@ -995,7 +1005,9 @@ export default function BenhNhanPage() {
       }
       setOpen(false);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = axios.isAxiosError(error) && error.response?.data
+        ? [error.response.data.message, error.response.data.error].filter(Boolean).join(': ')
+        : error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi: ${message}`);
     } finally {
       setIsSubmitting(false);

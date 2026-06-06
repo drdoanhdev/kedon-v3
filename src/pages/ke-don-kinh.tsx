@@ -39,6 +39,7 @@ import {
   removeBackgroundUploadTask,
   updateBackgroundUploadTask,
 } from '@/lib/media/backgroundUploadPersistence';
+import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
 
 interface BenhNhan {
   id: number;
@@ -499,6 +500,7 @@ export default function KeDonKinh() {
   }, [benhnhanid]);
 
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
+  const lastActivityPatientIdRef = useRef<number | null>(null);
   const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [donKinhs, setDonKinhs] = useState<DonKinh[]>([]); // lịch sử đơn kính
@@ -1213,6 +1215,25 @@ export default function KeDonKinh() {
 
     fetchBenhNhan();
   }, [benhnhanid]);
+
+  useEffect(() => {
+    lastActivityPatientIdRef.current = null;
+  }, [benhnhanid]);
+
+  useEffect(() => {
+    if (!benhNhan?.id) return;
+    if (lastActivityPatientIdRef.current === benhNhan.id) return;
+    lastActivityPatientIdRef.current = benhNhan.id;
+
+    const patient = buildActivityPatientRef(benhNhan);
+    if (!patient) return;
+
+    pushRecentActivity({
+      action: 'open_rx_glasses',
+      patient,
+      source: 'ke-don-kinh_page',
+    });
+  }, [benhNhan]);
 
   // Fetch lịch sử đơn kính
   useEffect(() => {

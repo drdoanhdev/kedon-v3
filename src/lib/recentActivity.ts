@@ -64,8 +64,8 @@ const ACTIVITY_STORAGE_KEY = 'mbn:recent_activity_v1';
 const LEGACY_RECENT_KEY = 'mbn:recent_patients';
 const LAST_SYNC_AT_KEY = 'mbn:recent_activity_last_sync_at';
 const SYNC_BACKOFF_KEY = 'mbn:recent_activity_sync_backoff_v1';
-const MAX_ACTIVITY = 40;
-const MAX_RECENT_PATIENTS = 8;
+const MAX_ACTIVITY = 60;
+export const MAX_RECENT_PATIENTS = 30;
 const UPDATE_EVENT_NAME = 'mbn:activity-updated';
 
 function nowTs(): number {
@@ -196,6 +196,30 @@ function compactEvents(events: RecentActivityEvent[]): RecentActivityEvent[] {
   }
 
   return next;
+}
+
+export function buildActivityPatientRef(patient: {
+  id?: number | null;
+  ten?: string | null;
+  dienthoai?: string | null;
+  diachi?: string | null;
+  namsinh?: string | null;
+  mabenhnhan?: string | null;
+} | null | undefined): ActivityPatientRef | null {
+  const id = Number(patient?.id);
+  if (!Number.isFinite(id) || id <= 0) return null;
+
+  const ten = (patient?.ten || '').trim();
+  if (!ten) return null;
+
+  return {
+    id,
+    ten,
+    dienthoai: patient?.dienthoai || undefined,
+    diachi: patient?.diachi || undefined,
+    namsinh: patient?.namsinh || undefined,
+    mabenhnhan: patient?.mabenhnhan || undefined,
+  };
 }
 
 export function loadRecentActivities(): RecentActivityEvent[] {

@@ -29,6 +29,7 @@ import {
   PatientFamilyMobileChip,
   PatientFamilyDesktopChip,
 } from '../components/family/PatientFamilyControls';
+import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
 
 interface Thuoc {
   id: number;
@@ -367,6 +368,7 @@ export default function KeDon() {
   const [dsChiTietDonCu, setDsChiTietDonCu] = useState<{ [donthuocid: number]: ChiTietDonThuoc[] }>({});
   const [dsDienTien, setDsDienTien] = useState<DienTien[]>([]);
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
+  const lastActivityPatientIdRef = useRef<number | null>(null);
   const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
   const [dsChon, setDsChon] = useState<ChiTietDonThuoc[]>([]);
   const [newDienTien, setNewDienTien] = useState({ noidung: '', ngay: new Date().toISOString().slice(0, 10) });
@@ -907,6 +909,25 @@ export default function KeDon() {
     };
     fetchData();
   }, [benhnhanid, authReady]);
+
+  useEffect(() => {
+    lastActivityPatientIdRef.current = null;
+  }, [benhnhanid]);
+
+  useEffect(() => {
+    if (!benhNhan?.id) return;
+    if (lastActivityPatientIdRef.current === benhNhan.id) return;
+    lastActivityPatientIdRef.current = benhNhan.id;
+
+    const patient = buildActivityPatientRef(benhNhan);
+    if (!patient) return;
+
+    pushRecentActivity({
+      action: 'open_rx_drug',
+      patient,
+      source: 'ke-don_page',
+    });
+  }, [benhNhan]);
 
   // Focus mặc định vào ô chẩn đoán (desktop)
   useEffect(() => {

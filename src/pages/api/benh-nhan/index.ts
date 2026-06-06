@@ -334,7 +334,6 @@ export default async function handler(
       // Xử lý namsinh: giữ nguyên string format vì DB thực tế lưu string
       const namsinhStr = namsinh.trim();
 
-      // Dùng IDENTITY của DB (id tự tăng = mã bệnh nhân) — không query MAX(id) toàn bảng
       const insertBase = {
         ten,
         namsinh: namsinhStr,
@@ -344,20 +343,61 @@ export default async function handler(
         ...(branchId ? { branch_id: branchId } : {}),
       };
 
-      let { data, error } = await supabase
-        .from("BenhNhan")
-        .insert([{ ...insertBase, ghichu: ghichu || null }])
-        .select()
-        .single();
+      const insertPatientRow = async (row: Record<string, unknown>) => {
+        let result = await supabase.from("BenhNhan").insert([row]).select().single();
+        if (result.error && isMissingGhichuColumn(result.error)) {
+          const { ghichu: _omit, ...withoutGhichu } = row;
+          result = await supabase.from("BenhNhan").insert([withoutGhichu]).select().single();
+        }
+        return result;
+      };
 
-      if (error && isMissingGhichuColumn(error)) {
-        const fallback = await supabase
-          .from("BenhNhan")
-          .insert([insertBase])
-          .select()
-          .single();
-        data = fallback.data as typeof data;
-        error = fallback.error as typeof error;
+      // Fast path: để DB tự sinh id (IDENTITY). Nếu sequence lệch (do legacy gán id thủ công) → fallback MAX(id)+1.
+      let { data, error } = await insertPatientRow({ ...insertBase, ghichu: ghichu || null });
+
+      if (error?.message?.includes('duplicate key value violates unique constraint')) {
+        let attempts = 0;
+        const maxAttempts = 10;
+        let lastError: SupabaseError | null = error as SupabaseError;
+
+        while (attempts < maxAttempts) {
+          const { data: maxData } = await supabase
+            .from("BenhNhan")
+            .select("id")
+            .order("id", { ascending: false })
+            .limit(1);
+
+          const maxId = maxData?.[0]?.id ?? 0;
+          const nextId = maxId + 1 + attempts;
+
+          const retry = await insertPatientRow({
+            id: nextId,
+            ...insertBase,
+            ghichu: ghichu || null,
+          });
+
+          if (!retry.error) {
+            data = retry.data;
+            error = null;
+            break;
+          }
+
+          lastError = retry.error as SupabaseError;
+          if (retry.error.message.includes('duplicate key value violates unique constraint')) {
+            attempts++;
+            continue;
+          }
+
+          error = retry.error;
+          break;
+        }
+
+        if (error && attempts >= maxAttempts) {
+          return res.status(400).json({
+            message: `Error adding patient after ${attempts} attempts`,
+            error: lastError?.message || error.message,
+          });
+        }
       }
 
       if (error) {

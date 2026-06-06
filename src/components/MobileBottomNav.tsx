@@ -63,6 +63,7 @@ import {
   setActivityLastSyncAt,
   setActivitySyncBackoffState,
   subscribeRecentActivityUpdates,
+  MAX_RECENT_PATIENTS,
   type RecentActivityAction,
   type RecentActivityEvent,
   type RecentActivityServerRow,
@@ -408,7 +409,7 @@ export default function MobileBottomNav() {
   const syncingActivityRef = useRef(false);
 
   const recentPatients = useMemo(
-    () => getRecentPatientsFromActivities(recentActivities, 8) as PatientResult[],
+    () => getRecentPatientsFromActivities(recentActivities, MAX_RECENT_PATIENTS) as PatientResult[],
     [recentActivities]
   );
 
@@ -421,7 +422,7 @@ export default function MobileBottomNav() {
   }, [activityFilter, recentActivities]);
 
   const filteredPatients = useMemo(
-    () => getRecentPatientsFromActivities(filteredActivities, 8) as PatientResult[],
+    () => getRecentPatientsFromActivities(filteredActivities, MAX_RECENT_PATIENTS) as PatientResult[],
     [filteredActivities]
   );
 
