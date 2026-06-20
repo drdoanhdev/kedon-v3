@@ -1,0 +1,51 @@
+OPTIGO FACE AGENT - HUONG DAN NHANH
+====================================
+
+Yeu cau: Windows 10/11, webcam, mang internet, goi Pro tren Optigo.
+
+
+BUOC 1 - CAI DAT (chi 1 lan)
+------------------------------
+Double-click: cai-dat.bat
+Doi den khi hien "Cai dat hoan tat".
+Lan dau se tai them model AI (~300MB).
+
+
+BUOC 2 - GHEP NOI THIET BI
+----------------------------
+1. Vao Optigo web: Quan ly phong kham -> Nhan dien khuon mat -> Tao ma ghep noi
+2. Double-click: ghep-noi.bat
+3. Nhap ma 8 ky tu (vi du ABCD1234)
+4. URL mac dinh: https://app.optigo.vn (Enter neu dung san)
+
+
+BUOC 3 - CHAY NHAN DIEN
+-------------------------
+Double-click: chay-agent.bat
+De cua so nay mo khi phong kham lam viec.
+Benh nhan nhan dien tu dong -> vao Cho kham.
+
+
+DANG KY KHUON MAT BENH NHAN (lan dau den)
+-------------------------------------------
+Double-click: dang-ky-khuon-mat.bat
+Nhap ID benh nhan tu Optigo, nhin thang camera.
+
+
+TU DONG CHAY KHI BAT MAY (tuy chon)
+------------------------------------
+1. Mo Task Scheduler (Lenh chay)
+2. Tao task moi -> Trigger: When I log on
+3. Action:
+   Program: [thu muc agent]\chay-agent.bat
+   Start in: [thu muc agent]
+
+
+LOI THUONG GAP
+--------------
+- Chua cai dat: chay cai-dat.bat
+- Chua ghep noi: chay ghep-noi.bat
+- Camera khong mo: doi camera_index trong config.json thanh 1 hoac 2
+- Khong nhan dien: tang anh sang, chay lai dang-ky-khuon-mat.bat
+
+Hotline/ ho tro: lien he Optigo.

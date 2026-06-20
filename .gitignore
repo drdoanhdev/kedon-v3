@@ -47,3 +47,10 @@ next-env.d.ts
 /public/workbox-*.js.map
 /public/fallback-*.js
 /public/swe-worker-*.js
+
+# face recognition edge agent
+services/face-agent/config.json
+services/face-agent/.venv/
+services/face-agent/dist/
+services/face-agent/**/__pycache__/
+services/face-agent/**/*.pyc

@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "clean": "rimraf .next && rimraf node_modules/.cache"
+    "clean": "rimraf .next && rimraf node_modules/.cache",
+    "pack:face-agent": "powershell -ExecutionPolicy Bypass -File services/face-agent/scripts/build-optigo-face-agent.ps1"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
