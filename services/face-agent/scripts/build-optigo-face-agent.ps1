@@ -14,10 +14,12 @@ $include = @(
     "requirements.txt",
     "config.example.json",
     "cai-dat.bat",
+    "cau-hinh-camera.bat",
     "chay-agent.bat",
     "ghep-noi.bat",
     "dang-ky-khuon-mat.bat",
     "_env.bat",
+    "_ensure_console.bat",
     "HUONG-DAN.txt",
     "README.md"
 )

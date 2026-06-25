@@ -1,9 +1,21 @@
 {
   "api_base_url": "https://app.optigo.vn",
   "device_token": "",
+  "camera_url": "",
   "camera_index": 0,
+  "low_power_mode": true,
   "match_threshold": 0.45,
   "check_in_cooldown_sec": 60,
   "sync_interval_sec": 300,
-  "agent_version": "1.0.0"
+  "agent_version": "1.0.0",
+  "preview_host": "127.0.0.1",
+  "preview_port": 8766,
+  "preview_max_width": 480,
+  "preview_jpeg_quality": 52,
+  "preview_capture_interval_sec": 0.14,
+  "preview_encode_every_n": 2,
+  "recognize_interval_sec": 0.75,
+  "recognize_max_width": 480,
+  "rtsp_grab_flush": 6,
+  "web_snapshot_interval_ms": 130
 }

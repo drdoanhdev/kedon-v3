@@ -1,28 +1,46 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin } from '../../../lib/tenantApi';
+import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { upsertFaceEmbedding } from '../../../lib/faceRecognition';
+import { planHasFeature } from '../../../lib/featureConfig';
+
+async function assertTenantFeature(tenantId: string, res: NextApiResponse): Promise<boolean> {
+  const { data: tenantRow } = await supabaseAdmin
+    .from('tenants')
+    .select('plan')
+    .eq('id', tenantId)
+    .single();
+
+  if (!planHasFeature(tenantRow?.plan, 'face_recognition')) {
+    res.status(403).json({ success: false, error: 'Cần gói Pro để dùng nhận diện khuôn mặt' });
+    return false;
+  }
+  return true;
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const tenant = await requireTenant(req, res);
-  if (!tenant) return;
-  const supabase = supabaseAdmin;
+  setNoCacheHeaders(res);
 
-  // ============================
-  // 📌 1. LẤY DANH SÁCH EMBEDDINGS (GET)
-  // ============================
-  if (req.method === "GET") {
+  const ctx = await requireTenant(req, res);
+  if (!ctx) return;
+
+  const { tenantId } = ctx;
+
+  if (!(await assertTenantFeature(tenantId, res))) return;
+
+  if (req.method === 'GET') {
     try {
-      const { data, error } = await supabase
-        .from("face_embeddings")
+      const { data, error } = await supabaseAdmin
+        .from('face_embeddings')
         .select(
-          `id, patient_id, created_at, updated_at,
+          `id, patient_id, created_at, updated_at, model,
            BenhNhan(id, ten, dienthoai)`
         )
-        .order("created_at", { ascending: false });
+        .eq('tenant_id', tenantId)
+        .order('updated_at', { ascending: false });
 
-      if (error) return res.status(400).json({ message: error.message });
+      if (error) return res.status(400).json({ success: false, error: error.message });
 
-      // Đếm số lượng embedding và format data
-      const formattedData = data.map((item: any) => ({
+      const formattedData = (data || []).map((item: Record<string, unknown>) => ({
         id: item.id,
         patient_id: item.patient_id,
         patient: item.BenhNhan,
@@ -36,69 +54,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         count: formattedData.length,
         data: formattedData,
       });
-    } catch (error: any) {
-      return res.status(500).json({ message: "Lỗi server", error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Lỗi server';
+      return res.status(500).json({ success: false, error: message });
     }
   }
 
-  // ============================
-  // 📌 2. XÓA EMBEDDING (DELETE)
-  // ============================
-  if (req.method === "DELETE") {
-    const { patient_id } = req.query;
-
-    if (!patient_id) {
-      return res.status(400).json({ message: "Thiếu patient_id" });
+  if (req.method === 'POST') {
+    const { patient_id, embedding } = req.body || {};
+    const patientId = parseInt(String(patient_id), 10);
+    if (!patientId || !Array.isArray(embedding)) {
+      return res.status(400).json({ success: false, error: 'Thiếu patient_id hoặc embedding' });
     }
 
     try {
-      const { error } = await supabase
-        .from("face_embeddings")
-        .delete()
-        .eq("patient_id", patient_id);
-
-      if (error) {
-        return res.status(500).json({ message: "Lỗi khi xóa", error });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: "Đã xóa embedding",
-      });
-    } catch (error: any) {
-      return res.status(500).json({ message: "Lỗi server", error: error.message });
+      await upsertFaceEmbedding(tenantId, patientId, embedding);
+      return res.status(200).json({ success: true, message: 'Đã lưu embedding' });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Lỗi lưu embedding';
+      return res.status(400).json({ success: false, error: message });
     }
   }
 
-  // ============================
-  // 📌 3. KIỂM TRA EMBEDDING TỒN TẠI (HEAD)
-  // ============================
-  if (req.method === "HEAD") {
+  if (req.method === 'DELETE') {
     const { patient_id } = req.query;
-
     if (!patient_id) {
-      return res.status(400).json({ message: "Thiếu patient_id" });
+      return res.status(400).json({ success: false, error: 'Thiếu patient_id' });
     }
 
-    try {
-      const { data } = await supabase
-        .from("face_embeddings")
-        .select("id")
-        .eq("patient_id", patient_id)
-        .maybeSingle();
+    const { error } = await supabaseAdmin
+      .from('face_embeddings')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('patient_id', patient_id);
 
-      if (data) {
-        return res.status(200).end();
-      } else {
-        return res.status(404).end();
-      }
-    } catch (error: any) {
-      return res.status(500).end();
-    }
+    if (error) return res.status(500).json({ success: false, error: error.message });
+    return res.status(200).json({ success: true, message: 'Đã xóa embedding' });
   }
 
-  // ===============================
-  // ❌ PHƯƠNG THỨC KHÔNG HỖ TRỢ
-  // ===============================
-  return res.status(405).json({ message: `Phương thức ${req.method} không được hỗ trợ` });
+  if (req.method === 'HEAD') {
+    const { patient_id } = req.query;
+    if (!patient_id) return res.status(400).end();
+
+    const { data } = await supabaseAdmin
+      .from('face_embeddings')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('patient_id', patient_id)
+      .maybeSingle();
+
+    return data ? res.status(200).end() : res.status(404).end();
+  }
+
+  return res.status(405).json({ success: false, error: `Method ${req.method} not allowed` });
 }

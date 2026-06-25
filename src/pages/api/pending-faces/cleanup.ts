@@ -25,6 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { data, error } = await supabase
       .from('PendingFaces')
       .delete()
+      .eq('tenant_id', tenant.tenantId)
       .lt('detected_at', cutoffDate.toISOString())
       .in('status', ['rejected', 'assigned'])
       .select('id');

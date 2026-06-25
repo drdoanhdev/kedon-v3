@@ -4,6 +4,8 @@ import {
   DEFAULT_MEDIA_BUCKET,
   DEFAULT_MEDIA_READ_URL_TTL_SECONDS,
   DEFAULT_MEDIA_UPLOAD_URL_TTL_SECONDS,
+  type MediaBucketScope,
+  resolveMediaBucket,
 } from './types';
 
 export type MediaStorageDriver = 'supabase' | 'r2';
@@ -13,6 +15,8 @@ export interface MediaSignedUploadTarget {
   bucket: string;
   path: string;
   signedUrl: string;
+  /** Upload qua API server — tránh CORS khi PUT trực tiếp lên R2 từ trình duyệt */
+  proxyUrl?: string;
   token?: string;
   method: 'PUT';
   expiresInSeconds: number;
@@ -24,6 +28,7 @@ export interface MediaStorageProvider {
   readonly bucket: string;
   createSignedUpload(path: string, contentType: string): Promise<MediaSignedUploadTarget>;
   createSignedReadUrl(path: string, expiresInSeconds?: number): Promise<string>;
+  putObject(path: string, body: Buffer, contentType: string): Promise<void>;
   deleteObject(path: string): Promise<void>;
 }
 
@@ -262,6 +267,16 @@ class SupabaseMediaStorageProvider implements MediaStorageProvider {
     return data.signedUrl;
   }
 
+  async putObject(path: string, body: Buffer, contentType: string): Promise<void> {
+    const { error } = await supabaseAdmin.storage
+      .from(this.bucket)
+      .upload(path, body, { contentType, upsert: true });
+
+    if (error) {
+      throw new Error(`Khong upload duoc object: ${error.message}`);
+    }
+  }
+
   async deleteObject(path: string): Promise<void> {
     const { error } = await supabaseAdmin.storage
       .from(this.bucket)
@@ -310,6 +325,25 @@ class R2MediaStorageProvider implements MediaStorageProvider {
     return this.signedUrl('GET', path, expiresInSeconds);
   }
 
+  async putObject(path: string, body: Buffer, contentType: string): Promise<void> {
+    const signedUrl = this.signedUrl('PUT', path, DEFAULT_MEDIA_UPLOAD_URL_TTL_SECONDS, contentType);
+    const res = await fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+
+    if (res.ok) return;
+
+    let details = '';
+    try {
+      details = await res.text();
+    } catch {
+      details = '';
+    }
+    throw new Error(`Khong upload duoc object tren R2 (${res.status})${details ? `: ${details}` : ''}`);
+  }
+
   async deleteObject(path: string): Promise<void> {
     const signedUrl = this.signedUrl('DELETE', path, 300);
     const res = await fetch(signedUrl, { method: 'DELETE' });
@@ -325,32 +359,31 @@ class R2MediaStorageProvider implements MediaStorageProvider {
   }
 }
 
-let cachedProvider: MediaStorageProvider | null = null;
-let cachedProviderKey = '';
-
 function resolveDriver(): MediaStorageDriver {
-  const raw = (process.env.MEDIA_STORAGE_DRIVER || 'supabase').trim().toLowerCase();
-  return raw === 'r2' ? 'r2' : 'supabase';
+  const raw = (process.env.MEDIA_STORAGE_DRIVER || 'r2').trim().toLowerCase();
+  return raw === 'supabase' ? 'supabase' : 'r2';
 }
 
-function resolveBucket(): string {
+function resolveBucket(scope?: MediaBucketScope, bucketOverride?: string): string {
+  if (bucketOverride?.trim()) return bucketOverride.trim();
+  if (scope) return resolveMediaBucket(scope);
   const raw = process.env.MEDIA_BUCKET_NAME?.trim();
   return raw || DEFAULT_MEDIA_BUCKET;
 }
 
-export function getMediaStorageProvider(): MediaStorageProvider {
+const providerCache = new Map<string, MediaStorageProvider>();
+
+export function getMediaStorageProvider(scope: MediaBucketScope): MediaStorageProvider {
   const driver = resolveDriver();
-  const bucket = resolveBucket();
+  const bucket = resolveMediaBucket(scope);
   const key = `${driver}:${bucket}`;
 
-  if (cachedProvider && cachedProviderKey === key) {
-    return cachedProvider;
-  }
+  const cached = providerCache.get(key);
+  if (cached) return cached;
 
-  cachedProvider = createProvider(driver, bucket);
-  cachedProviderKey = key;
-
-  return cachedProvider;
+  const provider = createProvider(driver, bucket);
+  providerCache.set(key, provider);
+  return provider;
 }
 
 export function getMediaStorageProviderForRow(driverRaw: unknown, bucketRaw: unknown): MediaStorageProvider {

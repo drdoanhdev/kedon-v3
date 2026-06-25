@@ -30,7 +30,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         rejected_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('status', 'pending'); // Chỉ reject nếu đang pending
+      .eq('tenant_id', tenant.tenantId)
+      .eq('status', 'pending');
 
     if (error) {
       return res.status(500).json({ success: false, error: error.message });

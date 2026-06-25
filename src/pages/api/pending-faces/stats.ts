@@ -21,18 +21,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { count: pending } = await supabase
       .from('PendingFaces')
       .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', tenant.tenantId)
       .eq('status', 'pending');
 
     // Count assigned
     const { count: assigned } = await supabase
       .from('PendingFaces')
       .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', tenant.tenantId)
       .eq('status', 'assigned');
 
     // Count rejected
     const { count: rejected } = await supabase
       .from('PendingFaces')
       .select('*', { count: 'exact', head: true })
+      .eq('tenant_id', tenant.tenantId)
       .eq('status', 'rejected');
 
     return res.status(200).json({

@@ -8,6 +8,7 @@ import {
 } from '../../../lib/tenantApi';
 import { buildDonThuocMediaObjectPath } from '../../../lib/media/objectPath';
 import { getMediaStorageProvider, getMediaStorageProviderForRow } from '../../../lib/media/storage';
+import { enrichUploadTargetForClient } from '../../../lib/media/uploadTarget';
 import {
   DEFAULT_MEDIA_MAX_FILE_BYTES,
   DEFAULT_MEDIA_READ_URL_TTL_SECONDS,
@@ -346,7 +347,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
     capturedAt: capturedAt || undefined,
   });
 
-  const provider = getMediaStorageProvider();
+  const provider = getMediaStorageProvider('don_thuoc');
   const uploadTarget = await provider.createSignedUpload(objectPath, mimeType);
 
   const insertPayload: Record<string, unknown> = {
@@ -379,7 +380,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
     return res.status(400).json({ message: 'Khong luu duoc metadata media', details: insertError.message });
   }
 
-  return res.status(200).json({ data: mediaRow, upload: uploadTarget, max_items_per_prescription: MAX_MEDIA_ITEMS_PER_PRESCRIPTION });
+  return res.status(200).json({
+    data: mediaRow,
+    upload: enrichUploadTargetForClient(uploadTarget, Number(mediaRow.id), '/api/don-thuoc/media/upload'),
+    max_items_per_prescription: MAX_MEDIA_ITEMS_PER_PRESCRIPTION,
+  });
 }
 
 async function handlePatch(req: NextApiRequest, res: NextApiResponse, tenantId: string, branchId: string | null) {

@@ -1,22 +1,18 @@
-/**
- * API endpoint cho Pending Faces - Proxy đến Python API hoặc trực tiếp query DB
- */
-
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { resolveSnapshotDisplayUrl } from '../../../lib/faceSnapshotUpload';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
-  const tenant = await requireTenant(req, res);
-  if (!tenant) return;
-  const supabase = supabaseAdmin;
+  const ctx = await requireTenant(req, res);
+  if (!ctx) return;
 
   if (req.method === 'GET') {
     try {
       const { status, sort } = req.query;
 
-      let query = supabase
+      let query = supabaseAdmin
         .from('PendingFaces')
         .select(`
           *,
@@ -24,20 +20,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             id,
             ten
           )
-        `);
+        `)
+        .eq('tenant_id', ctx.tenantId);
 
-      // Filter by status
       if (status && status !== 'all') {
         query = query.eq('status', status);
       }
 
-      // Sort
       if (sort === 'oldest') {
         query = query.order('detected_at', { ascending: true });
       } else if (sort === 'quality') {
         query = query.order('quality_score', { ascending: false });
       } else {
-        // newest (default)
         query = query.order('detected_at', { ascending: false });
       }
 
@@ -47,7 +41,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ success: false, error: error.message });
       }
 
-      return res.status(200).json({ success: true, data });
+      const rows = await Promise.all(
+        (data || []).map(async (row: Record<string, unknown>) => {
+          const snapshotUrl = row.snapshot_url as string | null | undefined;
+          const snapshot_display_url = await resolveSnapshotDisplayUrl(snapshotUrl);
+          return { ...row, snapshot_display_url };
+        })
+      );
+
+      return res.status(200).json({ success: true, data: rows });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return res.status(500).json({ success: false, error: message });

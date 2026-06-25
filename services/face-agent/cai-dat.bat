@@ -1,13 +1,27 @@
 @echo off
+cd /d "%~dp0"
+call "%~dp0_ensure_console.bat" "Optigo Face Agent - Cai dat" "%~f0" %*
+if errorlevel 1 exit /b 0
+
 chcp 65001 >nul
 setlocal EnableDelayedExpansion
 title Optigo Face Agent - Cai dat
-cd /d "%~dp0"
+
+set "LOG=%~dp0cai-dat-log.txt"
+echo. >> "%LOG%"
+echo [%date% %time%] === Bat dau cai dat === >> "%LOG%"
 
 echo.
 echo ============================================
 echo   Optigo Face Agent - Cai dat tu dong
 echo ============================================
+echo.
+echo Neu khong thay cua so nay:
+echo   - Mo File Explorer, vao thu muc agent
+echo   - Double-click cai-dat.bat
+echo   - KHONG bam file .bat trong Cursor / VS Code
+echo.
+echo Ghi log: %LOG%
 echo.
 
 call "%~dp0_env.bat"
@@ -102,10 +116,12 @@ echo.
 echo ============================================
 echo   Cai dat hoan tat!
 echo ============================================
+echo [%date% %time%] Cai dat hoan tat >> "%LOG%"
 echo.
 echo Buoc tiep theo:
 echo   1. Chay "ghep-noi.bat" - nhap ma tu web Optigo
-echo   2. Chay "chay-agent.bat" - bat nhan dien tu dong
+echo   2. Camera IP (RTSP)? Chay "cau-hinh-camera.bat" truoc
+echo   3. Chay "chay-agent.bat" - bat nhan dien tu dong
 echo.
 echo Xem them: HUONG-DAN.txt
 echo.

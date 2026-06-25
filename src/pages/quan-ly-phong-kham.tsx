@@ -16,6 +16,7 @@ import { QuanLyVaiTroSection } from './quan-ly-vai-tro';
 import { CauHinhInSection } from './cau-hinh-in';
 import { CaiDatNhanTinSection } from './cai-dat-nhan-tin';
 import LoginSecurityCard from '../components/LoginSecurityCard';
+import { FaceRecognitionSection } from '../components/FaceRecognitionSection';
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Chủ phòng khám',
@@ -51,7 +52,7 @@ export default function QuanLyPhongKham() {
   const [tenantCode, setTenantCode] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
-  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax'>('info');
+  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax' | 'face'>('info');
 
   // VAT config state
   const [vatConfig, setVatConfig] = useState({ ap_dung_vat: false, thue_suat: 8, gia_da_bao_gom_vat: true, ma_so_thue: '', ten_don_vi: '', dia_chi_don_vi: '' });
@@ -497,7 +498,7 @@ export default function QuanLyPhongKham() {
   // Sidebar (KiotViet-style settings layout)
   // ========================================================================
   type Section = {
-    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax';
+    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax' | 'face';
     label: string;
     icon: string;
     group: string;
@@ -517,6 +518,7 @@ export default function QuanLyPhongKham() {
     { id: 'roles',     label: 'Quản lý vai trò & quyền',  icon: '🛡️', group: 'Cấu hình' },
     { id: 'print',     label: 'Cấu hình mẫu in',          icon: '🖨️', group: 'Cấu hình' },
     { id: 'messaging', label: 'Cài đặt nhắn tin tự động', icon: '💬', group: 'Cấu hình' },
+    { id: 'face',      label: 'Nhận diện khuôn mặt',      icon: '📷', group: 'Cấu hình' },
     { id: 'tax',       label: 'Khai thuế & hóa đơn',      icon: '🧾', group: 'Tài chính' },
   );
 
@@ -538,6 +540,7 @@ export default function QuanLyPhongKham() {
     roles:     <QuanLyVaiTroSection />,
     print:     <CauHinhInSection />,
     messaging: <CaiDatNhanTinSection />,
+    face:      <FaceRecognitionSection />,
     tax: taxSection,
   };
 

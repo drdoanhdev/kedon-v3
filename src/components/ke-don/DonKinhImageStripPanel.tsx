@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { uploadMediaBinary } from '../../lib/media/clientUpload';
 import {
   Camera,
   ChevronLeft,
@@ -37,6 +38,7 @@ interface DonKinhMediaItem {
 interface SignedUploadTarget {
   method: 'PUT';
   signedUrl: string;
+  proxyUrl?: string;
   contentType: string;
 }
 
@@ -369,17 +371,11 @@ export default function DonKinhMediaPanel({
       const uploadMeta = createRes.data?.upload;
       mediaId = createRes.data?.data?.id ?? null;
 
-      if (!uploadMeta?.signedUrl) {
+      if (!uploadMeta?.signedUrl && !uploadMeta?.proxyUrl) {
         throw new Error('Không nhận được signed upload URL');
       }
 
-      const uploadRes = await fetch(uploadMeta.signedUrl, {
-        method: uploadMeta.method || 'PUT',
-        headers: {
-          'Content-Type': uploadMeta.contentType || uploadFile.type || 'application/octet-stream',
-        },
-        body: uploadFile,
-      });
+      const uploadRes = await uploadMediaBinary(uploadMeta, uploadFile);
 
       if (!uploadRes.ok) {
         throw new Error(`Upload thất bại (${uploadRes.status})`);

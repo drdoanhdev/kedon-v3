@@ -1,7 +1,10 @@
 @echo off
+cd /d "%~dp0"
+call "%~dp0_ensure_console.bat" "Optigo Face Agent - Dang ky khuon mat" "%~f0" %*
+if errorlevel 1 exit /b 0
+
 chcp 65001 >nul
 title Optigo Face Agent - Dang ky khuon mat
-cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
   echo Chua cai dat. Hay chay cai-dat.bat truoc.

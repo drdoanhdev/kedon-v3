@@ -1,91 +1,130 @@
-# Don Kinh Media Storage Setup
+# Media Storage (Cloudflare R2)
 
-This project now supports image metadata for:
-- Don Kinh snapshots (`don_kinh`)
-- Frame photos after cutting (`gong_da_cat`)
-- Refraction machine results (`ket_qua_khuc_xa`)
+Hệ thống lưu ảnh cho:
+- Đơn kính (`don_kinh`, `gong_da_cat`, `ket_qua_khuc_xa`)
+- Gọng kính (`mat_truoc`, `mat_trai`, `mat_phai`)
+- Đơn thuốc
 
-## 1) Database migration
+Metadata nằm trong PostgreSQL; file nhị phân lưu trên **Cloudflare R2** (mặc định). Ảnh cũ trên Supabase vẫn đọc được nhờ cột `storage_driver` trên từng bản ghi.
 
-Run migration file:
-- `sql/V067_don_kinh_media_storage_foundation.sql`
+## 1) Tạo bucket trên Cloudflare R2
 
-This migration adds:
-- `don_kinh_media` table (metadata only)
-- RLS + indexes
-- private Supabase bucket `don-kinh-media`
+Trong Cloudflare Dashboard → R2 → Create bucket, tạo 3 bucket (private):
 
-## 2) API endpoint
+| Bucket | Dùng cho |
+|--------|----------|
+| `don-kinh-media` | Đơn kính |
+| `gong-kinh-media` | Gọng kính |
+| `don-thuoc-media` | Đơn thuốc |
 
-New endpoint:
-- `GET /api/don-kinh/media`
-- `POST /api/don-kinh/media`
-- `PATCH /api/don-kinh/media`
-- `DELETE /api/don-kinh/media`
+Tạo **R2 API Token** (Object Read & Write) và lấy Access Key / Secret Key.
 
-Auth/tenant/branch rules are the same as existing `don-kinh` APIs.
+### CORS (tùy chọn)
 
-## 3) Storage abstraction
+R2 mặc định **không** cho phép trình duyệt `PUT` trực tiếp (preflight OPTIONS trả 403). App dùng **upload proxy** qua `/api/.../media/upload` — **không cần cấu hình CORS**.
 
-Added files:
-- `src/lib/media/types.ts`
-- `src/lib/media/objectPath.ts`
-- `src/lib/media/storage.ts`
+Nếu vẫn muốn PUT trực tiếp từ trình duyệt, thêm rule CORS trên bucket:
 
-Current active provider:
-- Supabase Storage (`MEDIA_STORAGE_DRIVER=supabase`)
+```json
+[
+  {
+    "AllowedOrigins": ["https://app.optigo.vn", "http://localhost:3000"],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
 
-Future provider:
-- R2 (`MEDIA_STORAGE_DRIVER=r2`) via same interface.
+## 2) Biến môi trường
 
-## 4) Environment variables
+Thêm vào **`.env`** (file bạn đang dùng cho Supabase, DATABASE_URL, v.v.) hoặc Vercel/host khi deploy.
 
-Optional env vars:
+> **`.env` hay `.env.local`?** Cả hai đều được Next.js đọc. Repo này đang cấu hình trong `.env` — cứ tiếp tục dùng `.env` cho đồng bộ. `.env.local` chỉ là convention của Next.js để tách secret local (thường không commit); không bắt buộc.
+
+### Lấy credentials từ Cloudflare
+
+1. Vào [Cloudflare Dashboard](https://dash.cloudflare.com) → **R2 Object Storage**.
+2. **Account ID**: góc phải Overview, hoặc nhìn subdomain URL S3:
+   `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
+3. **Access Key + Secret**: R2 → **Manage R2 API Tokens** → **Create API token**
+   - Quyền: **Object Read & Write**
+   - Có thể giới hạn theo bucket
+   - Sau khi tạo: copy **Access Key ID** và **Secret Access Key** (secret chỉ hiện một lần).
+
+### URL bạn có dạng `...r2.cloudflarestorage.com/optigo`
+
+Tách như sau:
+
+| Phần URL | Ý nghĩa | Biến env |
+|----------|---------|----------|
+| `https://<id>.r2.cloudflarestorage.com` | S3 API endpoint | `R2_ENDPOINT` hoặc `R2_ACCOUNT_ID=<id>` |
+| `/optigo` | **Tên bucket** (không phải endpoint) | `MEDIA_BUCKET_DON_KINH=optigo` (và các bucket khác) |
+
+**Không** ghi cả `/optigo` vào `R2_ENDPOINT` trừ khi bạn cố ý dùng path prefix đặc biệt. Code mặc định expect endpoint **không có** path bucket.
+
+Nếu chỉ có **một** bucket `optigo`, có thể dùng chung cho cả 3 loại ảnh (path object vẫn tách theo `donkinh/`, `donthuoc/`, v.v.).
 
 ```env
-# Storage driver: supabase | r2
-MEDIA_STORAGE_DRIVER=supabase
+# Driver: r2 (mặc định) | supabase (rollback)
+MEDIA_STORAGE_DRIVER=r2
 
-# Bucket name for both providers (default: don-kinh-media)
-MEDIA_BUCKET_NAME=don-kinh-media
+# Một bucket chung tên optigo (hoặc tách 3 bucket riêng nếu đã tạo)
+MEDIA_BUCKET_DON_KINH=optigo
+MEDIA_BUCKET_GONG_KINH=optigo
+MEDIA_BUCKET_DON_THUOC=optigo
 
-# Max accepted file size in bytes for metadata init API (default: 8388608)
+# Giới hạn file & TTL signed URL
 MEDIA_IMAGE_MAX_FILE_BYTES=8388608
-
-# Signed read URL ttl in seconds (default: 900)
 MEDIA_READ_URL_TTL_SECONDS=900
 
-# ---------- R2 (required when MEDIA_STORAGE_DRIVER=r2) ----------
-# Preferred: provide explicit endpoint
-R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+# Cloudflare R2 — bắt buộc
+R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+# hoặc chỉ cần (code tự ghép endpoint):
+# R2_ACCOUNT_ID=<ACCOUNT_ID>
 
-# Or provide account id and endpoint will be derived automatically
-R2_ACCOUNT_ID=<account_id>
-
-R2_ACCESS_KEY_ID=<r2_access_key_id>
-R2_SECRET_ACCESS_KEY=<r2_secret_access_key>
-
-# Optional, default is auto
+R2_ACCESS_KEY_ID=<từ API token>
+R2_SECRET_ACCESS_KEY=<từ API token>
 R2_REGION=auto
 ```
 
-## 5) Recommended frontend flow
+## 3) API endpoints
 
-1. Call `POST /api/don-kinh/media` with metadata (kind, mime type, file size).
-2. Receive signed upload target.
-3. Upload binary directly to storage using signed upload URL.
-4. Call `PATCH /api/don-kinh/media` with status=`uploaded` and optional width/height.
-5. Use `GET /api/don-kinh/media?don_kinh_id=...` to render signed read URLs.
+| Module | Endpoints |
+|--------|-----------|
+| Đơn kính | `GET/POST/PATCH/DELETE /api/don-kinh/media` |
+| Gọng kính | `GET/POST/PATCH/DELETE /api/gong-kinh/media` |
+| Đơn thuốc | `GET/POST/PATCH/DELETE /api/don-thuoc/media` |
 
-## 6) R2 cutover plan
+## 4) Luồng upload (frontend)
 
-When ready to move from Supabase to R2:
+1. `POST /api/.../media` — nhận signed upload URL
+2. `PUT` file trực tiếp lên R2 (giữ đúng `Content-Type` từ response)
+3. `PATCH` với `status: uploaded` + width/height
+4. `GET` để lấy signed read URL hiển thị ảnh
 
-1. Set `MEDIA_STORAGE_DRIVER=r2` for new uploads.
-2. Configure R2 credentials/endpoint env vars listed above.
-3. Keep old rows readable because each row stores `storage_driver` + `bucket` + `object_path`.
-4. Optional: background migration to copy old objects and update row metadata in batches.
+## 5) Migrate ảnh cũ từ Supabase
 
-Note:
-- R2 provider now uses AWS Signature V4 directly in server code.
-- Signed upload expects client to keep `Content-Type` header exactly as returned by API.
+Sau khi cấu hình R2 và tạo bucket, chạy script copy object + cập nhật `storage_driver`:
+
+```bash
+# Xem trước
+node scripts/migrate-media-to-r2.mjs --dry-run
+
+# Migrate từng batch
+node scripts/migrate-media-to-r2.mjs --limit=100
+
+# Chỉ một bảng
+node scripts/migrate-media-to-r2.mjs --table=don_kinh_media
+```
+
+Cần: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, và các biến R2.
+
+Ảnh mới upload tự động lên R2. Ảnh chưa migrate vẫn đọc từ Supabase qua `storage_driver` trên DB.
+
+## 6) Code liên quan
+
+- `src/lib/media/storage.ts` — provider R2 / Supabase
+- `src/lib/media/types.ts` — bucket theo scope
+- `src/lib/media/objectPath.ts` — cấu trúc path object

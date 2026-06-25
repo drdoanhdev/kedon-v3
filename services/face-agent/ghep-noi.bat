@@ -1,7 +1,10 @@
 @echo off
+cd /d "%~dp0"
+call "%~dp0_ensure_console.bat" "Optigo Face Agent - Ghep noi" "%~f0" %*
+if errorlevel 1 exit /b 0
+
 chcp 65001 >nul
 title Optigo Face Agent - Ghep noi
-cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
   echo Chua cai dat. Hay chay cai-dat.bat truoc.
@@ -22,6 +25,9 @@ echo   Ghep noi thiet bi voi Optigo
 echo ============================================
 echo.
 echo Lay ma 8 ky tu tu: Quan ly phong kham - Nhan dien khuon mat
+echo.
+echo URL mac dinh: https://app.optigo.vn
+echo Thu tren may dev (npm run dev): nhap http://localhost:3000
 echo.
 
 set /p PAIR_CODE="Nhap ma ghep noi: "

@@ -4,15 +4,15 @@
 
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin } from '../../../../lib/tenantApi';
+import { upsertFaceEmbedding } from '../../../../lib/faceRecognition';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const tenant = await requireTenant(req, res);
-  if (!tenant) return;
-  const supabase = supabaseAdmin;
+  const ctx = await requireTenant(req, res);
+  if (!ctx) return;
 
   const { id } = req.query;
   const { patient_id } = req.body;
@@ -22,11 +22,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // 1. Lấy thông tin pending face
-    const { data: pendingFace, error: fetchError } = await supabase
+    const { data: pendingFace, error: fetchError } = await supabaseAdmin
       .from('PendingFaces')
       .select('*')
       .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
       .single();
 
     if (fetchError || !pendingFace) {
@@ -37,37 +37,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ success: false, error: 'Pending face đã được xử lý' });
     }
 
-    // 2. Copy embedding sang bảng insightface_embeddings
     if (pendingFace.embedding) {
-      // Xóa embedding cũ nếu có
-      await supabase
-        .from('insightface_embeddings')
-        .delete()
-        .eq('patient_id', patient_id);
-
-      // Thêm embedding mới
-      const { error: insertError } = await supabase
-        .from('insightface_embeddings')
-        .insert({
-          patient_id: parseInt(patient_id as string),
-          embedding: pendingFace.embedding,
-        });
-
-      if (insertError) {
-        console.error('Error inserting embedding:', insertError);
-        return res.status(500).json({ success: false, error: 'Không thể lưu embedding' });
-      }
+      await upsertFaceEmbedding(
+        ctx.tenantId,
+        parseInt(String(patient_id), 10),
+        pendingFace.embedding as number[]
+      );
     }
 
-    // 3. Cập nhật pending face status
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('PendingFaces')
       .update({
         status: 'assigned',
-        assigned_to: parseInt(patient_id as string),
+        assigned_to: parseInt(String(patient_id), 10),
         assigned_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId);
 
     if (updateError) {
       return res.status(500).json({ success: false, error: updateError.message });

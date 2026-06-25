@@ -202,6 +202,8 @@ Theo dõi trạng thái migration trên từng database.
 |------|------|-------|:------:|:--------:|
 | V078 | V078_create_tem_kinh_templates.sql | Tạo bảng `tem_kinh_templates` để lưu mẫu in tem kính theo tenant/user (JSON elements + default template theo user) | | |
 | V079 | V079_tem_kinh_templates_user_scope_and_print_settings.sql | Bổ sung cột cấu hình in (dpi, gap, speed, density, bitmap) + ràng buộc unique theo user + cập nhật RLS user-owned templates | | |
+| V082 | V082_face_recognition_saas.sql | Face recognition SaaS: face_devices, face_embeddings tenant-scoped, PendingFaces | | |
+| V083 | V083_face_ux_enhancements.sql | ChoKham.check_in_source — badge nhận diện trên danh sách chờ | | |
 
 ---
 

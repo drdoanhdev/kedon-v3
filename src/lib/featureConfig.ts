@@ -27,7 +27,8 @@ export type FeatureKey =
   | 'chain_reports'
   | 'staff_attendance'
   | 'staff_transfer'
-  | 'messaging_automation';
+  | 'messaging_automation'
+  | 'face_recognition';
 
 // ===== Plan Types =====
 export type PlanKey = 'trial' | 'basic' | 'pro' | 'enterprise';
@@ -75,6 +76,7 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'multi_staff',
     'clinic_settings',
     'messaging_automation',
+    'face_recognition',
   ],
   enterprise: [
     'patient_management',
@@ -99,6 +101,7 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'staff_attendance',
     'staff_transfer',
     'messaging_automation',
+    'face_recognition',
   ],
 };
 
@@ -201,6 +204,7 @@ const FEATURE_MIN_PLAN: Record<FeatureKey, PlanKey> = {
   staff_attendance: 'enterprise',
   staff_transfer: 'enterprise',
   messaging_automation: 'pro',
+  face_recognition: 'pro',
 };
 
 // ===== Feature display names (cho UI) =====
@@ -227,6 +231,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   staff_attendance: 'Chấm công',
   staff_transfer: 'Điều chuyển nhân viên',
   messaging_automation: 'Nhắn tin tự động (Zalo/SMS)',
+  face_recognition: 'Nhận diện khuôn mặt',
 };
 
 // ===== Plan display names =====

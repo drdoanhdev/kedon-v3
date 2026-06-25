@@ -40,6 +40,7 @@ import {
   updateBackgroundUploadTask,
 } from '@/lib/media/backgroundUploadPersistence';
 import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
+import { uploadMediaBinary } from '@/lib/media/clientUpload';
 
 interface BenhNhan {
   id: number;
@@ -349,19 +350,13 @@ async function uploadDraftMediaQueue(
         captured_at: new Date().toISOString(),
       });
 
-      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; contentType?: string } | undefined;
+      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; proxyUrl?: string; contentType?: string } | undefined;
       mediaId = Number(createRes.data?.data?.id || 0) || null;
-      if (!uploadMeta?.signedUrl) {
+      if (!uploadMeta?.signedUrl && !uploadMeta?.proxyUrl) {
         throw new Error('Không nhận được signed upload URL');
       }
 
-      const uploadRes = await fetch(uploadMeta.signedUrl, {
-        method: uploadMeta.method || 'PUT',
-        headers: {
-          'Content-Type': uploadMeta.contentType || draft.file.type || 'application/octet-stream',
-        },
-        body: draft.file,
-      });
+      const uploadRes = await uploadMediaBinary(uploadMeta, draft.file);
 
       if (!uploadRes.ok) {
         throw new Error(`Upload thất bại (${uploadRes.status})`);

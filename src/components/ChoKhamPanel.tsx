@@ -19,6 +19,7 @@ interface ChoKhamItem {
   trangthai: string;
   done_at?: string | null;
   avatar_url?: string;
+  check_in_source?: string | null;
   BenhNhan: ChoKhamBenhNhan;
 }
 
@@ -106,7 +107,21 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef, ChoKhamPanelProps>(({ onCollaps
             (item) => item.trangthai === 'chờ' && !waitingIdsRef.current.has(item.id)
           );
           if (newWaiting.length > 0) {
-            toast(`Có ${newWaiting.length} bệnh nhân mới vào chờ khám`, { icon: '🔔' });
+            const faceCheckIns = newWaiting.filter((item) =>
+              item.check_in_source?.startsWith('device:')
+            );
+            if (faceCheckIns.length > 0) {
+              const names = faceCheckIns
+                .map((item) => item.BenhNhan?.ten)
+                .filter(Boolean)
+                .slice(0, 3)
+                .join(', ');
+              toast(`📷 Nhận diện: ${names}${faceCheckIns.length > 3 ? '...' : ''} vào chờ khám`, {
+                duration: 5000,
+              });
+            } else {
+              toast(`Có ${newWaiting.length} bệnh nhân mới vào chờ khám`, { icon: '🔔' });
+            }
           }
         }
 
@@ -132,7 +147,7 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef, ChoKhamPanelProps>(({ onCollaps
 
   useEffect(() => {
     fetchQueue();
-    const interval = setInterval(fetchQueue, 30000);
+    const interval = setInterval(fetchQueue, 10000);
     return () => clearInterval(interval);
   }, [fetchQueue]);
 
@@ -466,6 +481,14 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef, ChoKhamPanelProps>(({ onCollaps
                           </span>
                         )}
                         <span className="truncate">{item.BenhNhan?.ten || 'N/A'}</span>
+                        {item.check_in_source?.startsWith('device:') && (
+                          <span
+                            className="shrink-0 text-[9px] bg-violet-100 text-violet-700 px-1 py-0 rounded font-medium"
+                            title="Check-in tự động qua nhận diện khuôn mặt"
+                          >
+                            📷
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-gray-400 leading-tight">
                         {new Date(item.thoigian).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })}

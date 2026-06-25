@@ -37,9 +37,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
   try {
     const todayStart = getTodayStartVN();
 
-    let query = supabase
-      .from('ChoKham')
-      .select(`
+    const baseSelect = `
         id,
         benhnhanid,
         thoigian,
@@ -53,7 +51,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
           namsinh,
           diachi
         )
-      `)
+      `;
+
+    let query = supabase
+      .from('ChoKham')
+      .select(`${baseSelect}, check_in_source`)
       .eq('tenant_id', tenantId)
       .gte('thoigian', todayStart)
       .order('thoigian', { ascending: true });
@@ -62,7 +64,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
       query = query.eq('branch_id', branchId);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+
+    if (error?.message?.includes('check_in_source')) {
+      let fallback = supabase
+        .from('ChoKham')
+        .select(baseSelect)
+        .eq('tenant_id', tenantId)
+        .gte('thoigian', todayStart)
+        .order('thoigian', { ascending: true });
+      if (branchId) fallback = fallback.eq('branch_id', branchId);
+      const retry = await fallback;
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) throw error;
 

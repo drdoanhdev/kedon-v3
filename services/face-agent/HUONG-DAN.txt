@@ -1,14 +1,88 @@
 OPTIGO FACE AGENT - HUONG DAN NHANH
 ====================================
 
-Yeu cau: Windows 10/11, webcam, mang internet, goi Pro tren Optigo.
+Yeu cau: Windows 10/11, webcam hoac camera IP (RTSP), mang internet, goi Pro tren Optigo.
+
+QUAN TRONG: KHONG CAN MO POWERSHELL HAY GO LENH PYTHON
+-------------------------------------------------------
+Chi can double-click cac file .bat trong thu muc da giai nen:
+  cai-dat.bat           -> cai dat (1 lan)
+  ghep-noi.bat          -> lien ket PC voi phong kham
+  cau-hinh-camera.bat   -> doi webcam USB hoac camera IP (RTSP)
+  chay-agent.bat        -> bat nhan dien tu dong (de cua so mo khi lam viec)
+  dang-ky-khuon-mat.bat -> dang ky khuon mat benh nhan lan dau
+
+Neu ban dang chay "python main.py ..." trong PowerShell, ban dang dev tu
+source code — phong kham thuc te chi can cac file .bat tren.
+
+
+TONG QUAN QUY TRINH (1 LAN CAI DAT + HANG NGAY)
+------------------------------------------------
+  [Web Optigo]                    [PC camera - OptigoFaceAgent]
+  Quan ly phong kham              cai-dat.bat (1 lan)
+       |                               |
+  Tao ma ghep noi  ------------>  ghep-noi.bat
+       |                               |
+  Dang ky khuon mat BN  <------>  chay-agent.bat (luon chay)
+  (web hoac dang-ky-khuon-mat)         |
+       |                          Camera quet khach
+       v                               |
+  Cho kham tu dong <-------------  Nhan dien / bao khach la
+
+
+HANG NGAY (SAU KHI DA CAI DAT)
+-------------------------------
+1. Bat may PC camera, double-click chay-agent.bat (de cua so mo).
+2. Khach quen: tu dong vao Cho kham (khong can lam gi them).
+3. Khach moi / chua dang ky: dang-ky-khuon-mat.bat HOAC dang ky tren web.
+4. Khach la (khong nhan ra): xu ly tren web -> "Khach chua nhan dien" -> gan BN.
+
+
+THU TREN MAY DEV (localhost)
+-----------------------------
+1. Chay web: npm run dev (thu muc kedon-v3) -> http://localhost:3000
+2. Giai nen OptigoFaceAgent.zip, chay cai-dat.bat
+3. ghep-noi.bat -> nhap ma -> URL: http://localhost:3000 (KHONG dung app.optigo.vn)
+4. chay-agent.bat
+5. Web: Quan ly phong kham -> Nhan dien khuon mat -> dang ky / test camera
+
+Sau khi dang ky khuon mat tren web, agent dong bo lai sau toi da 5 phut
+(hoac khoi dong lai chay-agent.bat de dong bo ngay).
+
+
+CAMERA IP (RTSP) - TUY CHON
+-----------------------------
+KHONG can sua config.json thu cong. Double-click: cau-hinh-camera.bat
+
+QUAN TRONG — Camera Dahua (vd DH-C5A):
+  Dung SUBSTREAM subtype=1 (720p), KHONG dung subtype=0 (luong chinh 2K/3MP).
+  subtype=0 rat nang, PC yeu se bi don lag.
+
+1. Chon "Camera IP qua mang LAN (RTSP)"
+2. Chon hang Dahua (hoac dan URL RTSP)
+3. Khi hoi "May tinh yeu?" -> chon Y (Enter)
+4. Chon kiem tra camera ngay (Y)
+5. Chay lai chay-agent.bat
+
+Neu dung camera IP: cai FFmpeg — winget install Gyan.FFmpeg
+Test URL RTSP bang VLC truoc khi cau hinh (Media - Open Network Stream).
+
+Doi sang webcam USB: cau-hinh-camera.bat -> chon Webcam USB.
 
 
 BUOC 1 - CAI DAT (chi 1 lan)
 ------------------------------
-Double-click: cai-dat.bat
-Doi den khi hien "Cai dat hoan tat".
-Lan dau se tai them model AI (~300MB).
+CACH CHAY DUNG:
+  1. Mo File Explorer (Win+E)
+  2. Vao thu muc da giai nen OptigoFaceAgent
+  3. Double-click: cai-dat.bat
+  4. Doi cua so den (mau den) hien "Cai dat hoan tat"
+
+KHONG bam file .bat trong Cursor / VS Code — phan mem chi MO FILE de sua,
+khong chay cai dat. Neu khong thay cua so: xem file cai-dat-log.txt trong
+cung thu muc.
+
+Doi den khi hien "Cai dat hoan tat". Lan dau se tai them model AI (~300MB).
 
 
 BUOC 2 - GHEP NOI THIET BI
@@ -45,7 +119,8 @@ LOI THUONG GAP
 --------------
 - Chua cai dat: chay cai-dat.bat
 - Chua ghep noi: chay ghep-noi.bat
-- Camera khong mo: doi camera_index trong config.json thanh 1 hoac 2
+- Camera USB khong mo: chay cau-hinh-camera.bat, thu camera_index 0 / 1 / 2
+- Camera IP khong mo: chay cau-hinh-camera.bat, kiem tra URL RTSP bang VLC, cai FFmpeg, ping IP camera
 - Khong nhan dien: tang anh sang, chay lai dang-ky-khuon-mat.bat
 
 Hotline/ ho tro: lien he Optigo.

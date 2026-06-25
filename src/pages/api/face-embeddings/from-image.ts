@@ -1,0 +1,89 @@
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { requireTenant, setNoCacheHeaders, supabaseAdmin } from '../../../lib/tenantApi';
+import { upsertFaceEmbedding } from '../../../lib/faceRecognition';
+import { planHasFeature } from '../../../lib/featureConfig';
+
+const DEFAULT_EMBEDDING_SERVICE = 'http://127.0.0.1:8765';
+
+async function assertTenantFeature(tenantId: string, res: NextApiResponse): Promise<boolean> {
+  const { data: tenantRow } = await supabaseAdmin
+    .from('tenants')
+    .select('plan')
+    .eq('id', tenantId)
+    .single();
+
+  if (!planHasFeature(tenantRow?.plan, 'face_recognition')) {
+    res.status(403).json({ success: false, error: 'Cần gói Pro để dùng nhận diện khuôn mặt' });
+    return false;
+  }
+  return true;
+}
+
+async function fetchEmbeddingFromService(imageBase64: string): Promise<number[]> {
+  const serviceUrl = (process.env.FACE_EMBEDDING_SERVICE_URL || DEFAULT_EMBEDDING_SERVICE).replace(
+    /\/$/,
+    ''
+  );
+
+  let response: Response;
+  try {
+    response = await fetch(`${serviceUrl}/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: imageBase64 }),
+      signal: AbortSignal.timeout(45000),
+    });
+  } catch {
+    throw new Error(
+      'Không kết nối được dịch vụ embedding. Trên PC camera chạy chay-agent.bat (hoặc dùng dang-ky-khuon-mat.bat để đăng ký trực tiếp).'
+    );
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    embedding?: number[];
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Dịch vụ embedding trả lỗi');
+  }
+
+  if (!Array.isArray(payload.embedding) || payload.embedding.length < 128) {
+    throw new Error('Không trích xuất được embedding từ ảnh. Thử lại với ánh sáng tốt hơn.');
+  }
+
+  return payload.embedding;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  setNoCacheHeaders(res);
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
+  }
+
+  const ctx = await requireTenant(req, res);
+  if (!ctx) return;
+
+  const { tenantId } = ctx;
+  if (!(await assertTenantFeature(tenantId, res))) return;
+
+  const { patient_id, image_base64 } = req.body || {};
+  const patientId = parseInt(String(patient_id), 10);
+
+  if (!patientId || typeof image_base64 !== 'string' || image_base64.length < 100) {
+    return res.status(400).json({ success: false, error: 'Thiếu patient_id hoặc ảnh' });
+  }
+
+  try {
+    const embedding = await fetchEmbeddingFromService(imageBase64);
+    await upsertFaceEmbedding(tenantId, patientId, embedding);
+    return res.status(200).json({
+      success: true,
+      message: `Đã đăng ký khuôn mặt cho bệnh nhân #${patientId}`,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Lỗi xử lý ảnh';
+    return res.status(400).json({ success: false, error: message });
+  }
+}

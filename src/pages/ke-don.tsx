@@ -4,11 +4,12 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
+import { uploadMediaBinary } from '../lib/media/clientUpload';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle, Camera } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -30,6 +31,8 @@ import {
   PatientFamilyDesktopChip,
 } from '../components/family/PatientFamilyControls';
 import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
+import { FaceEnrollModal } from '../components/FaceEnrollModal';
+import { useFeatureGate } from '../hooks/useFeatureGate';
 
 interface Thuoc {
   id: number;
@@ -160,19 +163,13 @@ async function uploadDraftDonThuocMediaQueue(
         captured_at: new Date().toISOString(),
       });
 
-      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; contentType?: string } | undefined;
+      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; proxyUrl?: string; contentType?: string } | undefined;
       mediaId = Number(createRes.data?.data?.id || 0) || null;
-      if (!uploadMeta?.signedUrl) {
+      if (!uploadMeta?.signedUrl && !uploadMeta?.proxyUrl) {
         throw new Error('Không nhận được signed upload URL');
       }
 
-      const uploadRes = await fetch(uploadMeta.signedUrl, {
-        method: uploadMeta.method || 'PUT',
-        headers: {
-          'Content-Type': uploadMeta.contentType || draft.file.type || 'application/octet-stream',
-        },
-        body: draft.file,
-      });
+      const uploadRes = await uploadMediaBinary(uploadMeta, draft.file);
 
       if (!uploadRes.ok) {
         throw new Error(`Upload thất bại (${uploadRes.status})`);
@@ -321,12 +318,15 @@ export default function KeDon() {
   const benhnhanid = searchParams.get('bn');
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
   const { setLai: setFooterLai } = useFooter();
+  const { canAccessFeature } = useFeatureGate();
+  const showFaceEnroll = canAccessFeature('face_recognition');
   const authReady = !authLoading && !tenancyLoading && !!currentTenantId;
   const patientIdNumber = useMemo(() => {
     const parsed = Number.parseInt(benhnhanid || '', 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [benhnhanid]);
   const [imageTabCount, setImageTabCount] = useState(0);
+  const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
 
   const refreshImageTabCount = useCallback(async () => {
     if (!patientIdNumber) {
@@ -1583,6 +1583,20 @@ export default function KeDon() {
             renderBackgroundUploadNotice={renderBackgroundUploadNotice}
           />
 
+          {showFaceEnroll && benhNhan && patientIdNumber && (
+            <div className="px-3 pb-2 flex-shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => setFaceEnrollOpen(true)}
+              >
+                <Camera className="w-3.5 h-3.5 mr-1" /> Đăng ký khuôn mặt
+              </Button>
+            </div>
+          )}
+
           {/* Swipeable viewport (4 panels: Đơn thuốc | Đơn cũ | Diễn tiến | Ảnh) */}
           <div
             ref={viewportRef}
@@ -2483,6 +2497,19 @@ export default function KeDon() {
         renderBackgroundUploadNotice={renderBackgroundUploadNotice}
       />
 
+      {showFaceEnroll && benhNhan && patientIdNumber && (
+        <div className="flex justify-end -mt-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setFaceEnrollOpen(true)}
+          >
+            <Camera className="w-4 h-4 mr-1" /> Đăng ký khuôn mặt
+          </Button>
+        </div>
+      )}
+
       {/* Diagnosis & Date Row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2 space-y-1">
@@ -3105,6 +3132,15 @@ export default function KeDon() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {showFaceEnroll && benhNhan && patientIdNumber && (
+        <FaceEnrollModal
+          open={faceEnrollOpen}
+          onOpenChange={setFaceEnrollOpen}
+          patientId={patientIdNumber}
+          patientName={benhNhan.ten}
+        />
+      )}
     </PatientFamilyProvider>
     </ProtectedRoute>
   );

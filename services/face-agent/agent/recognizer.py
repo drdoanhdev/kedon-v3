@@ -1,6 +1,7 @@
 """InsightFace wrapper for detection + embedding."""
 from __future__ import annotations
 
+import base64
 import numpy as np
 
 try:
@@ -10,6 +11,8 @@ except ImportError as e:
     raise ImportError(
         "Cài dependencies: pip install -r requirements.txt"
     ) from e
+
+from agent.camera import CameraStream
 
 
 class FaceRecognizer:
@@ -40,24 +43,29 @@ class FaceRecognizer:
         vec = np.array(face.embedding, dtype=np.float32)
         return vec / (np.linalg.norm(vec) + 1e-8)
 
-    def capture_embedding(self, camera_index: int = 0, samples: int = 5) -> list | None:
-        cap = cv2.VideoCapture(camera_index)
-        if not cap.isOpened():
-            raise RuntimeError(f"Không mở được camera index {camera_index}")
+    def embedding_from_jpeg(self, jpeg_bytes: bytes) -> list | None:
+        arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return None
+        emb = self._embedding_from_frame(frame)
+        return emb.tolist() if emb is not None else None
 
+    def capture_embedding_from_stream(
+        self, stream: CameraStream, samples: int = 5
+    ) -> list | None:
         collected: list[np.ndarray] = []
-        try:
-            for _ in range(samples * 20):
-                ok, frame = cap.read()
-                if not ok:
-                    continue
-                emb = self._embedding_from_frame(frame)
-                if emb is not None:
-                    collected.append(emb)
-                if len(collected) >= samples:
-                    break
-        finally:
-            cap.release()
+        max_attempts = samples * 30 if stream.config.uses_network_stream else samples * 20
+
+        for _ in range(max_attempts):
+            ok, frame = stream.read()
+            if not ok or frame is None:
+                continue
+            emb = self._embedding_from_frame(frame)
+            if emb is not None:
+                collected.append(emb)
+            if len(collected) >= samples:
+                break
 
         if len(collected) < 2:
             return None
@@ -66,41 +74,68 @@ class FaceRecognizer:
         mean = mean / (np.linalg.norm(mean) + 1e-8)
         return mean.tolist()
 
-    def recognize_from_camera(
-        self, camera_index: int, threshold: float
-    ) -> tuple[int, str, float] | None:
-        cap = cv2.VideoCapture(camera_index)
-        if not cap.isOpened():
-            return None
+    def _face_jpeg_b64(self, frame: np.ndarray, face) -> str | None:
         try:
-            ok, frame = cap.read()
+            bbox = face.bbox
+            x1, y1, x2, y2 = map(int, bbox[:4])
+            h, w = frame.shape[:2]
+            pad = int(max(x2 - x1, y2 - y1) * 0.25)
+            x1 = max(0, x1 - pad)
+            y1 = max(0, y1 - pad)
+            x2 = min(w, x2 + pad)
+            y2 = min(h, y2 + pad)
+            if x2 <= x1 or y2 <= y1:
+                return None
+            crop = frame[y1:y2, x1:x2]
+            ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
             if not ok:
                 return None
-            emb = self._embedding_from_frame(frame)
-            if emb is None:
-                self.last_unknown = None
-                return None
-
-            if not self._cache:
-                self.last_unknown = {"embedding": emb.tolist(), "quality": 0.5}
-                return None
-
-            best_pid = None
-            best_name = ""
-            best_score = -1.0
-
-            for pid, item in self._cache.items():
-                score = float(np.dot(emb, item["embedding"]))
-                if score > best_score:
-                    best_score = score
-                    best_pid = pid
-                    best_name = item["name"]
-
-            if best_pid is not None and best_score >= threshold:
-                self.last_unknown = None
-                return best_pid, best_name, best_score
-
-            self.last_unknown = {"embedding": emb.tolist(), "quality": max(0, best_score)}
+            return base64.b64encode(buf.tobytes()).decode("ascii")
+        except Exception:
             return None
-        finally:
-            cap.release()
+
+    def _unknown_payload(self, frame: np.ndarray, emb: np.ndarray, quality: float) -> dict:
+        face = self._best_face(frame)
+        snapshot_b64 = self._face_jpeg_b64(frame, face) if face is not None else None
+        payload: dict = {"embedding": emb.tolist(), "quality": quality}
+        if snapshot_b64:
+            payload["snapshot_b64"] = snapshot_b64
+        return payload
+
+    def recognize_from_frame(
+        self, frame: np.ndarray, threshold: float
+    ) -> tuple[int, str, float] | None:
+        emb = self._embedding_from_frame(frame)
+        if emb is None:
+            self.last_unknown = None
+            return None
+
+        if not self._cache:
+            self.last_unknown = self._unknown_payload(frame, emb, 0.5)
+            return None
+
+        best_pid = None
+        best_name = ""
+        best_score = -1.0
+
+        for pid, item in self._cache.items():
+            score = float(np.dot(emb, item["embedding"]))
+            if score > best_score:
+                best_score = score
+                best_pid = pid
+                best_name = item["name"]
+
+        if best_pid is not None and best_score >= threshold:
+            self.last_unknown = None
+            return best_pid, best_name, best_score
+
+        self.last_unknown = self._unknown_payload(frame, emb, max(0, best_score))
+        return None
+
+    def recognize_from_stream(
+        self, stream: CameraStream, threshold: float
+    ) -> tuple[int, str, float] | None:
+        ok, frame = stream.read()
+        if not ok or frame is None:
+            return None
+        return self.recognize_from_frame(frame, threshold)

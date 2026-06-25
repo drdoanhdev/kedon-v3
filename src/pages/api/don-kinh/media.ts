@@ -8,6 +8,7 @@ import {
 } from '../../../lib/tenantApi';
 import { buildDonKinhMediaObjectPath } from '../../../lib/media/objectPath';
 import { getMediaStorageProvider, getMediaStorageProviderForRow } from '../../../lib/media/storage';
+import { enrichUploadTargetForClient } from '../../../lib/media/uploadTarget';
 import {
   DEFAULT_MEDIA_MAX_FILE_BYTES,
   DEFAULT_MEDIA_READ_URL_TTL_SECONDS,
@@ -398,7 +399,7 @@ async function handlePost(
     capturedAt: capturedAt || undefined,
   });
 
-  const provider = getMediaStorageProvider();
+  const provider = getMediaStorageProvider('don_kinh');
   const uploadTarget = await provider.createSignedUpload(objectPath, mimeType);
 
   const insertPayload: Record<string, unknown> = {
@@ -433,7 +434,7 @@ async function handlePost(
 
   return res.status(200).json({
     data: mediaRow,
-    upload: uploadTarget,
+    upload: enrichUploadTargetForClient(uploadTarget, Number(mediaRow.id), '/api/don-kinh/media/upload'),
     max_items_per_prescription: MAX_MEDIA_ITEMS_PER_PRESCRIPTION,
     max_items_for_kind: MAX_MEDIA_ITEMS_PER_PRESCRIPTION,
   });
