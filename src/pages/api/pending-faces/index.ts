@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { resolveSnapshotDisplayUrl } from '../../../lib/faceSnapshotUpload';
+import { resolvePendingFaceSnapshotUrl } from '../../../lib/faceSnapshotUpload';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -41,13 +41,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ success: false, error: error.message });
       }
 
-      const rows = await Promise.all(
-        (data || []).map(async (row: Record<string, unknown>) => {
-          const snapshotUrl = row.snapshot_url as string | null | undefined;
-          const snapshot_display_url = await resolveSnapshotDisplayUrl(snapshotUrl);
-          return { ...row, snapshot_display_url };
-        })
-      );
+      const rows = (data || []).map((row: Record<string, unknown>) => {
+        const snapshotUrl = row.snapshot_url as string | null | undefined;
+        const faceId = row.id as number;
+        const snapshot_display_url = resolvePendingFaceSnapshotUrl(faceId, snapshotUrl);
+        return { ...row, snapshot_display_url };
+      });
 
       return res.status(200).json({ success: true, data: rows });
     } catch (error: unknown) {

@@ -289,13 +289,25 @@ export function FacePendingFacesPanel() {
                     src={face.snapshot_display_url}
                     alt={`Khách lạ #${face.id}`}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.parentElement
+                        ?.querySelector('[data-snapshot-fallback]')
+                        ?.classList.remove('hidden');
+                    }}
                   />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 px-2 text-center">
+                ) : null}
+                <div
+                  data-snapshot-fallback
+                  className={`w-full h-full flex flex-col items-center justify-center text-gray-400 px-2 text-center ${
+                    face.snapshot_display_url ? 'hidden absolute inset-0 bg-gray-100' : ''
+                  }`}
+                >
                     <span className="text-2xl mb-1">📷</span>
-                    <span className="text-[10px] leading-tight">Chưa có ảnh (bản ghi cũ)</span>
-                  </div>
-                )}
+                  <span className="text-[10px] leading-tight">
+                    {face.snapshot_display_url ? 'Không tải được ảnh' : 'Chưa có ảnh (bản ghi cũ)'}
+                  </span>
+                </div>
                 <div className="absolute top-2 left-2">{statusBadge(face.status)}</div>
                 <div className="absolute top-2 right-2">
                   <span

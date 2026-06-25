@@ -11,6 +11,7 @@ except ImportError as e:
     raise ImportError("Cài opencv-python") from e
 
 from agent.preview_profile import PreviewProfile, resolve_preview_profile, resize_frame
+from agent.face_overlay import OverlayState, draw_overlays
 
 DEFAULT_MJPEG_MAX_FPS = 12
 
@@ -79,20 +80,33 @@ class FrameStore:
 class LiveCapture:
     """Background thread: read camera for preview + latest frame for recognition."""
 
-    def __init__(self, camera, frame_store: FrameStore, profile: PreviewProfile) -> None:
+    def __init__(
+        self,
+        camera,
+        frame_store: FrameStore,
+        profile: PreviewProfile,
+        overlay_state: OverlayState | None = None,
+    ) -> None:
         self._camera = camera
         self._frame_store = frame_store
         self._profile = profile
+        self._overlay_state = overlay_state
         self._lock = threading.Lock()
         self._latest = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="live-capture", daemon=True)
 
     @classmethod
-    def from_config(cls, camera, frame_store: FrameStore, cfg: dict | None) -> LiveCapture:
+    def from_config(
+        cls,
+        camera,
+        frame_store: FrameStore,
+        cfg: dict | None,
+        overlay_state: OverlayState | None = None,
+    ) -> LiveCapture:
         uses_rtsp = camera.config.uses_network_stream
         profile = resolve_preview_profile(cfg, uses_rtsp=uses_rtsp)
-        return cls(camera, frame_store, profile)
+        return cls(camera, frame_store, profile, overlay_state)
 
     def start(self) -> None:
         self._thread.start()
@@ -121,7 +135,12 @@ class LiveCapture:
                 with self._lock:
                     self._latest = small
                 if frame_count % self._profile.encode_every_n == 0:
-                    self._frame_store.update(frame)
+                    display = frame
+                    if self._overlay_state is not None:
+                        annotations = self._overlay_state.get()
+                        if annotations:
+                            display = draw_overlays(frame, annotations)
+                    self._frame_store.update(display)
 
             self._stop.wait(self._profile.capture_interval_sec)
 

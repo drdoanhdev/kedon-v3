@@ -14,6 +14,7 @@ except ImportError as e:
 
 from agent.camera import CameraStream
 from agent.face_quality import FaceQualityScore, get_quality_analyzer
+from agent.face_overlay import COLOR_RECOGNIZED, COLOR_SCANNING, COLOR_UNKNOWN, FaceAnnotation
 
 
 class FaceRecognizer:
@@ -23,6 +24,7 @@ class FaceRecognizer:
         self._cache: dict[int, dict] = {}
         self.last_unknown: dict | None = None
         self.last_match: dict | None = None
+        self.last_annotations: list[FaceAnnotation] = []
         self._quality = get_quality_analyzer()
 
     def count(self) -> int:
@@ -136,10 +138,77 @@ class FaceRecognizer:
             payload["snapshot_b64"] = snapshot_b64
         return payload
 
+    def _build_annotations_from_faces(
+        self,
+        frame: np.ndarray,
+        faces,
+        threshold: float,
+        min_face_quality: float,
+    ) -> list[FaceAnnotation]:
+        if not faces:
+            return []
+
+        fh, fw = frame.shape[:2]
+        annotations: list[FaceAnnotation] = []
+
+        for face in faces:
+            quality = self._face_quality(frame, face)
+            if quality.overall < min_face_quality:
+                continue
+
+            emb = self._normalize_embedding(face)
+            if emb is None:
+                continue
+
+            x1, y1, x2, y2 = map(float, face.bbox[:4])
+            bbox_norm = (x1 / fw, y1 / fh, x2 / fw, y2 / fh)
+
+            best_score = -1.0
+            best_name = ""
+            for item in self._cache.values():
+                score = float(np.dot(emb, item["embedding"]))
+                if score > best_score:
+                    best_score = score
+                    best_name = item["name"]
+
+            if self._cache and best_score >= threshold:
+                annotations.append(
+                    FaceAnnotation(
+                        bbox_norm=bbox_norm,
+                        label=best_name,
+                        sublabel=f"✓ {best_score:.0%}",
+                        color=COLOR_RECOGNIZED,
+                    )
+                )
+            elif self._cache:
+                annotations.append(
+                    FaceAnnotation(
+                        bbox_norm=bbox_norm,
+                        label="Khách lạ",
+                        sublabel=f"? {max(0, best_score):.0%}",
+                        color=COLOR_UNKNOWN,
+                    )
+                )
+            else:
+                annotations.append(
+                    FaceAnnotation(
+                        bbox_norm=bbox_norm,
+                        label="Chưa đăng ký",
+                        sublabel="",
+                        color=COLOR_SCANNING,
+                    )
+                )
+
+        return annotations
+
     def recognize_from_frame(
         self, frame: np.ndarray, threshold: float, min_face_quality: float = 0.35
     ) -> tuple[int, str, float] | None:
-        face = self._best_face(frame)
+        faces = self._faces(frame)
+        self.last_annotations = self._build_annotations_from_faces(
+            frame, faces, threshold, min_face_quality
+        )
+        face = max(faces, key=lambda f: float(getattr(f, "det_score", 0))) if faces else None
         if face is None:
             self.last_unknown = None
             self.last_match = None
@@ -190,6 +259,17 @@ class FaceRecognizer:
         self.last_match = None
         self.last_unknown = self._unknown_payload(frame, emb, max(0, best_score), face)
         return None
+
+    def build_annotations(
+        self,
+        frame: np.ndarray,
+        threshold: float,
+        min_face_quality: float = 0.35,
+    ) -> list[FaceAnnotation]:
+        """Tạo khung + nhãn cho mọi khuôn mặt trong khung hình."""
+        return self._build_annotations_from_faces(
+            frame, self._faces(frame), threshold, min_face_quality
+        )
 
     def recognize_from_stream(
         self, stream: CameraStream, threshold: float, min_face_quality: float = 0.35

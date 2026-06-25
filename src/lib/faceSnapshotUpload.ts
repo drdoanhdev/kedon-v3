@@ -98,6 +98,21 @@ export async function readSnapshotJpeg(snapshotRef: string | null | undefined): 
   return null;
 }
 
+export function resolvePendingFaceSnapshotUrl(
+  faceId: number,
+  snapshotRef: string | null | undefined
+): string | null {
+  if (!snapshotRef) return null;
+  if (
+    snapshotRef.startsWith('http://') ||
+    snapshotRef.startsWith('https://') ||
+    snapshotRef.startsWith('data:')
+  ) {
+    return snapshotRef;
+  }
+  return `/api/pending-faces/${faceId}/snapshot`;
+}
+
 export async function resolveSnapshotDisplayUrl(
   snapshotRef: string | null | undefined
 ): Promise<string | null> {

@@ -14,6 +14,7 @@ from agent.config import load_config, save_config
 from agent.camera import CameraStream, parse_camera_config, prepare_camera_url_in_config
 from agent.preview_profile import apply_low_power_settings
 from agent.preview_server import FrameStore, LiveCapture, start_preview_server
+from agent.face_overlay import OverlayState
 from agent.recognizer import FaceRecognizer
 from agent.recognition_tracker import RecognitionTracker
 
@@ -105,10 +106,10 @@ def cmd_pair(args: argparse.Namespace) -> None:
     print(f"   Config saved: {CONFIG_PATH}")
 
 
-def sync_embeddings(cfg: dict, recognizer: FaceRecognizer) -> None:
+def sync_embeddings(cfg: dict, recognizer: FaceRecognizer, *, force_full: bool = False) -> None:
     base = cfg["api_base_url"].rstrip("/")
     token = cfg["device_token"]
-    since = cfg.get("last_sync_at")
+    since = None if force_full else cfg.get("last_sync_at")
 
     params = {}
     if since:
@@ -134,11 +135,21 @@ def sync_embeddings(cfg: dict, recognizer: FaceRecognizer) -> None:
         pid = row.get("patient_id")
         name = row.get("name") or f"BN#{pid}"
         if pid and emb:
+            if isinstance(emb, str):
+                emb = json.loads(emb)
             recognizer.register(pid, name, emb)
+
+    if not force_full and recognizer.count() == 0 and since:
+        print("⚠️  Cache trống sau khởi động — tải lại toàn bộ khuôn mặt...")
+        sync_embeddings(cfg, recognizer, force_full=True)
+        return
 
     cfg["last_sync_at"] = payload.get("synced_at")
     save_config(CONFIG_PATH, cfg)
-    print(f"🔄 Synced {len(rows)} embeddings (total cache: {recognizer.count()})")
+    label = "Full sync" if force_full else "Synced"
+    print(f"🔄 {label}: {len(rows)} embeddings (total cache: {recognizer.count()})")
+    if recognizer.count() == 0:
+        print("   ⚠️  Chưa có khuôn mặt đăng ký — đăng ký bệnh nhân trên web trước.")
 
 
 def cmd_enroll(args: argparse.Namespace) -> None:
@@ -581,10 +592,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(f"❌ {err}")
         sys.exit(1)
 
-    live = LiveCapture.from_config(camera, frame_store, cfg)
+    overlay_state = OverlayState()
+    live = LiveCapture.from_config(camera, frame_store, cfg, overlay_state=overlay_state)
     live.start()
 
-    sync_embeddings(cfg, recognizer)
+    sync_embeddings(cfg, recognizer, force_full=True)
     last_sync = time.time()
 
     try:
@@ -599,6 +611,9 @@ def cmd_run(args: argparse.Namespace) -> None:
             match = None
             if frame is not None:
                 match = recognizer.recognize_from_frame(frame, threshold, min_face_quality)
+                overlay_state.set(recognizer.last_annotations)
+            else:
+                overlay_state.clear()
 
             if match:
                 pid, name, score = match
