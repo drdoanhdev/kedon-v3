@@ -144,16 +144,30 @@ export async function upsertFaceEmbedding(
   }
 
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin.from('face_embeddings').upsert(
-    {
-      tenant_id: tenantId,
-      patient_id: patientId,
-      embedding,
-      model: 'insightface_arcface',
-      updated_at: now,
-    },
-    { onConflict: 'tenant_id,patient_id' }
-  );
+  const baseRow = {
+    tenant_id: tenantId,
+    patient_id: patientId,
+    embedding,
+    model: 'insightface_arcface',
+    updated_at: now,
+  };
+  const extendedRow = {
+    ...baseRow,
+    embedding_count: 1,
+    quality_score: 0.5,
+    learn_count_today: 0,
+    learn_date: now.split('T')[0],
+  };
+
+  let { error } = await supabaseAdmin
+    .from('face_embeddings')
+    .upsert(extendedRow, { onConflict: 'tenant_id,patient_id' });
+
+  if (error?.message?.includes('embedding_count')) {
+    ({ error } = await supabaseAdmin
+      .from('face_embeddings')
+      .upsert(baseRow, { onConflict: 'tenant_id,patient_id' }));
+  }
 
   if (error) throw new Error(error.message);
 }

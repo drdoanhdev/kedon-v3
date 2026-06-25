@@ -13,6 +13,7 @@ except ImportError as e:
     ) from e
 
 from agent.camera import CameraStream
+from agent.face_quality import FaceQualityScore, get_quality_analyzer
 
 
 class FaceRecognizer:
@@ -21,6 +22,8 @@ class FaceRecognizer:
         self.app.prepare(ctx_id=0, det_size=(640, 640))
         self._cache: dict[int, dict] = {}
         self.last_unknown: dict | None = None
+        self.last_match: dict | None = None
+        self._quality = get_quality_analyzer()
 
     def count(self) -> int:
         return len(self._cache)
@@ -30,47 +33,75 @@ class FaceRecognizer:
         vec = vec / (np.linalg.norm(vec) + 1e-8)
         self._cache[int(patient_id)] = {"name": name, "embedding": vec}
 
+    def _faces(self, frame: np.ndarray):
+        return self.app.get(frame) or []
+
     def _best_face(self, frame: np.ndarray):
-        faces = self.app.get(frame)
+        faces = self._faces(frame)
         if not faces:
             return None
         return max(faces, key=lambda f: float(getattr(f, "det_score", 0)))
 
-    def _embedding_from_frame(self, frame: np.ndarray) -> np.ndarray | None:
-        face = self._best_face(frame)
+    def _face_quality(self, frame: np.ndarray, face) -> FaceQualityScore:
+        landmarks = getattr(face, "kps", None)
+        return self._quality.analyze(frame, face.bbox, landmarks)
+
+    def _normalize_embedding(self, face) -> np.ndarray | None:
         if face is None or face.embedding is None:
             return None
         vec = np.array(face.embedding, dtype=np.float32)
         return vec / (np.linalg.norm(vec) + 1e-8)
 
-    def embedding_from_jpeg(self, jpeg_bytes: bytes) -> list | None:
+    def _embedding_from_frame(
+        self, frame: np.ndarray, min_quality: float = 0.0
+    ) -> tuple[np.ndarray | None, FaceQualityScore | None]:
+        face = self._best_face(frame)
+        if face is None:
+            return None, None
+        quality = self._face_quality(frame, face)
+        if quality.overall < min_quality:
+            return None, quality
+        emb = self._normalize_embedding(face)
+        return emb, quality
+
+    def embedding_from_jpeg(
+        self, jpeg_bytes: bytes, min_quality: float = 0.35
+    ) -> tuple[list | None, float | None]:
         arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if frame is None:
-            return None
-        emb = self._embedding_from_frame(frame)
-        return emb.tolist() if emb is not None else None
+            return None, None
+        emb, quality = self._embedding_from_frame(frame, min_quality=min_quality)
+        if emb is None:
+            score = quality.overall if quality else None
+            return None, score
+        return emb.tolist(), quality.overall
 
     def capture_embedding_from_stream(
-        self, stream: CameraStream, samples: int = 5
+        self,
+        stream: CameraStream,
+        samples: int = 5,
+        min_quality: float = 0.45,
     ) -> list | None:
-        collected: list[np.ndarray] = []
+        collected: list[tuple[np.ndarray, float]] = []
         max_attempts = samples * 30 if stream.config.uses_network_stream else samples * 20
 
         for _ in range(max_attempts):
             ok, frame = stream.read()
             if not ok or frame is None:
                 continue
-            emb = self._embedding_from_frame(frame)
-            if emb is not None:
-                collected.append(emb)
-            if len(collected) >= samples:
+            emb, quality = self._embedding_from_frame(frame, min_quality=min_quality)
+            if emb is not None and quality is not None:
+                collected.append((emb, quality.overall))
+            if len(collected) >= samples * 2:
                 break
 
         if len(collected) < 2:
             return None
 
-        mean = np.mean(collected, axis=0)
+        collected.sort(key=lambda item: item[1], reverse=True)
+        top = collected[: max(samples, 3)]
+        mean = np.mean([item[0] for item in top], axis=0)
         mean = mean / (np.linalg.norm(mean) + 1e-8)
         return mean.tolist()
 
@@ -94,8 +125,11 @@ class FaceRecognizer:
         except Exception:
             return None
 
-    def _unknown_payload(self, frame: np.ndarray, emb: np.ndarray, quality: float) -> dict:
-        face = self._best_face(frame)
+    def _unknown_payload(
+        self, frame: np.ndarray, emb: np.ndarray, quality: float, face=None
+    ) -> dict:
+        if face is None:
+            face = self._best_face(frame)
         snapshot_b64 = self._face_jpeg_b64(frame, face) if face is not None else None
         payload: dict = {"embedding": emb.tolist(), "quality": quality}
         if snapshot_b64:
@@ -103,15 +137,29 @@ class FaceRecognizer:
         return payload
 
     def recognize_from_frame(
-        self, frame: np.ndarray, threshold: float
+        self, frame: np.ndarray, threshold: float, min_face_quality: float = 0.35
     ) -> tuple[int, str, float] | None:
-        emb = self._embedding_from_frame(frame)
+        face = self._best_face(frame)
+        if face is None:
+            self.last_unknown = None
+            self.last_match = None
+            return None
+
+        quality = self._face_quality(frame, face)
+        if quality.overall < min_face_quality:
+            self.last_unknown = None
+            self.last_match = None
+            return None
+
+        emb = self._normalize_embedding(face)
         if emb is None:
             self.last_unknown = None
+            self.last_match = None
             return None
 
         if not self._cache:
-            self.last_unknown = self._unknown_payload(frame, emb, 0.5)
+            self.last_match = None
+            self.last_unknown = self._unknown_payload(frame, emb, quality.overall, face)
             return None
 
         best_pid = None
@@ -125,17 +173,28 @@ class FaceRecognizer:
                 best_pid = pid
                 best_name = item["name"]
 
+        snapshot_b64 = self._face_jpeg_b64(frame, face)
+
         if best_pid is not None and best_score >= threshold:
             self.last_unknown = None
+            self.last_match = {
+                "patient_id": best_pid,
+                "name": best_name,
+                "score": best_score,
+                "embedding": emb.tolist(),
+                "face_quality": quality.overall,
+                "snapshot_b64": snapshot_b64,
+            }
             return best_pid, best_name, best_score
 
-        self.last_unknown = self._unknown_payload(frame, emb, max(0, best_score))
+        self.last_match = None
+        self.last_unknown = self._unknown_payload(frame, emb, max(0, best_score), face)
         return None
 
     def recognize_from_stream(
-        self, stream: CameraStream, threshold: float
+        self, stream: CameraStream, threshold: float, min_face_quality: float = 0.35
     ) -> tuple[int, str, float] | None:
         ok, frame = stream.read()
         if not ok or frame is None:
             return None
-        return self.recognize_from_frame(frame, threshold)
+        return self.recognize_from_frame(frame, threshold, min_face_quality)

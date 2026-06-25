@@ -19,7 +19,9 @@ async function assertTenantFeature(tenantId: string, res: NextApiResponse): Prom
   return true;
 }
 
-async function fetchEmbeddingFromService(imageBase64: string): Promise<number[]> {
+async function fetchEmbeddingFromService(
+  imageBase64: string
+): Promise<{ embedding: number[]; quality: number | null }> {
   const serviceUrl = (process.env.FACE_EMBEDDING_SERVICE_URL || DEFAULT_EMBEDDING_SERVICE).replace(
     /\/$/,
     ''
@@ -42,6 +44,7 @@ async function fetchEmbeddingFromService(imageBase64: string): Promise<number[]>
   const payload = (await response.json().catch(() => ({}))) as {
     embedding?: number[];
     error?: string;
+    quality?: number;
   };
 
   if (!response.ok) {
@@ -52,7 +55,7 @@ async function fetchEmbeddingFromService(imageBase64: string): Promise<number[]>
     throw new Error('Không trích xuất được embedding từ ảnh. Thử lại với ánh sáng tốt hơn.');
   }
 
-  return payload.embedding;
+  return { embedding: payload.embedding, quality: payload.quality ?? null };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -76,11 +79,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const embedding = await fetchEmbeddingFromService(imageBase64);
+    const { embedding, quality } = await fetchEmbeddingFromService(image_base64);
     await upsertFaceEmbedding(tenantId, patientId, embedding);
     return res.status(200).json({
       success: true,
       message: `Đã đăng ký khuôn mặt cho bệnh nhân #${patientId}`,
+      quality,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Lỗi xử lý ảnh';

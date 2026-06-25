@@ -49,6 +49,7 @@ export function FaceEnrollCamera({
 }: FaceEnrollCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const processCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const agentImgRef = useRef<HTMLImageElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<FaceDetectorLike | null>(null);
@@ -70,6 +71,7 @@ export function FaceEnrollCamera({
   const [holdProgress, setHoldProgress] = useState(0);
   const [saving, setSaving] = useState(false);
   const [detectorLabel, setDetectorLabel] = useState('');
+  const [faceDetectorAvailable, setFaceDetectorAvailable] = useState(false);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current != null) {
@@ -157,6 +159,104 @@ export function FaceEnrollCamera({
 
   saveEnrollmentRef.current = saveEnrollment;
 
+  const getProcessCanvas = useCallback(() => {
+    if (!processCanvasRef.current) {
+      processCanvasRef.current = document.createElement('canvas');
+    }
+    return processCanvasRef.current;
+  }, []);
+
+  const processFaceFrame = useCallback(
+    async (
+      source: HTMLVideoElement | HTMLImageElement,
+      overlay: HTMLCanvasElement | null,
+      getSize: () => { w: number; h: number },
+      mirrorOverlay = false
+    ) => {
+      const { w, h } = getSize();
+      if (w <= 0 || h <= 0) return false;
+
+      const canvas = getProcessCanvas();
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      if (overlay && (overlay.width !== w || overlay.height !== h)) {
+        overlay.width = w;
+        overlay.height = h;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return false;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(source, 0, 0, w, h);
+
+      let face: FaceBounds | null = null;
+      const detector = detectorRef.current;
+      if (detector) {
+        try {
+          const faces = await detector.detect(canvas);
+          if (faces.length > 0) {
+            face = domRectToBounds(faces[0].boundingBox);
+          }
+        } catch {
+          // Transient detection errors while frames update.
+        }
+      }
+
+      let brightness: number | null = null;
+      if (face) {
+        brightness = sampleFaceBrightness(ctx, face, w, h);
+
+        if (overlay) {
+          const octx = overlay.getContext('2d');
+          if (octx) {
+            octx.clearRect(0, 0, w, h);
+            octx.save();
+            if (mirrorOverlay) {
+              octx.translate(w, 0);
+              octx.scale(-1, 1);
+            }
+            octx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
+            octx.lineWidth = 2;
+            octx.strokeRect(face.x, face.y, face.width, face.height);
+            octx.restore();
+          }
+        }
+      } else if (overlay) {
+        const octx = overlay.getContext('2d');
+        octx?.clearRect(0, 0, w, h);
+      }
+
+      const result = analyzeFaceGuide(face, w, h, brightness);
+      setGuide(result);
+
+      const isReady = result.score >= READY_SCORE_THRESHOLD && result.status === 'ready';
+      const now = Date.now();
+
+      if (isReady && !previewOnlyRef.current && patientIdRef.current && !savingRef.current) {
+        if (readySinceRef.current == null) {
+          readySinceRef.current = now;
+        }
+        const elapsed = now - readySinceRef.current;
+        const progress = Math.min(100, Math.round((elapsed / READY_HOLD_MS) * 100));
+        setHoldProgress(progress);
+        if (elapsed >= READY_HOLD_MS) {
+          readySinceRef.current = null;
+          setHoldProgress(0);
+          await saveEnrollmentRef.current();
+        }
+      } else {
+        readySinceRef.current = null;
+        setHoldProgress(0);
+      }
+
+      return true;
+    },
+    [getProcessCanvas]
+  );
+
   const tick = useCallback(async () => {
     const video = videoRef.current;
     const overlay = canvasRef.current;
@@ -167,74 +267,34 @@ export function FaceEnrollCamera({
       return;
     }
 
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if (w > 0 && h > 0 && (overlay.width !== w || overlay.height !== h)) {
-      overlay.width = w;
-      overlay.height = h;
-    }
-
-    const ctx = overlay.getContext('2d');
-    if (!ctx) {
-      rafRef.current = requestAnimationFrame(() => {
-        void tick();
-      });
-      return;
-    }
-
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    let face: FaceBounds | null = null;
-    const detector = detectorRef.current;
-    if (detector) {
-      try {
-        const faces = await detector.detect(video);
-        if (faces.length > 0) {
-          face = domRectToBounds(faces[0].boundingBox);
-        }
-      } catch {
-        // Transient detection errors while camera warms up.
-      }
-    }
-
-    let brightness: number | null = null;
-    if (face) {
-      ctx.drawImage(video, 0, 0, w, h);
-      brightness = sampleFaceBrightness(ctx, face, w, h);
-      ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(face.x, face.y, face.width, face.height);
-    }
-
-    const result = analyzeFaceGuide(face, w, h, brightness);
-    setGuide(result);
-
-    const isReady = result.score >= READY_SCORE_THRESHOLD && result.status === 'ready';
-    const now = Date.now();
-
-    if (isReady && !previewOnlyRef.current && patientIdRef.current && !savingRef.current) {
-      if (readySinceRef.current == null) {
-        readySinceRef.current = now;
-      }
-      const elapsed = now - readySinceRef.current;
-      const progress = Math.min(100, Math.round((elapsed / READY_HOLD_MS) * 100));
-      setHoldProgress(progress);
-      if (elapsed >= READY_HOLD_MS) {
-        readySinceRef.current = null;
-        setHoldProgress(0);
-        await saveEnrollmentRef.current();
-      }
-    } else {
-      readySinceRef.current = null;
-      setHoldProgress(0);
-    }
+    await processFaceFrame(video, overlay, () => ({
+      w: video.videoWidth,
+      h: video.videoHeight,
+    }), true);
 
     rafRef.current = requestAnimationFrame(() => {
       void tick();
     });
-  }, []);
+  }, [processFaceFrame]);
+
+  const agentTick = useCallback(async () => {
+    const img = agentImgRef.current;
+    if (!img || !img.complete || img.naturalWidth <= 0) {
+      rafRef.current = requestAnimationFrame(() => {
+        void agentTick();
+      });
+      return;
+    }
+
+    await processFaceFrame(img, null, () => ({
+      w: img.naturalWidth,
+      h: img.naturalHeight,
+    }));
+
+    rafRef.current = requestAnimationFrame(() => {
+      void agentTick();
+    });
+  }, [processFaceFrame]);
 
   useEffect(() => {
     const base = agentPreviewBase?.replace(/\/$/, '');
@@ -250,7 +310,7 @@ export function FaceEnrollCamera({
       setCameraReady(false);
       setGuide({
         status: 'no_face',
-        message: 'Đang xem camera qua agent',
+        message: 'Đang kết nối preview agent...',
         score: 0,
         hints: [
           'Khung hình từ RTSP/USB do agent đọc — không phải webcam trình duyệt',
@@ -258,6 +318,30 @@ export function FaceEnrollCamera({
         ],
         checks: [],
       });
+
+      const FaceDetectorCtor = (
+        window as unknown as { FaceDetector?: new (opts?: object) => FaceDetectorLike }
+      ).FaceDetector;
+
+      if (FaceDetectorCtor) {
+        detectorRef.current = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 1 });
+        setFaceDetectorAvailable(true);
+        setDetectorLabel('Camera IP (agent) · FaceDetector');
+      } else {
+        detectorRef.current = null;
+        setFaceDetectorAvailable(false);
+        setDetectorLabel('Camera IP (agent)');
+        setGuide({
+          status: 'no_face',
+          message: 'Preview agent — chụp thủ công khi đã chọn bệnh nhân',
+          score: 0,
+          hints: [
+            'Trình duyệt không hỗ trợ hướng dẫn tự động — dùng Chrome/Edge để có oval + tự chụp',
+            'Vẫn có thể bấm Chụp & lưu ngay khi thấy mặt trong khung',
+          ],
+          checks: [],
+        });
+      }
 
       let pollIntervalMs = AGENT_SNAPSHOT_INTERVAL_MS_DEFAULT;
 
@@ -299,6 +383,11 @@ export function FaceEnrollCamera({
             failStreak = 0;
             setCameraReady(true);
             setCameraError('');
+            if (rafRef.current == null) {
+              rafRef.current = requestAnimationFrame(() => {
+                void agentTick();
+              });
+            }
           } catch {
             failStreak += 1;
             if (failStreak >= 8) {
@@ -319,7 +408,7 @@ export function FaceEnrollCamera({
 
       return () => {
         active = false;
-        setCameraReady(false);
+        stopCamera();
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
     }
@@ -340,8 +429,11 @@ export function FaceEnrollCamera({
 
         if (FaceDetectorCtor) {
           detectorRef.current = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 1 });
+          setFaceDetectorAvailable(true);
           setDetectorLabel('FaceDetector');
         } else {
+          detectorRef.current = null;
+          setFaceDetectorAvailable(false);
           setDetectorLabel('');
           setCameraError(
             'Trình duyệt chưa hỗ trợ nhận diện khuôn mặt tự động. Vui lòng dùng Chrome hoặc Edge mới nhất.'
@@ -383,9 +475,14 @@ export function FaceEnrollCamera({
       cancelled = true;
       stopCamera();
     };
-  }, [stopCamera, agentPreviewBase]);
+  }, [stopCamera, agentPreviewBase, agentTick, tick]);
 
   const agentPreviewMode = Boolean(agentPreviewBase?.replace(/\/$/, ''));
+  const canCapture =
+    cameraReady &&
+    Boolean(patientId) &&
+    !saving &&
+    (guide?.status === 'ready' || (agentPreviewMode && !faceDetectorAvailable));
 
   const statusColor =
     guide?.status === 'ready'
@@ -483,7 +580,7 @@ export function FaceEnrollCamera({
         {!previewOnly && (
           <Button
             type="button"
-            disabled={!cameraReady || !patientId || saving || guide?.status !== 'ready'}
+            disabled={!canCapture}
             onClick={() => void saveEnrollment()}
           >
             {saving ? (

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFaceDevice, touchFaceDevice } from '../../lib/faceDeviceAuth';
 import { checkInPatientToQueue } from '../../lib/faceRecognition';
+import { trySmartLearningUpdate } from '../../lib/faceSmartLearning';
 
 interface ApiResponse {
   success: boolean;
@@ -49,6 +50,7 @@ export default async function handler(
       action,
       image_data,
       confidence,
+      embedding,
     } = req.body || {};
 
     const patientId = parseInt(String(patient_id), 10);
@@ -76,6 +78,17 @@ export default async function handler(
     });
 
     await touchFaceDevice(device.deviceId);
+
+    if (
+      result.status !== 'patient_not_found' &&
+      Array.isArray(embedding) &&
+      embedding.length >= 128 &&
+      typeof confidence === 'number'
+    ) {
+      trySmartLearningUpdate(device.tenantId, patientId, embedding, confidence).catch((err) => {
+        console.warn('smart learning skipped:', err);
+      });
+    }
 
     if (result.status === 'patient_not_found') {
       return res.status(404).json({ success: false, message: result.message });

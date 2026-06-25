@@ -54,3 +54,7 @@ services/face-agent/.venv/
 services/face-agent/dist/
 services/face-agent/**/__pycache__/
 services/face-agent/**/*.pyc
+
+# local face recognition service (copied separately, not for repo)
+Nhan-dien/
+nhan-dien/

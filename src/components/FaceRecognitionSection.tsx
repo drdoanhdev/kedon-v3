@@ -127,7 +127,13 @@ function WizardProgress({ step, hasActiveDevice }: { step: WizardStep; hasActive
   );
 }
 
-export function FaceRecognitionSection() {
+export function FaceRecognitionSection({
+  hidePendingFaces = false,
+  setupOnly = false,
+}: {
+  hidePendingFaces?: boolean;
+  setupOnly?: boolean;
+}) {
   const [devices, setDevices] = useState<FaceDevice[]>([]);
   const [pendingFaces, setPendingFaces] = useState<PendingFace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -431,6 +437,7 @@ export function FaceRecognitionSection() {
         </div>
 
         {/* Pending faces — reception workflow */}
+        {!hidePendingFaces && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
             <span className="text-base">🆕</span>
@@ -491,8 +498,10 @@ export function FaceRecognitionSection() {
             )}
           </div>
         </div>
+        )}
 
         {/* Step 3 & 4: Camera */}
+        {!setupOnly && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b bg-gray-50 flex flex-wrap items-center gap-2">
             <span className="text-base">3️⃣</span>
@@ -564,6 +573,7 @@ export function FaceRecognitionSection() {
             />
           </div>
         </div>
+        )}
 
         {/* Advanced */}
         <div className="border rounded-lg">

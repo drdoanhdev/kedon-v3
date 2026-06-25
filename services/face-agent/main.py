@@ -15,6 +15,7 @@ from agent.camera import CameraStream, parse_camera_config, prepare_camera_url_i
 from agent.preview_profile import apply_low_power_settings
 from agent.preview_server import FrameStore, LiveCapture, start_preview_server
 from agent.recognizer import FaceRecognizer
+from agent.recognition_tracker import RecognitionTracker
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 
@@ -170,18 +171,30 @@ def cmd_enroll(args: argparse.Namespace) -> None:
     print(f"✅ Đã đăng ký khuôn mặt cho bệnh nhân #{args.patient_id}")
 
 
-def check_in(cfg: dict, patient_id: int, name: str, confidence: float) -> None:
+def check_in(
+    cfg: dict,
+    patient_id: int,
+    name: str,
+    confidence: float,
+    embedding: list | None = None,
+    image_data: str | None = None,
+) -> None:
     base = cfg["api_base_url"].rstrip("/")
+    payload: dict = {
+        "patient_id": patient_id,
+        "name": name,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "action": "check_in",
+        "confidence": confidence,
+    }
+    if embedding:
+        payload["embedding"] = embedding
+    if image_data:
+        payload["image_data"] = image_data
     res = requests.post(
         f"{base}/api/nhan-dien",
         headers=api_headers(cfg["device_token"]),
-        json={
-            "patient_id": patient_id,
-            "name": name,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "action": "check_in",
-            "confidence": confidence,
-        },
+        json=payload,
         timeout=15,
     )
     if res.status_code >= 400:
@@ -196,12 +209,23 @@ def report_unknown(cfg: dict, embedding: list, quality: float, snapshot_b64: str
     payload: dict = {"embedding": embedding, "quality_score": quality}
     if snapshot_b64:
         payload["snapshot_base64"] = snapshot_b64
-    requests.post(
-        f"{base}/api/face-devices/report-unknown",
-        headers=api_headers(cfg["device_token"]),
-        json=payload,
-        timeout=30,
-    )
+    try:
+        res = requests.post(
+            f"{base}/api/face-devices/report-unknown",
+            headers=api_headers(cfg["device_token"]),
+            json=payload,
+            timeout=30,
+        )
+        if res.status_code >= 400:
+            print(f"⚠️ report-unknown failed ({res.status_code}): {res.text[:200]}")
+            return
+        data = res.json() if res.text else {}
+        if data.get("had_snapshot_payload") and not data.get("snapshot_stored") and not data.get("snapshot_updated"):
+            print("⚠️ Server không lưu được ảnh snapshot — kiểm tra R2 env trên app.optigo.vn (Vercel)")
+        elif data.get("snapshot_stored") or data.get("snapshot_updated"):
+            print(f"📸 Đã gửi ảnh khuôn mặt lạ (pending #{data.get('pending_face_id', '?')})")
+    except requests.RequestException as err:
+        print(f"⚠️ report-unknown lỗi mạng: {err}")
 
 
 def heartbeat(cfg: dict) -> None:
@@ -252,12 +276,19 @@ def start_embed_server(recognizer: FaceRecognizer, host: str, port: int) -> Thre
                 self._send_json(400, {"error": "Payload không hợp lệ"})
                 return
 
-            embedding = recognizer.embedding_from_jpeg(jpeg_bytes)
-            if embedding is None:
-                self._send_json(422, {"error": "Không detect được khuôn mặt trong ảnh"})
+            emb_list, quality = recognizer.embedding_from_jpeg(jpeg_bytes)
+            if emb_list is None:
+                if quality is not None:
+                    hint = (
+                        f"Chất lượng ảnh chưa đủ (điểm {quality:.2f}). "
+                        "Thử bật thêm đèn, nhìn thẳng camera."
+                    )
+                    self._send_json(422, {"error": hint, "quality": quality})
+                else:
+                    self._send_json(422, {"error": "Không detect được khuôn mặt trong ảnh"})
                 return
 
-            self._send_json(200, {"embedding": embedding})
+            self._send_json(200, {"embedding": emb_list, "quality": quality})
 
     server = ThreadingHTTPServer((host, port), EmbedHandler)
     import threading
@@ -508,6 +539,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     recognizer = FaceRecognizer()
     threshold = float(cfg.get("match_threshold", 0.45))
     cooldown = int(cfg.get("check_in_cooldown_sec", 60))
+    min_face_quality = float(cfg.get("min_face_quality", 0.35))
+    confirm_matches = int(cfg.get("confirm_matches", 3))
     sync_interval = int(cfg.get("sync_interval_sec", 300))
     cam_cfg = parse_camera_config(cfg)
     camera = CameraStream(cam_cfg)
@@ -516,6 +549,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     frame_store = FrameStore.from_config(cfg, uses_rtsp=uses_rtsp)
     preview_host = cfg.get("preview_host") or "127.0.0.1"
     preview_port = int(cfg.get("preview_port") or 8766)
+    tracker = RecognitionTracker(
+        required_matches=confirm_matches,
+        match_window_sec=float(cfg.get("confirm_window_sec", 2.5)),
+        post_checkin_cooldown_sec=float(cfg.get("post_checkin_cooldown_sec", 1800)),
+    )
     if preview_port > 0:
         start_preview_server(preview_host, preview_port, frame_store)
         print(f"🖥️  Preview web: http://{preview_host}:{preview_port}/snapshot")
@@ -534,6 +572,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     recognize_interval = profile.recognize_interval_sec
 
     print("🚀 Agent đang chạy. Nhấn Ctrl+C để dừng.")
+    if confirm_matches > 1:
+        print(f"   Xác nhận nhận diện: {confirm_matches} lần liên tiếp trước check-in")
     try:
         camera.open()
         print(f"📷 Camera: {camera.label}")
@@ -558,15 +598,26 @@ def cmd_run(args: argparse.Namespace) -> None:
             frame = live.get_latest_copy()
             match = None
             if frame is not None:
-                match = recognizer.recognize_from_frame(frame, threshold)
+                match = recognizer.recognize_from_frame(frame, threshold, min_face_quality)
 
             if match:
                 pid, name, score = match
-                if now - last_check_in.get(pid, 0) >= cooldown:
-                    check_in(cfg, pid, name, score)
-                    last_check_in[pid] = now
+                if tracker.observe(pid, now):
+                    if now - last_check_in.get(pid, 0) >= cooldown:
+                        match_info = recognizer.last_match or {}
+                        check_in(
+                            cfg,
+                            pid,
+                            name,
+                            score,
+                            embedding=match_info.get("embedding"),
+                            image_data=match_info.get("snapshot_b64"),
+                        )
+                        last_check_in[pid] = now
+                        tracker.mark_checked_in(pid, now)
                 camera_ok = True
             else:
+                tracker.reset_streak()
                 if not camera.last_read_ok and camera.config.uses_network_stream:
                     if camera_ok:
                         print("⚠️ Mất tín hiệu camera IP, đang thử kết nối lại...")
