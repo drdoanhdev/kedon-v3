@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { uploadMediaBinary } from '../../lib/media/clientUpload';
+import { uploadMediaBinary } from '../lib/media/clientUpload';
 import {
   Camera,
   ImagePlus,

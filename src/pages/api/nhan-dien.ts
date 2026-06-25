@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireFaceDevice, touchFaceDevice } from '../../../lib/faceDeviceAuth';
-import { checkInPatientToQueue } from '../../../lib/faceRecognition';
+import { requireFaceDevice, touchFaceDevice } from '../../lib/faceDeviceAuth';
+import { checkInPatientToQueue } from '../../lib/faceRecognition';
 
 interface ApiResponse {
   success: boolean;
