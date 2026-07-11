@@ -5,6 +5,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin } from '../../../../lib/tenantApi';
 import { upsertFaceEmbedding } from '../../../../lib/faceRecognition';
+import { logFaceAudit } from '../../../../lib/faceBiometricGovernance';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -38,11 +39,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (pendingFace.embedding) {
-      await upsertFaceEmbedding(
-        ctx.tenantId,
-        parseInt(String(patient_id), 10),
-        pendingFace.embedding as number[]
-      );
+      try {
+        await upsertFaceEmbedding(
+          ctx.tenantId,
+          parseInt(String(patient_id), 10),
+          pendingFace.embedding as number[],
+          { actor: ctx.userId, source: 'pending_assign' }
+        );
+      } catch (embErr: unknown) {
+        const message = embErr instanceof Error ? embErr.message : 'Lỗi lưu embedding';
+        // Thiếu đồng ý sinh trắc → trả 400 rõ ràng thay vì 500.
+        return res.status(400).json({ success: false, error: message });
+      }
     }
 
     const { error: updateError } = await supabaseAdmin
@@ -58,6 +66,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (updateError) {
       return res.status(500).json({ success: false, error: updateError.message });
     }
+
+    await logFaceAudit(ctx.tenantId, 'assign', {
+      patientId: parseInt(String(patient_id), 10),
+      actor: ctx.userId,
+      detail: { pending_face_id: id },
+    });
 
     return res.status(200).json({
       success: true,

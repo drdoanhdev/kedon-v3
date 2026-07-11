@@ -15,17 +15,24 @@ except ImportError as e:
 from agent.camera import CameraStream
 from agent.face_quality import FaceQualityScore, get_quality_analyzer
 from agent.face_overlay import COLOR_RECOGNIZED, COLOR_SCANNING, COLOR_UNKNOWN, FaceAnnotation
+from agent.liveness import LivenessChecker, get_liveness_checker
 
 
 class FaceRecognizer:
-    def __init__(self) -> None:
+    def __init__(self, *, liveness_enabled: bool = True) -> None:
         self.app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
         self.app.prepare(ctx_id=0, det_size=(640, 640))
         self._cache: dict[int, dict] = {}
+        self._cache_matrix: np.ndarray | None = None
+        self._cache_pids: list[int] = []
         self.last_unknown: dict | None = None
         self.last_match: dict | None = None
         self.last_annotations: list[FaceAnnotation] = []
         self._quality = get_quality_analyzer()
+        self.liveness_enabled = liveness_enabled
+        self._liveness: LivenessChecker = get_liveness_checker()
+        self._liveness_pid: int | None = None
+        self.last_liveness_warning: str | None = None
 
     def count(self) -> int:
         return len(self._cache)
@@ -34,6 +41,32 @@ class FaceRecognizer:
         vec = np.array(embedding, dtype=np.float32)
         vec = vec / (np.linalg.norm(vec) + 1e-8)
         self._cache[int(patient_id)] = {"name": name, "embedding": vec}
+        self._cache_matrix: np.ndarray | None = None
+        self._cache_pids: list[int] = []
+
+    def _rebuild_cache_matrix(self) -> None:
+        if not self._cache:
+            self._cache_matrix = None
+            self._cache_pids = []
+            return
+        self._cache_pids = list(self._cache.keys())
+        self._cache_matrix = np.stack(
+            [self._cache[pid]["embedding"] for pid in self._cache_pids],
+            axis=0,
+        )
+
+    def _best_match(self, emb: np.ndarray) -> tuple[int | None, str, float]:
+        """So khớp vectorized — O(N) nhưng dùng BLAS thay vòng Python."""
+        if not self._cache:
+            return None, "", -1.0
+        if self._cache_matrix is None or len(self._cache_pids) != len(self._cache):
+            self._rebuild_cache_matrix()
+        assert self._cache_matrix is not None
+        scores = self._cache_matrix @ emb
+        best_idx = int(np.argmax(scores))
+        best_score = float(scores[best_idx])
+        best_pid = self._cache_pids[best_idx]
+        return best_pid, self._cache[best_pid]["name"], best_score
 
     def _faces(self, frame: np.ndarray):
         return self.app.get(frame) or []
@@ -165,11 +198,14 @@ class FaceRecognizer:
 
             best_score = -1.0
             best_name = ""
-            for item in self._cache.values():
-                score = float(np.dot(emb, item["embedding"]))
-                if score > best_score:
-                    best_score = score
-                    best_name = item["name"]
+            if self._cache:
+                if self._cache_matrix is None or len(self._cache_pids) != len(self._cache):
+                    self._rebuild_cache_matrix()
+                assert self._cache_matrix is not None
+                scores = self._cache_matrix @ emb
+                best_idx = int(np.argmax(scores))
+                best_score = float(scores[best_idx])
+                best_name = self._cache[self._cache_pids[best_idx]]["name"]
 
             if self._cache and best_score >= threshold:
                 annotations.append(
@@ -212,40 +248,46 @@ class FaceRecognizer:
         if face is None:
             self.last_unknown = None
             self.last_match = None
+            self._reset_liveness()
             return None
 
         quality = self._face_quality(frame, face)
         if quality.overall < min_face_quality:
             self.last_unknown = None
             self.last_match = None
+            self._reset_liveness()
             return None
 
         emb = self._normalize_embedding(face)
         if emb is None:
             self.last_unknown = None
             self.last_match = None
+            self._reset_liveness()
             return None
 
         if not self._cache:
             self.last_match = None
             self.last_unknown = self._unknown_payload(frame, emb, quality.overall, face)
+            self._reset_liveness()
             return None
 
         best_pid = None
         best_name = ""
         best_score = -1.0
 
-        for pid, item in self._cache.items():
-            score = float(np.dot(emb, item["embedding"]))
-            if score > best_score:
-                best_score = score
-                best_pid = pid
-                best_name = item["name"]
+        if self._cache:
+            best_pid, best_name, best_score = self._best_match(emb)
 
         snapshot_b64 = self._face_jpeg_b64(frame, face)
 
         if best_pid is not None and best_score >= threshold:
+            if self.liveness_enabled and not self._check_liveness(best_pid, frame, face):
+                self.last_unknown = None
+                self.last_match = None
+                return None
+
             self.last_unknown = None
+            self.last_liveness_warning = None
             self.last_match = {
                 "patient_id": best_pid,
                 "name": best_name,
@@ -258,7 +300,26 @@ class FaceRecognizer:
 
         self.last_match = None
         self.last_unknown = self._unknown_payload(frame, emb, max(0, best_score), face)
+        self._reset_liveness()
         return None
+
+    def _reset_liveness(self) -> None:
+        self._liveness_pid = None
+        self._liveness.reset()
+
+    def _check_liveness(self, patient_id: int, frame: np.ndarray, face) -> bool:
+        """Kiểm tra liveness tối thiểu (chuyển động + moiré) cho danh tính đang xác nhận.
+        Đặt `self.last_liveness_warning` khi từ chối để hiển thị log/debug cho lễ tân."""
+        if self._liveness_pid != patient_id:
+            self._liveness_pid = patient_id
+            self._liveness.reset()
+
+        landmarks = getattr(face, "kps", None)
+        result = self._liveness.check(frame, face.bbox, landmarks)
+        if not result.passed:
+            self.last_liveness_warning = result.reason
+            return False
+        return True
 
     def build_annotations(
         self,

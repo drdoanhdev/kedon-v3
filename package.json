@@ -10,7 +10,9 @@
     "start": "next start",
     "lint": "next lint",
     "clean": "rimraf .next && rimraf node_modules/.cache",
-    "pack:face-agent": "powershell -ExecutionPolicy Bypass -File services/face-agent/scripts/build-optigo-face-agent.ps1"
+    "pack:face-agent": "powershell -ExecutionPolicy Bypass -File services/face-agent/scripts/build-optigo-face-agent.ps1",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
@@ -70,6 +72,7 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^4.1.4",
     "tw-animate-css": "^1.2.8",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.6"
   }
 }

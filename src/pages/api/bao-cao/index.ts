@@ -32,6 +32,8 @@ type DonKinh = {
 type ChiTietThuoc = {
   donthuocid: number;
   soluong: number;
+  don_gia_ban?: number | null; // snapshot giá bán tại thời điểm kê đơn (V049)
+  don_gia_von?: number | null; // snapshot giá vốn tại thời điểm kê đơn (V049)
   thuoc: {
     giaban: number;
     gianhap?: number;
@@ -148,7 +150,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       for (const idBatch of idBatches) {
         const queryChiTiet = supabase
           .from('ChiTietDonThuoc')
-          .select('donthuocid, soluong, thuoc:thuocid(giaban, gianhap, donvitinh, la_thu_thuat)')
+          .select('donthuocid, soluong, don_gia_ban, don_gia_von, thuoc:thuocid(giaban, gianhap, donvitinh, la_thu_thuat)')
           .in('donthuocid', idBatch);
         
         const batchData = await getAllRecords<ChiTietThuoc>(queryChiTiet, `ChiTietDonThuoc-batch-${idBatches.indexOf(idBatch) + 1}`, timestamp);
@@ -213,10 +215,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const thuocList = chiTiets.filter((ct) => ct.thuoc && !ct.thuoc.la_thu_thuat && ct.thuoc.donvitinh !== 'lần');
       const thuthuatList = chiTiets.filter((ct) => ct.thuoc && (ct.thuoc.la_thu_thuat || ct.thuoc.donvitinh === 'lần'));
 
-      const doanhthuThuoc = thuocList.reduce((sum, ct) => sum + ct.soluong * ct.thuoc.giaban, 0);
-      const doanhthuThuthuat = thuthuatList.reduce((sum, ct) => sum + ct.soluong * ct.thuoc.giaban, 0);
-      const laiThuoc = thuocList.reduce((sum, ct) => sum + ct.soluong * (ct.thuoc.giaban - (ct.thuoc.gianhap || 0)), 0);
-      const laiThuthuat = thuthuatList.reduce((sum, ct) => sum + ct.soluong * (ct.thuoc.giaban - (ct.thuoc.gianhap || 0)), 0);
+      // Ưu tiên dùng giá snapshot tại thời điểm kê đơn (don_gia_ban/don_gia_von, V049)
+      // thay vì giá HIỆN TẠI của danh mục thuốc — tránh việc đổi giá nhập/giá bán
+      // sau này làm thay đổi doanh thu/lãi của các đơn đã kê trong quá khứ.
+      const giaBanTaiThoiDiem = (ct: ChiTietThuoc) =>
+        (ct.don_gia_ban !== null && ct.don_gia_ban !== undefined && ct.don_gia_ban > 0)
+          ? ct.don_gia_ban
+          : ct.thuoc.giaban;
+      const giaVonTaiThoiDiem = (ct: ChiTietThuoc) =>
+        (ct.don_gia_von !== null && ct.don_gia_von !== undefined)
+          ? ct.don_gia_von
+          : (ct.thuoc.gianhap || 0);
+
+      const doanhthuThuoc = thuocList.reduce((sum, ct) => sum + ct.soluong * giaBanTaiThoiDiem(ct), 0);
+      const doanhthuThuthuat = thuthuatList.reduce((sum, ct) => sum + ct.soluong * giaBanTaiThoiDiem(ct), 0);
+      const laiThuoc = thuocList.reduce((sum, ct) => sum + ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct)), 0);
+      const laiThuthuat = thuthuatList.reduce((sum, ct) => sum + ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct)), 0);
 
       const no = don.tongtien - (don.sotien_da_thanh_toan || 0);
       const noThuoc = don.tongtien ? (doanhthuThuoc / don.tongtien) * no : 0;

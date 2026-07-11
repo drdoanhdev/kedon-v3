@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFaceDevice, touchFaceDevice } from '../../lib/faceDeviceAuth';
-import { checkInPatientToQueue } from '../../lib/faceRecognition';
+import { checkInPatientToQueue, MIN_CHECKIN_CONFIDENCE, validateFaceEmbedding } from '../../lib/faceRecognition';
 import { trySmartLearningUpdate } from '../../lib/faceSmartLearning';
 
 interface ApiResponse {
@@ -61,7 +61,7 @@ export default async function handler(
       });
     }
 
-    if (typeof confidence === 'number' && confidence < 0.45) {
+    if (typeof confidence === 'number' && confidence < MIN_CHECKIN_CONFIDENCE) {
       return res.status(422).json({
         success: false,
         message: 'Độ tin cậy quá thấp, không tự động check-in',
@@ -77,12 +77,12 @@ export default async function handler(
       source: `device:${device.deviceId}`,
     });
 
-    await touchFaceDevice(device.deviceId);
+    await touchFaceDevice(device.deviceId, { ip: device.clientIp });
 
     if (
       result.status !== 'patient_not_found' &&
       Array.isArray(embedding) &&
-      embedding.length >= 128 &&
+      !validateFaceEmbedding(embedding) &&
       typeof confidence === 'number'
     ) {
       trySmartLearningUpdate(device.tenantId, patientId, embedding, confidence).catch((err) => {

@@ -229,17 +229,25 @@ async function completeThuocTransfer(tenantId: string, transfer: any, itemId: nu
   if (srcErr) throw srcErr;
   if (!srcThuoc) throw new Error('Không tìm thấy thuốc ở chi nhánh gửi');
 
-  const srcTon = srcThuoc.tonkho ?? 0;
-  if (srcTon < soLuong) throw new Error('Tồn kho thuốc ở chi nhánh gửi không đủ');
+  // Trừ kho nguồn qua RPC atomic (khóa hàng + ghi sổ kho), tránh race-condition
+  // khi có kê đơn/nhập kho khác xảy ra đồng thời với điều chuyển.
+  const { data: deductedTon, error: deductErr } = await supabase.rpc('adjust_thuoc_stock', {
+    p_thuoc_id: itemId,
+    p_delta: -soLuong,
+    p_ref_type: 'branch_transfer',
+    p_ref_id: transfer.id,
+  });
 
-  const { error: deductErr } = await supabase
-    .from('Thuoc')
-    .update({ tonkho: srcTon - soLuong })
-    .eq('id', itemId)
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', transfer.from_branch_id);
-
-  if (deductErr) throw deductErr;
+  if (deductErr) {
+    if (String(deductErr.message || '').includes('Tồn kho không đủ')) {
+      throw new Error('Tồn kho thuốc ở chi nhánh gửi không đủ');
+    }
+    throw deductErr;
+  }
+  if (typeof deductedTon === 'number' && deductedTon < 0) {
+    await supabase.rpc('adjust_thuoc_stock', { p_thuoc_id: itemId, p_delta: soLuong, p_ref_type: 'branch_transfer_rollback', p_ref_id: transfer.id });
+    throw new Error('Điều chuyển bị từ chối vì tồn kho thuốc không đủ');
+  }
 
   let destQuery = supabase
     .from('Thuoc')
@@ -256,20 +264,19 @@ async function completeThuocTransfer(tenantId: string, transfer: any, itemId: nu
   const { data: destThuoc, error: destErr } = await destQuery.maybeSingle();
 
   if (destErr) {
-    await supabase.from('Thuoc').update({ tonkho: srcTon }).eq('id', itemId).eq('tenant_id', tenantId);
+    await supabase.rpc('adjust_thuoc_stock', { p_thuoc_id: itemId, p_delta: soLuong, p_ref_type: 'branch_transfer_rollback', p_ref_id: transfer.id });
     throw destErr;
   }
 
   if (destThuoc) {
-    const { error: addErr } = await supabase
-      .from('Thuoc')
-      .update({ tonkho: (destThuoc.tonkho ?? 0) + soLuong })
-      .eq('id', destThuoc.id)
-      .eq('tenant_id', tenantId)
-      .eq('branch_id', transfer.to_branch_id);
-
+    const { error: addErr } = await supabase.rpc('adjust_thuoc_stock', {
+      p_thuoc_id: destThuoc.id,
+      p_delta: soLuong,
+      p_ref_type: 'branch_transfer',
+      p_ref_id: transfer.id,
+    });
     if (addErr) {
-      await supabase.from('Thuoc').update({ tonkho: srcTon }).eq('id', itemId).eq('tenant_id', tenantId);
+      await supabase.rpc('adjust_thuoc_stock', { p_thuoc_id: itemId, p_delta: soLuong, p_ref_type: 'branch_transfer_rollback', p_ref_id: transfer.id });
       throw addErr;
     }
     return {
@@ -292,7 +299,7 @@ async function completeThuocTransfer(tenantId: string, transfer: any, itemId: nu
     .single();
 
   if (insertErr) {
-    await supabase.from('Thuoc').update({ tonkho: srcTon }).eq('id', itemId).eq('tenant_id', tenantId);
+    await supabase.rpc('adjust_thuoc_stock', { p_thuoc_id: itemId, p_delta: soLuong, p_ref_type: 'branch_transfer_rollback', p_ref_id: transfer.id });
     throw insertErr;
   }
 

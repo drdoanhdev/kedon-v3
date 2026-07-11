@@ -3,13 +3,29 @@ OPTIGO FACE AGENT - HUONG DAN NHANH
 
 Yeu cau: Windows 10/11, webcam hoac camera IP (RTSP), mang internet, goi Pro tren Optigo.
 
+CACH NHANH NHAT (KHUYEN NGHI)
+-----------------------------
+Double-click: optigo-setup.bat
+
+Mot wizard duy nhat lam het: cai thu vien -> hoi ma ghep noi -> TU DONG DO
+CAMERA trong mang LAN (khong can biet truoc IP) -> kiem tra -> hoi co tu
+khoi dong cung Windows khong -> chay nhan dien. Lam theo huong dan tren
+man hinh la xong, khong can doc them phan ben duoi.
+
+Thich thao tac bang chuot hon go phim trong cua so den? Double-click
+giao-dien-cai-dat.bat — mo giao dien web tai http://127.0.0.1:8767, ghep
+noi va chon camera (co xem truoc anh) ngay tren trinh duyet.
+
+
 QUAN TRONG: KHONG CAN MO POWERSHELL HAY GO LENH PYTHON
 -------------------------------------------------------
-Chi can double-click cac file .bat trong thu muc da giai nen:
-  cai-dat.bat           -> cai dat (1 lan)
-  ghep-noi.bat          -> lien ket PC voi phong kham
-  cau-hinh-camera.bat   -> doi webcam USB hoac camera IP (RTSP)
-  chay-agent.bat        -> bat nhan dien tu dong (de cua so mo khi lam viec)
+Neu can sua rieng tung buoc (doi camera, ghep noi lai...), van co the
+double-click tung file .bat trong thu muc da giai nen:
+  optigo-setup.bat      -> wizard 1 lan duy nhat (khuyen nghi dung dau tien)
+  cai-dat.bat           -> chi cai dat thu vien (1 lan)
+  ghep-noi.bat          -> chi lien ket lai PC voi phong kham
+  cau-hinh-camera.bat   -> chi doi webcam USB hoac camera IP (RTSP)
+  chay-agent.bat        -> chi bat nhan dien (de cua so mo khi lam viec)
   dang-ky-khuon-mat.bat -> dang ky khuon mat benh nhan lan dau
 
 Neu ban dang chay "python main.py ..." trong PowerShell, ban dang dev tu
@@ -59,13 +75,17 @@ QUAN TRONG — Camera Dahua (vd DH-C5A):
   subtype=0 rat nang, PC yeu se bi don lag.
 
 1. Chon "Camera IP qua mang LAN (RTSP)"
-2. Chon hang Dahua (hoac dan URL RTSP)
-3. Khi hoi "May tinh yeu?" -> chon Y (Enter)
-4. Chon kiem tra camera ngay (Y)
-5. Chay lai chay-agent.bat
+2. Chon "Tu dong do camera trong mang LAN" -> chon camera tim duoc trong danh
+   sach (khong can biet truoc IP). Khong tim thay thi chon hang thu cong
+   (Hikvision/Dahua/Reolink) hoac dan URL RTSP day du.
+3. Nhap user/mat khau camera (xem tem dan tren camera hoac app NVR)
+4. Khi hoi "May tinh yeu?" -> chon Y (Enter)
+5. Chon kiem tra camera ngay (Y)
+6. Chay lai chay-agent.bat
 
 Neu dung camera IP: cai FFmpeg — winget install Gyan.FFmpeg
-Test URL RTSP bang VLC truoc khi cau hinh (Media - Open Network Stream).
+Camera loi khong ro nguyen nhan? Chay: python main.py doctor
+(bao chinh xac: thieu FFmpeg, khong ping duoc camera, sai mat khau...)
 
 Doi sang webcam USB: cau-hinh-camera.bat -> chon Webcam USB.
 
@@ -108,6 +128,10 @@ Nhap ID benh nhan tu Optigo, nhin thang camera.
 
 TU DONG CHAY KHI BAT MAY (tuy chon)
 ------------------------------------
+Cach 1 (khuyen nghi): khi chay optigo-setup.bat, tra loi Y o cau hoi
+"Tu khoi dong agent moi khi bat may?" — agent tu dang ky vao Task Scheduler.
+
+Cach 2 (thu cong):
 1. Mo Task Scheduler (Lenh chay)
 2. Tao task moi -> Trigger: When I log on
 3. Action:

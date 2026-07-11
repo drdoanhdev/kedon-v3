@@ -3,6 +3,7 @@
  * Tham khảo từ Nhan-dien/services/smart_learning_service.py
  */
 import { supabaseAdmin } from './tenantApi';
+import { FACE_EMBEDDING_DIM, validateFaceEmbedding } from './faceRecognition';
 
 const DEFAULT_CONFIG = {
   alpha: 0.15,
@@ -14,18 +15,18 @@ const DEFAULT_CONFIG = {
   minLearnsForHighQuality: 10,
 };
 
-function normalize(vec: number[]): number[] {
+export function normalize(vec: number[]): number[] {
   const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0)) + 1e-8;
   return vec.map((v) => v / norm);
 }
 
-function dot(a: number[], b: number[]): number {
+export function dot(a: number[], b: number[]): number {
   let sum = 0;
   for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
   return sum;
 }
 
-function emaCentroid(oldVec: number[], newVec: number[], alpha: number): number[] {
+export function emaCentroid(oldVec: number[], newVec: number[], alpha: number): number[] {
   const oldNorm = normalize(oldVec);
   const newNorm = normalize(newVec);
   const blended = oldNorm.map((v, i) => alpha * newNorm[i] + (1 - alpha) * v);
@@ -48,7 +49,7 @@ export async function trySmartLearningUpdate(
   newEmbedding: number[],
   recognitionScore: number
 ): Promise<SmartLearningResult> {
-  if (!Array.isArray(newEmbedding) || newEmbedding.length < 128) {
+  if (validateFaceEmbedding(newEmbedding)) {
     return { updated: false, reason: 'embedding không hợp lệ' };
   }
 
@@ -76,6 +77,12 @@ export async function trySmartLearningUpdate(
   }
 
   const currentEmbedding = row.embedding as number[];
+  if (currentEmbedding.length !== FACE_EMBEDDING_DIM) {
+    return {
+      updated: false,
+      reason: `centroid hiện tại có ${currentEmbedding.length} chiều — không khớp buffalo_l (${FACE_EMBEDDING_DIM})`,
+    };
+  }
   const learnCountToday =
     row.learn_date === todayVN() ? Number(row.learn_count_today || 0) : 0;
 

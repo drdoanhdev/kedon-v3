@@ -2,6 +2,13 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
+// Đơn giản hoá tham số RPC trả về dạng mảng 1 dòng hoặc object tuỳ driver
+function parseRpcRow<T = any>(raw: any): T | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return (raw[0] as T) ?? null;
+  return raw as T;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
@@ -94,6 +101,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(201).json(data);
     }
 
+    // PUT: Kiểm kê (thay hack sửa tồn đầu kỳ) — body: { id, stocktake: true, ton_thuc_te, ghi_chu }
+    if (req.method === 'PUT' && req.body?.stocktake === true) {
+      const { id, ton_thuc_te, ghi_chu } = req.body;
+      const stockId = parseInt(String(id), 10);
+      const tonThucTe = parseInt(String(ton_thuc_te), 10);
+      if (!Number.isFinite(stockId) || !Number.isFinite(tonThucTe) || tonThucTe < 0) {
+        return res.status(400).json({ error: 'id và ton_thuc_te (>= 0) là bắt buộc' });
+      }
+
+      let stockQuery = supabase.from('lens_stock').select('id, branch_id').eq('id', stockId).eq('tenant_id', tenantId);
+      if (branchId) stockQuery = stockQuery.eq('branch_id', branchId);
+      const { data: stock } = await stockQuery.single();
+      if (!stock) return res.status(404).json({ error: 'Không tìm thấy dòng kho' });
+
+      const { data: rpcData, error: rpcError } = await supabase.rpc('record_stocktake', {
+        p_tenant_id: tenantId,
+        p_branch_id: stock.branch_id || branchId || null,
+        p_loai_hang: 'trong',
+        p_stock_ref_id: stockId,
+        p_ton_thuc_te: tonThucTe,
+        p_ghi_chu: ghi_chu || 'Kiểm kê kho tròng kính',
+        p_nguoi_thuc_hien: null,
+      });
+      if (rpcError) throw rpcError;
+      const result = parseRpcRow(rpcData);
+
+      const { data: updatedStock } = await supabase
+        .from('lens_stock')
+        .select('*, HangTrong(id, ten_hang, loai_trong, kieu_quan_ly)')
+        .eq('id', stockId)
+        .single();
+
+      return res.status(200).json({ ...updatedStock, stocktake: result });
+    }
+
     // PUT: Cập nhật tất cả thông tin lens_stock
     if (req.method === 'PUT') {
       const { id, hang_trong_id, sph, cyl, add_power, mat, ton_dau_ky, muc_ton_can_co } = req.body;
@@ -122,12 +164,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Thông số kho
       if (muc_ton_can_co !== undefined) updateFields.muc_ton_can_co = parseInt(muc_ton_can_co) || 10;
 
-      // Tồn đầu kỳ: điều chỉnh tồn hiện tại theo delta
+      // Tồn đầu kỳ: KHÔNG còn tự cộng/trừ trực tiếp vào ton_hien_tai (hack cũ).
+      // Chỉ cập nhật giá trị mốc "tồn đầu kỳ" để hiển thị; muốn điều chỉnh tồn
+      // thực tế phải dùng chức năng "Kiểm kê" (POST /api/inventory/lens-stock/stocktake
+      // hay body { stocktake: true, ton_thuc_te }) để có phiếu kiểm kê minh bạch.
       if (ton_dau_ky !== undefined) {
-        const newTonDauKy = parseInt(ton_dau_ky) || 0;
-        const delta = newTonDauKy - current.ton_dau_ky;
-        updateFields.ton_dau_ky = newTonDauKy;
-        updateFields.ton_hien_tai = current.ton_hien_tai + delta;
+        updateFields.ton_dau_ky = parseInt(ton_dau_ky) || 0;
       }
 
       // Thông tin tròng (hãng, độ)

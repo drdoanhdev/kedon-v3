@@ -4,6 +4,8 @@
 
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin } from '../../../../lib/tenantApi';
+import { deletePendingFaceSnapshot } from '../../../../lib/faceSnapshotUpload';
+import { logFaceAudit } from '../../../../lib/faceBiometricGovernance';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -22,12 +24,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    // Lấy snapshot để xóa khỏi storage (khuôn mặt lạ bị từ chối — không cần giữ ảnh).
+    const { data: existing } = await supabase
+      .from('PendingFaces')
+      .select('snapshot_url')
+      .eq('id', id)
+      .eq('tenant_id', tenant.tenantId)
+      .maybeSingle();
+
     const { error } = await supabase
       .from('PendingFaces')
       .update({
         status: 'rejected',
         reject_reason: reason || null,
         rejected_at: new Date().toISOString(),
+        snapshot_url: null,
       })
       .eq('id', id)
       .eq('tenant_id', tenant.tenantId)
@@ -36,6 +47,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (error) {
       return res.status(500).json({ success: false, error: error.message });
     }
+
+    if (existing?.snapshot_url) {
+      await deletePendingFaceSnapshot(existing.snapshot_url as string);
+    }
+
+    await logFaceAudit(tenant.tenantId, 'reject', {
+      actor: tenant.userId,
+      detail: { pending_face_id: id, reason: reason || null },
+    });
 
     return res.status(200).json({
       success: true,

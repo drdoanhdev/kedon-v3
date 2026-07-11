@@ -16,11 +16,21 @@ Agent Python chạy trên **PC tại phòng khám** (webcam USB hoặc **camera 
 1. Tải **`OptigoFaceAgent.zip`** (build: `npm run pack:face-agent`)
    - Link tải trên web: `/downloads/OptigoFaceAgent.zip` (production: `https://app.optigo.vn/downloads/OptigoFaceAgent.zip`)
 2. Giải nén vào thư mục bất kỳ (vd. `C:\OptigoFaceAgent`)
-3. **Double-click `cai-dat.bat`** — cài Python (qua winget nếu thiếu), thư viện, model AI
-4. **Double-click `ghep-noi.bat`** — nhập mã ghép nối từ web
-5. **Double-click `chay-agent.bat`** — chạy nhận diện
+3. **Double-click `optigo-setup.bat`** — một wizard duy nhất: cài thư viện → ghép nối → dò & cấu hình camera trong mạng LAN → kiểm tra → tự khởi động cùng Windows (tùy chọn) → chạy nhận diện
+   - Thích thao tác bằng trình duyệt hơn console? Double-click **`giao-dien-cai-dat.bat`** thay thế — mở giao diện web tại `http://127.0.0.1:8767` để ghép nối + dò/chọn camera bằng chuột.
 
 Xem `HUONG-DAN.txt` trong gói zip.
+
+**Nâng cao / sửa từng bước riêng lẻ** (nếu cần chạy lại một bước cụ thể):
+
+| File | Việc gì |
+|------|---------|
+| `optigo-setup.bat` | Wizard console 1 lần duy nhất (khuyến nghị) |
+| `giao-dien-cai-dat.bat` | Wizard qua trình duyệt (ghép nối + dò/chọn camera) |
+| `cai-dat.bat` | Chỉ cài Python/thư viện/model |
+| `ghep-noi.bat` | Chỉ ghép nối lại (mã mới) |
+| `cau-hinh-camera.bat` | Chỉ đổi camera (dò lại IP, đổi hãng...) |
+| `chay-agent.bat` | Chỉ chạy nhận diện (không hỏi lại gì) |
 
 ## Cài đặt dev (từ source)
 
@@ -100,14 +110,19 @@ python main.py test-camera
 
 Ưu tiên dùng **substream** (720p) — nhẹ, đủ cho nhận diện mặt.
 
-**Phòng khám (không cần sửa file):** double-click **`cau-hinh-camera.bat`** → chọn hãng camera hoặc dán URL RTSP → kiểm tra → chạy lại `chay-agent.bat`.
+**Phòng khám (không cần sửa file, không cần biết IP):** double-click **`cau-hinh-camera.bat`** → chọn **Camera IP** → **Tự động dò camera trong mạng LAN** → chọn camera từ danh sách tìm được → nhập user/password → kiểm tra → chạy lại `chay-agent.bat`.
+
+Không tìm được camera bằng cách dò? Vẫn có thể chọn hãng thủ công hoặc dán URL RTSP đầy đủ như trước.
 
 **Dev / nâng cao:** sửa `config.json` hoặc:
 
 ```bash
+python main.py discover-camera            # chỉ liệt kê camera tìm thấy trong mạng
+python main.py setup-ui                   # giao diện web cục bộ (ghép nối + chọn camera)
 python main.py config-camera
 python main.py config-camera --rtsp-url "rtsp://admin:pass@192.168.1.100:554/..."
 python main.py config-camera --usb-index 0
+python main.py doctor                     # chẩn đoán FFmpeg / mạng / camera khi có lỗi
 ```
 
 1. Lấy URL RTSP từ app/NVR camera (test bằng VLC: *Media → Open Network Stream*)
@@ -139,13 +154,23 @@ python main.py run
 
 **Windows:** cài FFmpeg (`winget install Gyan.FFmpeg`) rồi mở terminal mới.
 
+### Đổi camera từ xa (không cần chạm PC)
+
+Nếu camera đổi IP (DHCP) và admin không tiện chạy `cau-hinh-camera.bat` tại phòng khám,
+admin có thể dán URL RTSP mới trên web: **Quản lý phòng khám → Nhận diện khuôn mặt →
+Cài đặt agent → nút "Đổi camera từ xa"** trên thiết bị tương ứng. Agent đang chạy sẽ tự
+lấy cấu hình mới ở lần đồng bộ tiếp theo (`sync_interval_sec`, mặc định 5 phút), tự kiểm
+tra camera mới trước khi áp dụng — nếu camera mới không mở được thì giữ nguyên camera cũ
+và không làm gián đoạn nhận diện.
+
 ## Cấu hình (`config.json`)
 
 | Key | Mặc định | Mô tả |
 |-----|----------|--------|
 | `camera_url` | `""` | URL RTSP/HTTP camera IP (ưu tiên hơn `camera_index`) |
 | `camera_index` | 0 | Index webcam USB khi `camera_url` rỗng |
-| `match_threshold` | 0.45 | Ngưỡng cosine (0.4–0.55) |
+| `match_threshold` | 0.5 | Ngưỡng cosine (khuyến nghị 0.5–0.55; thấp hơn tăng rủi ro nhận nhầm) |
+| `liveness_enabled` | true | Chống giả mạo tối thiểu (chuyển động + hoa văn màn hình) — tắt nếu gây từ chối nhầm |
 | `check_in_cooldown_sec` | 60 | Tránh check-in trùng |
 | `sync_interval_sec` | 300 | Tần suất sync embedding |
 | `preview_port` | 8766 | HTTP preview MJPEG (0 = tắt) |

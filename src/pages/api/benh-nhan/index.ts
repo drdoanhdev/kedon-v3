@@ -2,6 +2,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { requirePermission } from '../../../lib/permissions';
+import { deleteFaceBiometrics } from '../../../lib/faceRecognition';
 
 // Định nghĩa interface cho dữ liệu bệnh nhân
 interface BenhNhan {
@@ -64,7 +65,12 @@ async function reverseDonKinhInventoryForDelete(tenantId: string, donKinhId: num
       .eq('don_kinh_id', donKinhId);
 
     for (const exp of lensExports || []) {
-      await supabase.rpc('adjust_lens_stock', { p_lens_stock_id: exp.lens_stock_id, p_delta: exp.so_luong });
+      await supabase.rpc('adjust_lens_stock', {
+        p_lens_stock_id: exp.lens_stock_id,
+        p_delta: exp.so_luong,
+        p_ref_type: 'don_kinh_reversal',
+        p_ref_id: donKinhId,
+      });
     }
     await supabase.from('lens_export_sale').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
 
@@ -75,7 +81,12 @@ async function reverseDonKinhInventoryForDelete(tenantId: string, donKinhId: num
       .eq('don_kinh_id', donKinhId);
 
     for (const exp of frameExports || []) {
-      await supabase.rpc('adjust_frame_stock', { p_gong_kinh_id: exp.gong_kinh_id, p_delta: exp.so_luong });
+      await supabase.rpc('adjust_frame_stock', {
+        p_gong_kinh_id: exp.gong_kinh_id,
+        p_delta: exp.so_luong,
+        p_ref_type: 'don_kinh_reversal',
+        p_ref_id: donKinhId,
+      });
     }
     await supabase.from('frame_export').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId);
 
@@ -91,6 +102,14 @@ async function reverseDonKinhInventoryForDelete(tenantId: string, donKinhId: num
 }
 
 async function deletePatientCascade(patientId: number, tenantId: string): Promise<SupabaseError | null> {
+  // Dọn dữ liệu sinh trắc (embedding + snapshot storage + audit) trước khi xóa hồ sơ.
+  // FK ON DELETE CASCADE xử lý embedding, nhưng ảnh snapshot trên storage cần xóa thủ công.
+  try {
+    await deleteFaceBiometrics(tenantId, patientId, { reason: 'patient_deleted' });
+  } catch (err) {
+    console.warn(`[delete-patient] dọn dữ liệu sinh trắc thất bại cho BN #${patientId}:`, err);
+  }
+
   // NoBenhNhan chỉ có ở một số DB (vd. Sáng Mắt) — xóa trước để không chặn FK
   {
     const { error } = await supabase.from('NoBenhNhan').delete().eq('benhnhanid', patientId);

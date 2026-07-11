@@ -31,7 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 2. Thuốc tồn kho theo chi nhánh
     const { data: thuocList } = await supabase
       .from('Thuoc')
-      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_toi_thieu, branch_id, ngung_kinh_doanh')
+      .select('id, tenthuoc, donvitinh, tonkho, muc_ton_can_co, branch_id, ngung_kinh_doanh')
       .eq('tenant_id', tenantId)
       .eq('ngung_kinh_doanh', false)
       .in('branch_id', branchIds)
@@ -45,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ten: t.tenthuoc,
           donvi: t.donvitinh,
           per_branch: {},
-          muc_min: t.muc_ton_toi_thieu || 10,
+          muc_min: t.muc_ton_can_co || 10,
         };
       }
       thuocByName[t.tenthuoc].per_branch[t.branch_id] = t.tonkho || 0;

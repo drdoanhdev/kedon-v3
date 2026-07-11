@@ -160,6 +160,8 @@ export default function BenhNhanPage() {
   const [openPatientNotesDialog, setOpenPatientNotesDialog] = useState<boolean>(false);
   const [notesPatient, setNotesPatient] = useState<BenhNhan | null>(null);
   const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
+  const [historyNotesByPatient, setHistoryNotesByPatient] = useState<Record<number, PatientNote[]>>({});
+  const [loadingHistoryPatientId, setLoadingHistoryPatientId] = useState<number | null>(null);
   const [loadingPatientNotes, setLoadingPatientNotes] = useState<boolean>(false);
   const [noteForm, setNoteForm] = useState<{ content: string; note_type: 'important' | 'normal' }>({
     content: '',
@@ -529,6 +531,27 @@ export default function BenhNhanPage() {
     }
   }, []);
 
+  const loadHistoryNotesForTab = useCallback(async (benhnhanid: number) => {
+    if (!benhnhanid) return;
+    setLoadingHistoryPatientId(benhnhanid);
+    try {
+      const notesRes = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0&_t=${Date.now()}`);
+      setHistoryNotesByPatient((prev) => ({
+        ...prev,
+        [benhnhanid]: notesRes.data?.data || [],
+      }));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`Lỗi tải ghi chú bệnh nhân: ${message}`);
+      setHistoryNotesByPatient((prev) => ({
+        ...prev,
+        [benhnhanid]: [],
+      }));
+    } finally {
+      setLoadingHistoryPatientId((current) => (current === benhnhanid ? null : current));
+    }
+  }, []);
+
   // Khi đã tải xong list và có focusId từ query, tự mở hồ sơ bệnh nhân mục tiêu
   useEffect(() => {
     if (!router.isReady || typeof window === 'undefined') return;
@@ -542,6 +565,7 @@ export default function BenhNhanPage() {
     setSelectedBenhNhanId(focusId);
     setActiveTab("don-thuoc");
     fetchDonThuoc(focusId);
+    loadHistoryNotesForTab(focusId);
 
     const patient = buildActivityPatientRef(findPatientById(focusId));
     if (patient) {
@@ -561,7 +585,7 @@ export default function BenhNhanPage() {
       const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
       router.replace(nextUrl, undefined, { shallow: true });
     }
-  }, [benhNhans, fetchDonThuoc, findPatientById, router.isReady, router.pathname]);
+  }, [benhNhans, fetchDonThuoc, findPatientById, loadHistoryNotesForTab, router.isReady, router.pathname]);
 
   const handleSelectBenhNhan = useCallback(
     (benhnhanid: number) => {
@@ -581,6 +605,7 @@ export default function BenhNhanPage() {
         setSelectedBenhNhanId(benhnhanid);
         setActiveTab("don-thuoc");
         fetchDonThuoc(benhnhanid);
+        loadHistoryNotesForTab(benhnhanid);
 
         const patient = buildActivityPatient(findPatientById(benhnhanid));
         if (patient) {
@@ -592,7 +617,7 @@ export default function BenhNhanPage() {
         }
       }
     },
-    [selectedBenhNhanId, fetchDonThuoc, buildActivityPatient, findPatientById]
+    [selectedBenhNhanId, fetchDonThuoc, loadHistoryNotesForTab, buildActivityPatient, findPatientById]
   );
 
   // Mở hồ sơ 1 thành viên khác trong nhóm gia đình.
@@ -674,11 +699,12 @@ export default function BenhNhanPage() {
       toast.success('Đã thêm ghi chú');
       setNoteForm({ content: '', note_type: 'normal' });
       loadPatientNotes(notesPatient.id);
+      loadHistoryNotesForTab(notesPatient.id);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi tạo ghi chú: ${message}`);
     }
-  }, [noteForm, notesPatient, loadPatientNotes]);
+  }, [noteForm, notesPatient, loadPatientNotes, loadHistoryNotesForTab]);
 
   const startEditNote = useCallback((note: PatientNote) => {
     setEditingNoteId(note.id);
@@ -699,11 +725,12 @@ export default function BenhNhanPage() {
       toast.success('Đã cập nhật ghi chú');
       setEditingNoteId(null);
       loadPatientNotes(notesPatient.id);
+      loadHistoryNotesForTab(notesPatient.id);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Lỗi cập nhật ghi chú: ${message}`);
     }
-  }, [editingNoteId, notesPatient, loadPatientNotes, noteEditForm]);
+  }, [editingNoteId, notesPatient, loadPatientNotes, noteEditForm, loadHistoryNotesForTab]);
 
   const deleteNote = useCallback(async (id: number) => {
     if (!notesPatient?.id) return;
@@ -713,10 +740,11 @@ export default function BenhNhanPage() {
       await axios.delete('/api/benh-nhan/notes', { data: { id } });
       toast.success('Đã chuyển ghi chú vào thùng rác');
       loadPatientNotes(notesPatient.id);
+      loadHistoryNotesForTab(notesPatient.id);
     } catch {
       toast.error('Lỗi xóa ghi chú');
     }
-  }, [confirm, notesPatient, loadPatientNotes]);
+  }, [confirm, notesPatient, loadPatientNotes, loadHistoryNotesForTab]);
 
   const restoreNote = useCallback(async (id: number) => {
     if (!notesPatient?.id) return;
@@ -724,10 +752,11 @@ export default function BenhNhanPage() {
       await axios.patch('/api/benh-nhan/notes', { id });
       toast.success('Đã khôi phục ghi chú');
       loadPatientNotes(notesPatient.id);
+      loadHistoryNotesForTab(notesPatient.id);
     } catch {
       toast.error('Lỗi khôi phục ghi chú');
     }
-  }, [notesPatient, loadPatientNotes]);
+  }, [notesPatient, loadPatientNotes, loadHistoryNotesForTab]);
 
   const purgeNote = useCallback(async (id: number) => {
     if (!notesPatient?.id) return;
@@ -740,10 +769,11 @@ export default function BenhNhanPage() {
       await axios.delete('/api/benh-nhan/notes?hard=1', { data: { id, hard: true } });
       toast.success('Đã xóa vĩnh viễn ghi chú');
       loadPatientNotes(notesPatient.id);
+      loadHistoryNotesForTab(notesPatient.id);
     } catch {
       toast.error('Lỗi xóa vĩnh viễn ghi chú');
     }
-  }, [confirm, loadPatientNotes, notesPatient]);
+  }, [confirm, loadPatientNotes, notesPatient, loadHistoryNotesForTab]);
 
   const extractPatientSeedFromSearch = useCallback((raw: string) => {
     const input = raw.trim();
@@ -1433,23 +1463,16 @@ export default function BenhNhanPage() {
                     {/* Medical History Mobile */}
                     {selectedBenhNhanId === bn.id && (
                       <div className="mt-3 pt-3 border-t">
-                        <FamilyCard
-                          benhnhanId={bn.id!}
-                          patientName={bn.ten || ''}
-                          onSelectMember={handleOpenFamilyMember}
-                          className="mb-3"
-                        />
-                        <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="mb-2">
                           <h3 className="font-medium text-sm">📋 Lịch sử khám bệnh</h3>
-                          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => openPatientNotesManager(bn)}>
-                            <BellRing className="w-3.5 h-3.5 mr-1" /> Ghi chú
-                          </Button>
                         </div>
                         <Tabs value={activeTab} onValueChange={handleHistoryTabChange} className="w-full">
-                          <TabsList className="grid w-full grid-cols-3">
+                          <TabsList className="mb-2 w-full justify-start overflow-x-auto">
                             <TabsTrigger value="don-thuoc">Đơn thuốc ({filteredDonThuocs.length})</TabsTrigger>
                             <TabsTrigger value="don-kinh">Đơn kính ({donKinhs.length})</TabsTrigger>
                             <TabsTrigger value="lich-hen">Lịch hẹn ({henKhams.length})</TabsTrigger>
+                            <TabsTrigger value="gia-dinh">Gia đình</TabsTrigger>
+                            <TabsTrigger value="ghi-chu">Ghi chú</TabsTrigger>
                           </TabsList>
                           
                           <TabsContent value="don-thuoc" className="mt-2">
@@ -1572,6 +1595,45 @@ export default function BenhNhanPage() {
                                 })}
                               </div>
                             )}
+                          </TabsContent>
+
+                          <TabsContent value="gia-dinh" className="mt-2">
+                            <FamilyCard
+                              benhnhanId={bn.id!}
+                              patientName={bn.ten || ''}
+                              onSelectMember={handleOpenFamilyMember}
+                            />
+                          </TabsContent>
+
+                          <TabsContent value="ghi-chu" className="mt-2">
+                            {loadingHistoryPatientId === bn.id ? (
+                              <p className="text-xs text-gray-500">Đang tải ghi chú...</p>
+                            ) : ((historyNotesByPatient[bn.id!] || []).filter((a) => !a.deleted_at).length === 0 ? (
+                              <p className="text-xs text-gray-500">Chưa có ghi chú nào.</p>
+                            ) : (
+                              <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                                {(historyNotesByPatient[bn.id!] || [])
+                                  .filter((a) => !a.deleted_at)
+                                  .map((a) => (
+                                    <div key={a.id} className="bg-white border rounded-lg p-2.5 shadow-sm">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <p className="text-[11px] text-gray-500">
+                                          {new Date(a.created_at).toLocaleTimeString('vi-VN')} - {new Date(a.created_at).toLocaleDateString('vi-VN')}
+                                        </p>
+                                        <span className={`rounded px-2 py-0.5 text-[10px] font-medium ${a.note_type === 'important' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
+                                          {a.note_type === 'important' ? 'Quan trọng' : 'Thông thường'}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1.5 whitespace-pre-wrap text-xs text-gray-800">{a.content}</p>
+                                    </div>
+                                  ))}
+                              </div>
+                            ))}
+                            <div className="mt-2">
+                              <Button size="sm" variant="outline" className="h-8" onClick={() => openPatientNotesManager(bn)}>
+                                <BellRing className="w-3.5 h-3.5 mr-1" /> Quản lý ghi chú
+                              </Button>
+                            </div>
                           </TabsContent>
                         </Tabs>
                       </div>
@@ -1891,12 +1953,6 @@ export default function BenhNhanPage() {
                             <td colSpan={10} className="px-2 py-1">
                               <Card className="shadow-sm bg-gray-50 border-gray-200">
                                 <CardContent className="p-3">
-                                  <FamilyCard
-                                    benhnhanId={bn.id!}
-                                    patientName={bn.ten || ''}
-                                    onSelectMember={handleOpenFamilyMember}
-                                    className="mb-3"
-                                  />
                                   {/* Tab buttons */}
                                   <div className="flex gap-1 mb-3 border-b pb-2">
                                     <button
@@ -1928,6 +1984,26 @@ export default function BenhNhanPage() {
                                       }`}
                                     >
                                       📅 Lịch hẹn ({henKhams.length})
+                                    </button>
+                                    <button
+                                      onClick={() => handleHistoryTabChange('gia-dinh')}
+                                      className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
+                                        activeTab === 'gia-dinh'
+                                          ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      👨‍👩‍👧‍👦 Gia đình
+                                    </button>
+                                    <button
+                                      onClick={() => handleHistoryTabChange('ghi-chu')}
+                                      className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
+                                        activeTab === 'ghi-chu'
+                                          ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
+                                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      📝 Ghi chú
                                     </button>
                                   </div>
                                     
@@ -2044,6 +2120,50 @@ export default function BenhNhanPage() {
                                           })}
                                         </div>
                                       )
+                                    )}
+
+                                    {activeTab === 'gia-dinh' && (
+                                      <FamilyCard
+                                        benhnhanId={bn.id!}
+                                        patientName={bn.ten || ''}
+                                        onSelectMember={handleOpenFamilyMember}
+                                      />
+                                    )}
+
+                                    {activeTab === 'ghi-chu' && (
+                                      <div className="space-y-2">
+                                        {loadingHistoryPatientId === bn.id ? (
+                                          <p className="text-xs text-gray-500">Đang tải ghi chú...</p>
+                                        ) : ((historyNotesByPatient[bn.id!] || []).filter((a) => !a.deleted_at).length === 0 ? (
+                                          <p className="text-xs text-gray-400 py-4 text-center">Chưa có ghi chú nào.</p>
+                                        ) : (
+                                          <div className="space-y-2">
+                                            {(historyNotesByPatient[bn.id!] || [])
+                                              .filter((a) => !a.deleted_at)
+                                              .map((a) => (
+                                                <div key={a.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition-shadow">
+                                                  <div className="flex items-start justify-between gap-2">
+                                                    <p className="text-xs text-gray-500">
+                                                      {new Date(a.created_at).toLocaleTimeString('vi-VN')} - {new Date(a.created_at).toLocaleDateString('vi-VN')}
+                                                    </p>
+                                                    <span className={`rounded px-2 py-0.5 text-[10px] font-medium ${a.note_type === 'important' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
+                                                      {a.note_type === 'important' ? 'Quan trọng' : 'Thông thường'}
+                                                    </span>
+                                                  </div>
+                                                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{a.content}</p>
+                                                </div>
+                                              ))}
+                                          </div>
+                                        ))}
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-8"
+                                          onClick={() => openPatientNotesManager(bn)}
+                                        >
+                                          <BellRing className="w-3.5 h-3.5 mr-1" /> Quản lý ghi chú
+                                        </Button>
+                                      </div>
                                     )}
                                   </div>
                                 </CardContent>

@@ -57,6 +57,24 @@ export async function storePendingFaceSnapshot(
   return `${INLINE_PREFIX}${jpegBuffer.toString('base64')}`;
 }
 
+/** Xóa snapshot đã lưu trên storage (best-effort). Inline/data URL không cần xóa. */
+export async function deletePendingFaceSnapshot(
+  snapshotRef: string | null | undefined
+): Promise<void> {
+  if (!isStoredSnapshotRef(snapshotRef)) return;
+  const path = stripSnapshotRef(snapshotRef as string);
+  for (const driver of ['r2', 'supabase'] as const) {
+    try {
+      const bucket = resolveMediaBucket('don_thuoc');
+      const provider = getMediaStorageProviderForRow(driver, bucket);
+      await provider.deleteObject(path);
+      return;
+    } catch (err) {
+      console.warn(`pending face snapshot delete (${driver}) failed:`, err);
+    }
+  }
+}
+
 export async function readSnapshotJpeg(snapshotRef: string | null | undefined): Promise<Buffer | null> {
   if (!snapshotRef) return null;
 

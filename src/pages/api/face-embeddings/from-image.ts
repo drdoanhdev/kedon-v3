@@ -1,9 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, setNoCacheHeaders, supabaseAdmin } from '../../../lib/tenantApi';
-import { upsertFaceEmbedding } from '../../../lib/faceRecognition';
+import { upsertFaceEmbedding, validateFaceEmbedding } from '../../../lib/faceRecognition';
 import { planHasFeature } from '../../../lib/featureConfig';
-
-const DEFAULT_EMBEDDING_SERVICE = 'http://127.0.0.1:8765';
+import { checkEmbeddingServiceHealth, getEmbeddingServiceUrl } from '../../../lib/faceEmbeddingService';
 
 async function assertTenantFeature(tenantId: string, res: NextApiResponse): Promise<boolean> {
   const { data: tenantRow } = await supabaseAdmin
@@ -22,10 +21,12 @@ async function assertTenantFeature(tenantId: string, res: NextApiResponse): Prom
 async function fetchEmbeddingFromService(
   imageBase64: string
 ): Promise<{ embedding: number[]; quality: number | null }> {
-  const serviceUrl = (process.env.FACE_EMBEDDING_SERVICE_URL || DEFAULT_EMBEDDING_SERVICE).replace(
-    /\/$/,
-    ''
-  );
+  const health = await checkEmbeddingServiceHealth();
+  if (!health.ok) {
+    throw new Error(health.message);
+  }
+
+  const serviceUrl = getEmbeddingServiceUrl();
 
   let response: Response;
   try {
@@ -51,7 +52,8 @@ async function fetchEmbeddingFromService(
     throw new Error(payload.error || 'Dịch vụ embedding trả lỗi');
   }
 
-  if (!Array.isArray(payload.embedding) || payload.embedding.length < 128) {
+  const embeddingError = validateFaceEmbedding(payload.embedding);
+  if (embeddingError) {
     throw new Error('Không trích xuất được embedding từ ảnh. Thử lại với ánh sáng tốt hơn.');
   }
 
@@ -80,7 +82,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { embedding, quality } = await fetchEmbeddingFromService(image_base64);
-    await upsertFaceEmbedding(tenantId, patientId, embedding);
+    await upsertFaceEmbedding(tenantId, patientId, embedding, {
+      actor: ctx.userId,
+      source: 'web_enroll',
+    });
     return res.status(200).json({
       success: true,
       message: `Đã đăng ký khuôn mặt cho bệnh nhân #${patientId}`,

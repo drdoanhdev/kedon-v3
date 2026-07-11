@@ -5,6 +5,11 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { createHash, randomBytes } from 'crypto';
 import { supabaseAdmin } from './tenantApi';
 import { planHasFeature } from './featureConfig';
+import { getRateLimitIp, rateLimit, resetRateLimit } from './rateLimit';
+
+// Chống dò device token: giới hạn số lần xác thực thất bại theo IP.
+const AUTH_FAIL_LIMIT = 20;
+const AUTH_FAIL_WINDOW_MS = 5 * 60 * 1000;
 
 export interface FaceDeviceContext {
   deviceId: string;
@@ -12,6 +17,7 @@ export interface FaceDeviceContext {
   branchId: string | null;
   deviceLabel: string;
   tenantPlan: string;
+  clientIp: string | null;
 }
 
 const TOKEN_PREFIX = 'fd_';
@@ -62,27 +68,63 @@ export async function requireFaceDevice(
   req: NextApiRequest,
   res: NextApiResponse
 ): Promise<FaceDeviceContext | null> {
+  const ip = getRateLimitIp(req);
+  const rlKey = `face-auth-fail:${ip}`;
+
   const token = getDeviceToken(req);
   if (!token) {
     res.status(401).json({ success: false, error: 'Thiếu device token' });
     return null;
   }
 
+  const preCheck = rateLimit(rlKey, AUTH_FAIL_LIMIT, AUTH_FAIL_WINDOW_MS);
+  if (!preCheck.allowed) {
+    res.setHeader('Retry-After', String(preCheck.retryAfterSec));
+    res.status(429).json({
+      success: false,
+      error: `Quá nhiều lần xác thực thất bại. Thử lại sau ${preCheck.retryAfterSec} giây.`,
+    });
+    return null;
+  }
+
   const tokenHash = hashDeviceToken(token);
   const prefix = token.slice(0, 12);
 
-  const { data: device, error } = await supabaseAdmin
+  let { data: device, error } = await supabaseAdmin
     .from('face_devices')
-    .select('id, tenant_id, branch_id, device_label, status')
+    .select('id, tenant_id, branch_id, device_label, status, token_expires_at')
     .eq('token_hash', tokenHash)
     .eq('token_prefix', prefix)
     .eq('status', 'active')
     .maybeSingle();
 
+  // Tương thích DB chưa chạy migration token_expires_at.
+  if (error?.message?.includes('token_expires_at')) {
+    ({ data: device, error } = await supabaseAdmin
+      .from('face_devices')
+      .select('id, tenant_id, branch_id, device_label, status')
+      .eq('token_hash', tokenHash)
+      .eq('token_prefix', prefix)
+      .eq('status', 'active')
+      .maybeSingle());
+  }
+
   if (error || !device) {
     res.status(401).json({ success: false, error: 'Device token không hợp lệ' });
     return null;
   }
+
+  if (device.token_expires_at && new Date(device.token_expires_at) < new Date()) {
+    res.status(401).json({
+      success: false,
+      error: 'Device token đã hết hạn. Vui lòng ghép nối lại thiết bị.',
+      code: 'TOKEN_EXPIRED',
+    });
+    return null;
+  }
+
+  // Token hợp lệ — reset bộ đếm thất bại cho IP này.
+  resetRateLimit(rlKey);
 
   const { data: tenantRow } = await supabaseAdmin
     .from('tenants')
@@ -110,20 +152,70 @@ export async function requireFaceDevice(
     branchId: device.branch_id,
     deviceLabel: device.device_label,
     tenantPlan: plan,
+    clientIp: ip === 'unknown' ? null : ip,
   };
 }
 
 export async function touchFaceDevice(
   deviceId: string,
-  meta?: { ip?: string | null; agentVersion?: string | null }
-): Promise<void> {
-  await supabaseAdmin
+  meta?: {
+    ip?: string | null;
+    agentVersion?: string | null;
+    cameraStatus?: string | null;
+    lastError?: string | null;
+    /** RTSP URL the agent just applied — clears settings.pending_camera_url when it matches. */
+    ackAppliedCameraUrl?: string | null;
+  }
+): Promise<{ settings: Record<string, unknown> }> {
+  const update: Record<string, unknown> = {
+    last_seen_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (meta?.ip) update.last_ip = meta.ip;
+  if (meta?.agentVersion) update.agent_version = meta.agentVersion;
+
+  let settings: Record<string, unknown> = {};
+  if (meta?.cameraStatus || meta?.ackAppliedCameraUrl) {
+    const { data: existing } = await supabaseAdmin
+      .from('face_devices')
+      .select('settings')
+      .eq('id', deviceId)
+      .maybeSingle();
+    settings = (existing?.settings as Record<string, unknown>) || {};
+
+    if (meta?.cameraStatus) {
+      settings = {
+        ...settings,
+        diagnostics: {
+          camera_status: meta.cameraStatus,
+          last_error: meta.lastError || null,
+          reported_at: new Date().toISOString(),
+        },
+      };
+    }
+
+    if (
+      meta?.ackAppliedCameraUrl &&
+      settings.pending_camera_url &&
+      settings.pending_camera_url === meta.ackAppliedCameraUrl
+    ) {
+      const { pending_camera_url: _drop, pending_camera_requested_at: _drop2, ...rest } = settings;
+      settings = {
+        ...rest,
+        last_applied_camera_url: meta.ackAppliedCameraUrl,
+        last_applied_at: new Date().toISOString(),
+      };
+    }
+
+    update.settings = settings;
+  }
+
+  const { data: saved } = await supabaseAdmin
     .from('face_devices')
-    .update({
-      last_seen_at: new Date().toISOString(),
-      ...(meta?.ip ? { last_ip: meta.ip } : {}),
-      ...(meta?.agentVersion ? { agent_version: meta.agentVersion } : {}),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', deviceId);
+    .update(update)
+    .eq('id', deviceId)
+    .select('settings')
+    .maybeSingle();
+
+  return { settings: (saved?.settings as Record<string, unknown>) || settings };
 }

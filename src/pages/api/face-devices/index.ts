@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const { data, error } = await supabaseAdmin
       .from('face_devices')
-      .select('id, device_label, branch_id, status, last_seen_at, last_ip, agent_version, created_at, pairing_code, pairing_expires_at')
+      .select('id, device_label, branch_id, status, last_seen_at, last_ip, agent_version, created_at, pairing_code, pairing_expires_at, settings')
       .eq('tenant_id', tenantId)
       .neq('status', 'revoked')
       .order('created_at', { ascending: false });

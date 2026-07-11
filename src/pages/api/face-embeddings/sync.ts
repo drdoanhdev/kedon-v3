@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const device = await requireFaceDevice(req, res);
   if (!device) return;
 
-  await touchFaceDevice(device.deviceId);
+  await touchFaceDevice(device.deviceId, { ip: device.clientIp });
 
   const since = typeof req.query.since === 'string' ? req.query.since : null;
 
@@ -30,14 +30,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ success: false, error: error.message });
   }
 
-  const { data: patients } = await supabaseAdmin
-    .from('BenhNhan')
-    .select('id, ten')
-    .eq('tenant_id', device.tenantId);
+  const embeddingRows = data || [];
+  const patientIds = [...new Set(embeddingRows.map((row) => row.patient_id).filter(Boolean))];
 
-  const nameMap = new Map((patients || []).map((p) => [p.id, p.ten]));
+  let nameMap = new Map<number, string>();
+  if (patientIds.length > 0) {
+    const { data: patients } = await supabaseAdmin
+      .from('BenhNhan')
+      .select('id, ten')
+      .eq('tenant_id', device.tenantId)
+      .in('id', patientIds);
 
-  const rows = (data || []).map((row) => ({
+    nameMap = new Map((patients || []).map((p) => [p.id, p.ten]));
+  }
+
+  const rows = embeddingRows.map((row) => ({
     patient_id: row.patient_id,
     name: nameMap.get(row.patient_id) || null,
     embedding: row.embedding,

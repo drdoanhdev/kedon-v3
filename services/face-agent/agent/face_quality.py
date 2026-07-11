@@ -103,7 +103,57 @@ class FaceQualityAnalyzer:
     def _calculate_frontal_score(
         self, bbox: np.ndarray, landmarks: Optional[np.ndarray] = None
     ) -> float:
-        _ = landmarks
+        """Đánh giá mặt nhìn thẳng — ưu tiên landmarks InsightFace (kps), fallback bbox."""
+        if landmarks is not None:
+            kps = np.asarray(landmarks, dtype=np.float32).reshape(-1, 2)
+            if kps.shape[0] >= 5:
+                return self._frontal_from_landmarks(kps)
+
+        return self._frontal_from_bbox(bbox)
+
+    def _frontal_from_landmarks(self, kps: np.ndarray) -> float:
+        """5 điểm buffalo_l: mắt trái, mắt phải, mũi, khóe miệng trái, khóe miệng phải."""
+        left_eye, right_eye, nose, left_mouth, right_mouth = kps[:5]
+
+        eye_dist = float(np.linalg.norm(right_eye - left_eye))
+        if eye_dist < 1e-3:
+            return 0.3
+
+        eye_center = (left_eye + right_eye) / 2.0
+        mouth_center = (left_mouth + right_mouth) / 2.0
+
+        # Lệch ngang mũi so với tâm mắt → yaw (càng lệch càng nghiêng).
+        nose_offset_x = abs(float(nose[0] - eye_center[0])) / eye_dist
+        yaw_score = max(0.0, 1.0 - nose_offset_x / 0.35)
+
+        # Tỉ lệ chiều dọc mũi giữa mắt và miệng — pitch quá lệch làm giảm điểm.
+        eye_to_nose = float(nose[1] - eye_center[1])
+        nose_to_mouth = float(mouth_center[1] - nose[1])
+        if eye_to_nose > 1e-3 and nose_to_mouth > 1e-3:
+            pitch_ratio = eye_to_nose / nose_to_mouth
+            # Mặt thẳng thường có pitch_ratio ~0.8–1.4
+            if 0.7 <= pitch_ratio <= 1.5:
+                pitch_score = 1.0
+            elif 0.4 <= pitch_ratio <= 2.0:
+                pitch_score = 0.6
+            else:
+                pitch_score = 0.3
+        else:
+            pitch_score = 0.5
+
+        # Đối xứng khóe miệng quanh mũi (roll nhẹ).
+        mouth_span = float(np.linalg.norm(right_mouth - left_mouth))
+        if mouth_span > 1e-3:
+            left_half = float(np.linalg.norm(nose - left_mouth))
+            right_half = float(np.linalg.norm(nose - right_mouth))
+            symmetry = min(left_half, right_half) / max(left_half, right_half)
+            roll_score = max(0.0, min(1.0, symmetry))
+        else:
+            roll_score = 0.5
+
+        return round(0.45 * yaw_score + 0.35 * pitch_score + 0.20 * roll_score, 3)
+
+    def _frontal_from_bbox(self, bbox: np.ndarray) -> float:
         x1, y1, x2, y2 = bbox[:4]
         width = x2 - x1
         height = y2 - y1

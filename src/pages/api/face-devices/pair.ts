@@ -1,10 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '../../../lib/tenantApi';
 import { generateDeviceToken, hashDeviceToken } from '../../../lib/faceDeviceAuth';
+import { getRateLimitIp, rateLimit, resetRateLimit } from '../../../lib/rateLimit';
+
+// Chống brute-force pairing code (8 ký tự): giới hạn số lần thử theo IP.
+const PAIR_ATTEMPT_LIMIT = 10;
+const PAIR_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+
+// Device token cho edge agent: sống lâu nhưng không vô hạn (buộc xoay vòng định kỳ).
+const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
+  }
+
+  const ip = getRateLimitIp(req);
+  const rlKey = `face-pair:${ip}`;
+  const rl = rateLimit(rlKey, PAIR_ATTEMPT_LIMIT, PAIR_ATTEMPT_WINDOW_MS);
+  if (!rl.allowed) {
+    res.setHeader('Retry-After', String(rl.retryAfterSec));
+    return res.status(429).json({
+      success: false,
+      error: `Quá nhiều lần thử ghép nối. Vui lòng thử lại sau ${rl.retryAfterSec} giây.`,
+    });
   }
 
   const { pairing_code, device_label, agent_version } = req.body || {};
@@ -31,25 +50,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { token, hash, prefix } = generateDeviceToken();
+  const nowIso = new Date().toISOString();
+  const tokenExpiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
 
-  const { error: updateError } = await supabaseAdmin
+  const baseUpdate = {
+    token_hash: hash,
+    token_prefix: prefix,
+    pairing_code: null,
+    pairing_expires_at: null,
+    status: 'active',
+    device_label: device_label?.trim() || device.device_label,
+    agent_version: agent_version || null,
+    last_seen_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  let { error: updateError } = await supabaseAdmin
     .from('face_devices')
     .update({
-      token_hash: hash,
-      token_prefix: prefix,
-      pairing_code: null,
-      pairing_expires_at: null,
-      status: 'active',
-      device_label: device_label?.trim() || device.device_label,
-      agent_version: agent_version || null,
-      last_seen_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      ...baseUpdate,
+      token_expires_at: tokenExpiresAt,
+      token_rotated_at: nowIso,
     })
     .eq('id', device.id);
+
+  // Tương thích DB chưa chạy migration V085.
+  if (updateError?.message?.includes('token_expires_at') || updateError?.message?.includes('token_rotated_at')) {
+    ({ error: updateError } = await supabaseAdmin
+      .from('face_devices')
+      .update(baseUpdate)
+      .eq('id', device.id));
+  }
 
   if (updateError) {
     return res.status(500).json({ success: false, error: updateError.message });
   }
+
+  // Ghép nối thành công — xóa bộ đếm để không phạt thiết bị hợp lệ.
+  resetRateLimit(rlKey);
 
   // URL agent dùng sau pair: ưu tiên host của request (localhost khi dev), không ghi đè bằng NEXT_PUBLIC_APP_URL
   const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;

@@ -121,7 +121,7 @@ interface AlertSummary {
 export default function QuanLyKho() {
   const router = useRouter();
   const { confirm } = useConfirm();
-  const [activeTab, setActiveTab] = useState<'overview' | 'lens_stock' | 'lens_order' | 'lens_nhap' | 'lens_catalog' | 'frame_stock' | 'import'>('lens_stock');
+  const [activeTab, setActiveTab] = useState<'lens_stock' | 'lens_order' | 'lens_nhap' | 'lens_catalog'>('lens_stock');
 
   // Data states
   const [alertData, setAlertData] = useState<AlertSummary | null>(null);
@@ -451,9 +451,17 @@ export default function QuanLyKho() {
 
   const handleUpdateOrderStatus = async (ids: number[], trang_thai: string) => {
     try {
-      await axios.put('/api/inventory/lens-order', { ids, trang_thai });
-      toast.success(trang_thai === 'da_dat' ? 'Đã đánh dấu đã đặt' : 'Đã đánh dấu đã nhận');
+      const { data: res } = await axios.put('/api/inventory/lens-order', { ids, trang_thai });
+      if (trang_thai === 'da_nhan') {
+        toast.success('Đã nhận & tự động nhập kho ✓');
+        if (res?.warnings?.length) {
+          res.warnings.forEach((w: string) => toast.error(w));
+        }
+      } else {
+        toast.success('Đã đánh dấu đã đặt');
+      }
       fetchLensOrders();
+      fetchLensStocks();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Lỗi cập nhật');
     }
@@ -1305,143 +1313,6 @@ export default function QuanLyKho() {
             <div className="text-center py-20 text-gray-500">Đang tải dữ liệu kho...</div>
           ) : (
             <>
-              {/* ======================== TAB: TỔNG QUAN ======================== */}
-              {activeTab === 'overview' && alertData && (
-                <div className="space-y-6">
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="bg-white rounded-2xl border border-red-100 shadow-sm px-4 py-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-5 h-5 text-red-600" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold text-red-600 leading-none">{alertData.summary.het}</p>
-                        <p className="text-xs text-gray-500 mt-1">Đã hết</p>
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-yellow-100 shadow-sm px-4 py-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-yellow-100 flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-5 h-5 text-yellow-600" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold text-yellow-600 leading-none">{alertData.summary.sap_het}</p>
-                        <p className="text-xs text-gray-500 mt-1">Sắp hết</p>
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-orange-100 shadow-sm px-4 py-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-                        <Truck className="w-5 h-5 text-orange-600" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold text-orange-600 leading-none">{alertData.pending_lens_orders}</p>
-                        <p className="text-xs text-gray-500 mt-1">Chờ đặt</p>
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-2xl border border-blue-100 shadow-sm px-4 py-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                        <Package className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold text-blue-600 leading-none">{lensStocks.length}</p>
-                        <p className="text-xs text-gray-500 mt-1">Dòng kho</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Alert List */}
-                  {alertData.alerts.length > 0 ? (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                          Cảnh báo tồn kho ({alertData.summary.total})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-0 sm:p-6 sm:pt-0">
-                        {/* Mobile card list */}
-                        <div className="sm:hidden divide-y divide-gray-100">
-                          {alertData.alerts.map((a, i) => (
-                            <div key={i} className="flex items-center gap-3 px-4 py-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                    a.loai_hang === 'trong_kinh' ? 'bg-blue-100 text-blue-700' :
-                                    a.loai_hang === 'thuoc' ? 'bg-purple-100 text-purple-700' :
-                                    'bg-orange-100 text-orange-700'
-                                  }`}>
-                                    {a.loai_hang === 'trong_kinh' ? 'Tròng' : a.loai_hang === 'thuoc' ? 'Thuốc' : 'Gọng'}
-                                  </span>
-                                  <span className="font-semibold text-sm text-gray-900 truncate">{a.ten}</span>
-                                </div>
-                                <div className="mt-0.5 font-mono text-[11px] text-gray-500 truncate">{a.chi_tiet}</div>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <div className="flex items-center gap-1.5 justify-end">
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-gray-400">Tồn</div>
-                                    <div className="font-bold text-sm">{a.ton_kho}</div>
-                                  </div>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-gray-400">Nhập</div>
-                                    <div className="font-bold text-sm text-blue-600">{a.can_nhap}</div>
-                                  </div>
-                                </div>
-                                <div className="mt-1">
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${trangThaiColor(a.trang_thai)}`}>
-                                    {trangThaiLabel(a.trang_thai)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        {/* Desktop table */}
-                        <div className="hidden sm:block overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b text-left text-gray-500">
-                                <th className="pb-2 font-medium">Loại</th>
-                                <th className="pb-2 font-medium">Tên</th>
-                                <th className="pb-2 font-medium">Chi tiết</th>
-                                <th className="pb-2 font-medium text-center">Tồn</th>
-                                <th className="pb-2 font-medium text-center">Cần nhập</th>
-                                <th className="pb-2 font-medium text-center">Trạng thái</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {alertData.alerts.map((a, i) => (
-                                <tr key={i} className="border-b last:border-0">
-                                  <td className="py-2">
-                                    <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                                      {a.loai_hang === 'trong_kinh' ? 'Tròng' : a.loai_hang === 'thuoc' ? 'Thuốc' : 'Gọng'}
-                                    </span>
-                                  </td>
-                                  <td className="py-2 font-medium">{a.ten}</td>
-                                  <td className="py-2 text-gray-500 font-mono text-xs">{a.chi_tiet}</td>
-                                  <td className="py-2 text-center font-bold">{a.ton_kho}</td>
-                                  <td className="py-2 text-center font-bold text-blue-600">{a.can_nhap}</td>
-                                  <td className="py-2 text-center">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${trangThaiColor(a.trang_thai)}`}>
-                                      {trangThaiLabel(a.trang_thai)}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <Card>
-                      <CardContent className="py-12 text-center text-gray-500">
-                        ✅ Tất cả tròng đều đủ tồn kho
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              )}
-
               {/* ======================== TAB: KHO TRÒNG KÍNH ======================== */}
               {activeTab === 'lens_stock' && (
                 <div className="space-y-3 sm:space-y-4">
@@ -2229,178 +2100,6 @@ export default function QuanLyKho() {
               )}
 
               {/* ======================== TAB: KHO GỌNG KÍNH ======================== */}
-              {activeTab === 'frame_stock' && (
-                <div className="space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-lg">
-                        <div className="flex items-center gap-2">
-                          <Frame className="w-5 h-5" />
-                          Kho gọng kính ({frameStocks.filter(f => f.trang_thai).length})
-                        </div>
-                        <div className="flex flex-wrap gap-2 ml-auto w-full sm:w-auto">
-                          <div className="relative flex-1 sm:flex-none">
-                            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
-                            <Input
-                              placeholder="Tìm gọng..."
-                              value={frameSearch}
-                              onChange={e => setFrameSearch(e.target.value)}
-                              className="pl-8 h-9 text-sm w-full sm:w-48"
-                            />
-                          </div>
-                          <select className="border rounded-md px-2 py-1.5 text-xs h-9" value={framePriceRange}
-                            onChange={e => setFramePriceRange(e.target.value as any)}>
-                            <option value="all">Tất cả giá</option>
-                            <option value="under200">Dưới 200k</option>
-                            <option value="200to500">200k - 500k</option>
-                            <option value="500to1000">500k - 1tr</option>
-                            <option value="over1000">Trên 1tr</option>
-                          </select>
-                          <select className="border rounded-md px-2 py-1.5 text-xs h-9" value={`${frameSortBy}_${frameSortDir}`}
-                            onChange={e => {
-                              const [field, dir] = e.target.value.split('_') as [typeof frameSortBy, 'asc' | 'desc'];
-                              setFrameSortBy(field);
-                              setFrameSortDir(dir);
-                            }}>
-                            <option value="ten_gong_asc">Tên A→Z</option>
-                            <option value="ten_gong_desc">Tên Z→A</option>
-                            <option value="gia_ban_asc">Giá bán tăng</option>
-                            <option value="gia_ban_desc">Giá bán giảm</option>
-                            <option value="gia_nhap_asc">Giá nhập tăng</option>
-                            <option value="gia_nhap_desc">Giá nhập giảm</option>
-                            <option value="ton_kho_asc">Tồn kho tăng</option>
-                            <option value="ton_kho_desc">Tồn kho giảm</option>
-                          </select>
-                        </div>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b bg-gray-50 text-left text-gray-500">
-                              <th className="p-2 sm:p-3 font-medium">Tên gọng</th>
-                              <th className="p-2 sm:p-3 font-medium hidden sm:table-cell">Mã</th>
-                              <th className="p-2 sm:p-3 font-medium hidden md:table-cell">Màu / Kích cỡ</th>
-                              <th className="p-2 sm:p-3 font-medium text-right">Giá nhập</th>
-                              <th className="p-2 sm:p-3 font-medium text-right">Giá bán</th>
-                              <th className="p-2 sm:p-3 font-medium text-center">Tồn kho</th>
-                              <th className="p-2 sm:p-3 font-medium text-center">Trạng thái</th>
-                              <th className="p-2 sm:p-3 font-medium text-center">Thao tác</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {frameStocks
-                              .filter(f => {
-                                if (!f.trang_thai) return false;
-                                // Price range filter (giá bán, đơn vị VND)
-                                const gia = f.gia_ban || 0;
-                                if (framePriceRange === 'under200' && gia >= 200000) return false;
-                                if (framePriceRange === '200to500' && (gia < 200000 || gia > 500000)) return false;
-                                if (framePriceRange === '500to1000' && (gia < 500000 || gia > 1000000)) return false;
-                                if (framePriceRange === 'over1000' && gia <= 1000000) return false;
-                                // Text search
-                                if (!frameSearch) return true;
-                                const s = frameSearch.toLowerCase();
-                                return (f.ten_gong?.toLowerCase().includes(s)) ||
-                                       (f.ma_gong?.toLowerCase().includes(s)) ||
-                                       (f.mau_sac?.toLowerCase().includes(s)) ||
-                                       (f.NhaCungCap?.ten?.toLowerCase().includes(s));
-                              })
-                              .sort((a, b) => {
-                                let cmp = 0;
-                                if (frameSortBy === 'ten_gong') cmp = (a.ten_gong || '').localeCompare(b.ten_gong || '', 'vi');
-                                else if (frameSortBy === 'gia_ban') cmp = (a.gia_ban || 0) - (b.gia_ban || 0);
-                                else if (frameSortBy === 'gia_nhap') cmp = (a.gia_nhap || 0) - (b.gia_nhap || 0);
-                                else if (frameSortBy === 'ton_kho') cmp = (a.ton_kho ?? 0) - (b.ton_kho ?? 0);
-                                return frameSortDir === 'desc' ? -cmp : cmp;
-                              })
-                              .map(frame => {
-                                const tonKho = frame.ton_kho ?? 0;
-                                const mucMin = frame.muc_ton_can_co ?? 2;
-                                const trangThai = tonKho <= 0 ? 'HET' : tonKho <= mucMin ? 'SAP_HET' : 'DU';
-                                return (
-                                  <tr key={frame.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-2 sm:p-3">
-                                      <div className="font-medium">{frame.ten_gong}</div>
-                                      {frame.chat_lieu && <div className="text-xs text-gray-400">{frame.chat_lieu}</div>}
-                                      {frame.NhaCungCap && <div className="text-xs text-gray-400 sm:hidden">NCC: {frame.NhaCungCap.ten}</div>}
-                                    </td>
-                                    <td className="p-2 sm:p-3 font-mono text-xs text-gray-500 hidden sm:table-cell">{frame.ma_gong || '-'}</td>
-                                    <td className="p-2 sm:p-3 text-xs text-gray-500 hidden md:table-cell">
-                                      {[frame.mau_sac, frame.kich_co].filter(Boolean).join(' / ') || '-'}
-                                    </td>
-                                    <td className="p-2 sm:p-3 text-right text-xs">{(frame.gia_nhap || 0).toLocaleString('vi-VN')}</td>
-                                    <td className="p-2 sm:p-3 text-right text-xs font-medium">{(frame.gia_ban || 0).toLocaleString('vi-VN')}</td>
-                                    <td className="p-2 sm:p-3 text-center font-bold">{tonKho}</td>
-                                    <td className="p-2 sm:p-3 text-center">
-                                      <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full ${
-                                        trangThai === 'HET' ? 'bg-red-100 text-red-700' :
-                                        trangThai === 'SAP_HET' ? 'bg-yellow-100 text-yellow-700' :
-                                        'bg-green-100 text-green-700'
-                                      }`}>
-                                        {trangThai === 'HET' ? 'Hết' : trangThai === 'SAP_HET' ? 'Sắp hết' : 'Đủ'}
-                                      </span>
-                                    </td>
-                                    <td className="p-1.5 sm:p-3 text-center">
-                                      <button
-                                        onClick={() => { setSelectedFrame(frame); setShowFrameImport(true); }}
-                                        className="p-1 sm:p-1.5 rounded-lg hover:bg-green-100 text-green-600" title="Nhập kho"
-                                      >
-                                        <ArrowDownToLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Nhóm giá gọng tồn kho */}
-                  {nhomGiaGongs.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <Tags className="w-5 h-5" />
-                          Tồn kho theo nhóm giá ({nhomGiaGongs.length})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full text-sm">
-                            <thead className="bg-gray-100 border-b">
-                              <tr>
-                                <th className="px-4 py-2 text-left">Nhóm giá</th>
-                                <th className="px-4 py-2 text-right">Giá bán (từ-đến)</th>
-                                <th className="px-4 py-2 text-right">Giá mặc định</th>
-                                <th className="px-4 py-2 text-right">Giá nhập TB</th>
-                                <th className="px-4 py-2 text-center">Tồn kho</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {nhomGiaGongs.map(nhom => (
-                                <tr key={nhom.id} className="border-b hover:bg-gray-50">
-                                  <td className="px-4 py-2 font-medium">{nhom.ten_nhom}</td>
-                                  <td className="px-4 py-2 text-right text-gray-600">{nhom.gia_ban_tu.toLocaleString()}đ - {nhom.gia_ban_den.toLocaleString()}đ</td>
-                                  <td className="px-4 py-2 text-right">{nhom.gia_ban_mac_dinh.toLocaleString()}đ</td>
-                                  <td className="px-4 py-2 text-right text-gray-500">{nhom.gia_nhap_trung_binh.toLocaleString()}đ</td>
-                                  <td className={`px-4 py-2 text-center font-bold ${nhom.so_luong_ton <= 0 ? 'text-red-600' : nhom.so_luong_ton <= 5 ? 'text-yellow-600' : 'text-green-600'}`}>
-                                    {nhom.so_luong_ton}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              )}
-
               {/* ======================== TAB: TRÒNG CẦN ĐẶT ======================== */}
               {activeTab === 'lens_order' && (
                 <Card>
@@ -2621,85 +2320,6 @@ export default function QuanLyKho() {
                 </Card>
               )}
             </>
-          )}
-
-          {/* ======================== TAB: PHIẾU NHẬP KHO ======================== */}
-          {activeTab === 'import' && (
-            <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-lg">
-                    <div className="flex items-center gap-2">
-                      <Upload className="w-5 h-5" />
-                      Phiếu nhập kho ({receipts.length})
-                    </div>
-                    <Button size="sm" onClick={() => { fetchCatalogItems(); setShowCreateReceipt(true); }} className="ml-auto">
-                      <Plus className="w-4 h-4 mr-1" /> Tạo phiếu nhập
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {receipts.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">Chưa có phiếu nhập nào</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {receipts.map(r => (
-                        <div key={r.id} className="border rounded-lg overflow-hidden">
-                          <button
-                            onClick={() => setExpandedReceipt(expandedReceipt === r.id ? null : r.id)}
-                            className="w-full p-3 sm:p-4 flex items-center justify-between hover:bg-gray-50 text-left"
-                          >
-                            <div>
-                              <div className="font-medium text-sm sm:text-base">
-                                {r.ma_phieu || `PN-${r.id}`}
-                                {r.NhaCungCap && <span className="text-gray-500 ml-2 text-xs">NCC: {r.NhaCungCap.ten}</span>}
-                              </div>
-                              <div className="text-xs text-gray-400">
-                                {new Date(r.ngay_nhap).toLocaleDateString('vi-VN')} · {r.import_receipt_detail?.length || 0} dòng · {(r.tong_tien || 0).toLocaleString('vi-VN')}đ
-                              </div>
-                              {r.ghi_chu && <div className="text-xs text-gray-400 mt-0.5">{r.ghi_chu}</div>}
-                            </div>
-                            <span className="text-gray-400 text-lg">{expandedReceipt === r.id ? '▲' : '▼'}</span>
-                          </button>
-                          {expandedReceipt === r.id && r.import_receipt_detail && (
-                            <div className="border-t bg-gray-50 p-3">
-                              <table className="w-full text-xs sm:text-sm">
-                                <thead>
-                                  <tr className="text-gray-500">
-                                    <th className="text-left pb-1">Hàng hóa</th>
-                                    <th className="text-center pb-1">SL</th>
-                                    <th className="text-right pb-1 hidden sm:table-cell">Đơn giá</th>
-                                    <th className="text-right pb-1">Thành tiền</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {r.import_receipt_detail.map(d => (
-                                    <tr key={d.id} className="border-t border-gray-200">
-                                      <td className="py-1.5">
-                                        <span className={`text-[10px] px-1 py-0.5 rounded mr-1 ${
-                                          d.loai_hang === 'thuoc' ? 'bg-purple-100 text-purple-700' :
-                                          d.loai_hang === 'trong_kinh' ? 'bg-blue-100 text-blue-700' :
-                                          d.loai_hang === 'gong_kinh' ? 'bg-orange-100 text-orange-700' :
-                                          'bg-gray-100 text-gray-700'
-                                        }`}>{loaiHangLabel[d.loai_hang]}</span>
-                                        {getReceiptDetailLabel(d)}
-                                      </td>
-                                      <td className="text-center py-1.5">{d.so_luong}</td>
-                                      <td className="text-right py-1.5 hidden sm:table-cell">{(d.don_gia || 0).toLocaleString('vi-VN')}</td>
-                                      <td className="text-right py-1.5 font-medium">{(d.thanh_tien || 0).toLocaleString('vi-VN')}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
           )}
 
           {/* ======================== DIALOG: THÊM ĐỘ MỚI ======================== */}

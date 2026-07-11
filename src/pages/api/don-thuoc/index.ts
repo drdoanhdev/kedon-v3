@@ -54,19 +54,23 @@ async function processThuocInventory(
 
   const { error: bulkErr } = await supabase.from('thuoc_xuat_don').insert(exportRows);
   if (bulkErr) {
-    // Bảng chưa tồn tại hoặc lỗi bulk → trừ kho trực tiếp từng dòng
-    await Promise.all(exportRows.map((row) => {
-      const tonTruoc = thuocMap.get(row.thuoc_id)?.tonkho ?? 0;
-      return supabase.from('Thuoc').update({
-        tonkho: tonTruoc - row.so_luong,
-      }).eq('id', row.thuoc_id).eq('tenant_id', tenantId);
-    }));
+    // Bảng chưa tồn tại hoặc lỗi bulk → trừ kho trực tiếp từng dòng qua RPC atomic
+    // (adjust_thuoc_stock khóa hàng + ghi sổ kho, tránh race-condition so với
+    // pattern đọc-rồi-ghi thủ công trước đây).
+    await Promise.all(exportRows.map((row) =>
+      supabase.rpc('adjust_thuoc_stock', {
+        p_thuoc_id: row.thuoc_id,
+        p_delta: -row.so_luong,
+        p_ref_type: 'don_thuoc_fallback',
+        p_ref_id: donThuocId,
+      })
+    ));
   }
 
   return warnings;
 }
 
-/** Hoàn kho thuốc khi sửa/xóa đơn thuốc. Cộng lại tonkho trên bảng Thuoc. */
+/** Hoàn kho thuốc khi sửa/xóa đơn thuốc. Cộng lại tonkho qua RPC atomic (không đọc-rồi-ghi thủ công). */
 async function reverseThuocInventory(tenantId: string, donThuocId: number) {
   const { data: exports } = await supabase
     .from('thuoc_xuat_don')
@@ -80,19 +84,14 @@ async function reverseThuocInventory(tenantId: string, donThuocId: number) {
       restoreByThuoc.set(exp.thuoc_id, (restoreByThuoc.get(exp.thuoc_id) || 0) + exp.so_luong);
     }
 
-    const thuocIds = [...restoreByThuoc.keys()];
-    const { data: thuocRows } = await supabase
-      .from('Thuoc')
-      .select('id, tonkho')
-      .in('id', thuocIds)
-      .eq('tenant_id', tenantId);
-
-    await Promise.all((thuocRows || []).map((thuoc) => {
-      const addQty = restoreByThuoc.get(thuoc.id) || 0;
-      return supabase.from('Thuoc').update({
-        tonkho: (thuoc.tonkho ?? 0) + addQty,
-      }).eq('id', thuoc.id).eq('tenant_id', tenantId);
-    }));
+    await Promise.all([...restoreByThuoc.entries()].map(([thuocId, addQty]) =>
+      supabase.rpc('adjust_thuoc_stock', {
+        p_thuoc_id: thuocId,
+        p_delta: addQty,
+        p_ref_type: 'don_thuoc_reverse',
+        p_ref_id: donThuocId,
+      })
+    ));
 
     await supabase.from('thuoc_xuat_don').delete()
       .eq('tenant_id', tenantId).eq('don_thuoc_id', donThuocId);

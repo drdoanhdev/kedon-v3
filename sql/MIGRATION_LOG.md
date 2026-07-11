@@ -204,6 +204,9 @@ Theo dõi trạng thái migration trên từng database.
 | V079 | V079_tem_kinh_templates_user_scope_and_print_settings.sql | Bổ sung cột cấu hình in (dpi, gap, speed, density, bitmap) + ràng buộc unique theo user + cập nhật RLS user-owned templates | | |
 | V082 | V082_face_recognition_saas.sql | Face recognition SaaS: face_devices, face_embeddings tenant-scoped, PendingFaces | | |
 | V083 | V083_face_ux_enhancements.sql | ChoKham.check_in_source — badge nhận diện trên danh sách chờ | | |
+| V084 | V084_face_smart_learning.sql | Smart Learning: cột centroid EMA cho face_embeddings | | |
+| V085 | V085_face_device_token_lifecycle.sql | Vòng đời device token: token_expires_at, token_rotated_at + index | | |
+| V086 | V086_face_biometric_consent_audit.sql | Đồng ý & nhật ký kiểm toán sinh trắc (face_biometric_consent, face_audit_log) | | |
 
 ---
 

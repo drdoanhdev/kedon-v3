@@ -186,6 +186,12 @@ class CameraStream:
             self._cap = None
         self._read_failures = 0
 
+    def reconfigure(self, config: CameraConfig) -> None:
+        """Đổi nguồn camera đang chạy (vd RTSP URL đổi từ xa qua web) — đóng kết nối cũ,
+        mở lại tự động ở lần đọc tiếp theo (read/read_fresh)."""
+        self.close()
+        self.config = config
+
     def __enter__(self) -> CameraStream:
         self.open()
         return self

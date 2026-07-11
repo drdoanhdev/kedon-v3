@@ -107,6 +107,73 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ error: 'Không có quyền thao tác đơn đặt tròng của chi nhánh khác' });
       }
 
+      // "Đã nhận" → tự nhập kho 1 chạm: tìm/tạo dòng lens_stock đúng tổ hợp độ
+      // rồi ghi nhận giao dịch nhập, thay vì phải thao tác nhập kho riêng.
+      const autoImportWarnings: string[] = [];
+      if (trang_thai === 'da_nhan') {
+        const { data: orders } = await supabase
+          .from('lens_order')
+          .select('id, tenant_id, hang_trong_id, sph, cyl, add_power, mat, so_luong_mieng, DonKinh(branch_id)')
+          .in('id', allowedIds);
+
+        for (const order of orders || []) {
+          try {
+            const orderBranchId = (order as any).DonKinh?.branch_id || branchId || null;
+            let stockQuery = supabase
+              .from('lens_stock')
+              .select('id')
+              .eq('tenant_id', tenantId)
+              .eq('hang_trong_id', order.hang_trong_id)
+              .eq('sph', order.sph)
+              .eq('cyl', order.cyl);
+            if (orderBranchId) stockQuery = stockQuery.eq('branch_id', orderBranchId);
+            if (order.add_power !== null && order.add_power !== undefined) {
+              stockQuery = stockQuery.eq('add_power', order.add_power).eq('mat', order.mat);
+            } else {
+              stockQuery = stockQuery.is('add_power', null);
+            }
+            let { data: stock } = await stockQuery.limit(1).maybeSingle();
+
+            if (!stock) {
+              const { data: created, error: createErr } = await supabase
+                .from('lens_stock')
+                .insert({
+                  tenant_id: tenantId,
+                  branch_id: orderBranchId,
+                  hang_trong_id: order.hang_trong_id,
+                  sph: order.sph,
+                  cyl: order.cyl,
+                  add_power: order.add_power,
+                  mat: order.mat,
+                  ton_dau_ky: 0,
+                  ton_hien_tai: 0,
+                  muc_ton_can_co: 2,
+                })
+                .select('id')
+                .single();
+              if (createErr) throw createErr;
+              stock = created;
+            }
+
+            const { error: movementError } = await supabase.rpc('record_stock_movement', {
+              p_tenant_id: tenantId,
+              p_branch_id: orderBranchId,
+              p_loai_hang: 'trong',
+              p_stock_ref_id: stock.id,
+              p_loai_giao_dich: 'nhap',
+              p_so_luong: order.so_luong_mieng || 1,
+              p_ref_type: 'lens_order',
+              p_ref_id: order.id,
+              p_ghi_chu: 'Tự động nhập kho khi đánh dấu Đã nhận đơn đặt tròng',
+              p_allow_negative: true,
+            });
+            if (movementError) throw movementError;
+          } catch (e: any) {
+            autoImportWarnings.push(`Đơn đặt #${order.id}: lỗi tự nhập kho - ${e.message}`);
+          }
+        }
+      }
+
       let updateQuery = supabase
         .from('lens_order')
         .update(updateData)
@@ -115,7 +182,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data, error } = await updateQuery.select();
 
       if (error) throw error;
-      return res.status(200).json(data);
+      return res.status(200).json({ data, warnings: autoImportWarnings });
     }
 
     // DELETE: Xóa lens order (chỉ khi cho_dat)

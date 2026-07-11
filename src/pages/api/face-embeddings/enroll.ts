@@ -17,8 +17,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    await upsertFaceEmbedding(device.tenantId, patientId, embedding);
-    await touchFaceDevice(device.deviceId);
+    await upsertFaceEmbedding(device.tenantId, patientId, embedding, {
+      deviceId: device.deviceId,
+      ip: device.clientIp,
+      source: 'agent_enroll',
+    });
+    await touchFaceDevice(device.deviceId, { ip: device.clientIp });
     return res.status(200).json({ success: true, message: 'Đã lưu embedding' });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Lỗi lưu embedding';

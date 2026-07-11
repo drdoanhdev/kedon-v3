@@ -36,6 +36,13 @@ interface FaceDevice {
   pairing_code: string | null;
   pairing_expires_at: string | null;
   created_at: string;
+  settings?: {
+    diagnostics?: { camera_status?: string; last_error?: string | null; reported_at?: string };
+    pending_camera_url?: string;
+    pending_camera_requested_at?: string;
+    last_applied_camera_url?: string;
+    last_applied_at?: string;
+  } | null;
 }
 
 interface PendingFace {
@@ -146,6 +153,9 @@ export function FaceRecognitionSection({
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [agentPreviewBase, setAgentPreviewBase] = useState(DEFAULT_AGENT_PREVIEW);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
+  const [cameraUrlInput, setCameraUrlInput] = useState('');
+  const [savingCameraUrl, setSavingCameraUrl] = useState(false);
   const [isLocalDev, setIsLocalDev] = useState(false);
   const pendingIdsRef = useRef<Set<number>>(new Set());
 
@@ -242,6 +252,31 @@ export function FaceRecognitionSection({
     }
   };
 
+  const pushCameraUrl = async (id: string) => {
+    const trimmed = cameraUrlInput.trim();
+    if (!trimmed) {
+      toast.error('Nhập URL RTSP mới');
+      return;
+    }
+    if (!trimmed.toLowerCase().startsWith('rtsp://')) {
+      toast.error('URL phải bắt đầu bằng rtsp://');
+      return;
+    }
+    setSavingCameraUrl(true);
+    try {
+      await axios.patch(`/api/face-devices/${id}`, { pending_camera_url: trimmed });
+      toast.success('Đã gửi — PC sẽ tự đổi camera trong vài phút tới');
+      setEditingCameraId(null);
+      setCameraUrlInput('');
+      await fetchAll();
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err) ? err.response?.data?.error : null;
+      toast.error(msg || 'Lỗi gửi cấu hình camera');
+    } finally {
+      setSavingCameraUrl(false);
+    }
+  };
+
   const assignPending = async (pendingId: number) => {
     const patient = assignPatients[pendingId];
     if (!patient) {
@@ -308,9 +343,11 @@ export function FaceRecognitionSection({
               <div>
                 <p className="font-medium text-gray-800 mb-1">Thiết lập một lần (trên PC gắn camera)</p>
                 <ol className="list-decimal list-inside space-y-0.5 text-xs sm:text-sm">
-                  <li>Tải zip → giải nén → double-click <strong>cai-dat.bat</strong> (không cần PowerShell)</li>
-                  <li>Trên web: tạo mã ghép nối → trên PC chạy <strong>ghep-noi.bat</strong></li>
-                  <li>Chạy <strong>chay-agent.bat</strong> và giữ cửa sổ mở khi phòng khám làm việc</li>
+                  <li>Tải zip → giải nén → double-click <strong>optigo-setup.bat</strong> (không cần PowerShell)</li>
+                  <li>
+                    Wizard tự làm hết: cài thư viện → hỏi mã ghép nối (tạo ở bước 2 bên dưới) → tự dò
+                    camera trong mạng LAN → kiểm tra → hỏi có tự khởi động cùng Windows không → chạy nhận diện
+                  </li>
                   <li>Đăng ký khuôn mặt bệnh nhân lần đầu (bước 4 bên dưới hoặc <strong>dang-ky-khuon-mat.bat</strong>)</li>
                 </ol>
               </div>
@@ -344,15 +381,20 @@ export function FaceRecognitionSection({
           </div>
           <div className="p-5 space-y-3">
             <p className="text-sm text-gray-600">
-              Tải gói cài đặt, giải nén và chạy <strong>cai-dat.bat</strong> — chỉ cần double-click,
-              không cần mở PowerShell hay gõ lệnh Python.
+              Tải gói cài đặt, giải nén và chạy <strong>optigo-setup.bat</strong> — một wizard duy nhất,
+              chỉ cần double-click, không cần mở PowerShell hay gõ lệnh Python.
             </p>
             <ul className="text-xs text-gray-500 space-y-1 list-disc list-inside">
-              <li><strong>cai-dat.bat</strong> — cài đặt lần đầu (~5–15 phút)</li>
-              <li><strong>ghep-noi.bat</strong> — liên kết PC với phòng khám</li>
-              <li><strong>chay-agent.bat</strong> — bật nhận diện tự động</li>
+              <li><strong>optigo-setup.bat</strong> — cài đặt + ghép nối + dò camera + chạy, tất cả trong một lần (~5–15 phút)</li>
               <li><strong>dang-ky-khuon-mat.bat</strong> — đăng ký khuôn mặt BN (thay cho bước 4 trên web)</li>
             </ul>
+            <p className="text-xs text-gray-400">
+              Cần sửa từng bước riêng (đổi camera, ghép nối lại...)? Vẫn còn{' '}
+              <code className="bg-gray-100 px-1 rounded">cai-dat.bat</code>,{' '}
+              <code className="bg-gray-100 px-1 rounded">ghep-noi.bat</code>,{' '}
+              <code className="bg-gray-100 px-1 rounded">cau-hinh-camera.bat</code> và{' '}
+              <code className="bg-gray-100 px-1 rounded">chay-agent.bat</code> trong gói.
+            </p>
             <Button asChild onClick={() => setWizardStep(2)}>
               <a href={FACE_AGENT_DOWNLOAD_URL} download="OptigoFaceAgent.zip">
                 <Download className="w-4 h-4 mr-1" /> Tải OptigoFaceAgent.zip
@@ -405,24 +447,79 @@ export function FaceRecognitionSection({
             ) : (
               <ul className="divide-y border rounded-lg">
                 {devices.map((d) => (
-                  <li key={d.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-sm">{d.device_label}</p>
-                      <p className="text-xs text-gray-500 flex flex-wrap items-center gap-2">
-                        {d.status === 'pending_pair' ? (
-                          <>Chờ ghép — mã: <strong>{d.pairing_code}</strong></>
-                        ) : (
-                          <>
-                            <DeviceStatusDot lastSeen={d.last_seen_at} />
-                            <span>{formatRelativeTime(d.last_seen_at)}</span>
-                            {d.agent_version ? <span>· v{d.agent_version}</span> : null}
-                          </>
+                  <li key={d.id} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium text-sm">{d.device_label}</p>
+                        <p className="text-xs text-gray-500 flex flex-wrap items-center gap-2">
+                          {d.status === 'pending_pair' ? (
+                            <>Chờ ghép — mã: <strong>{d.pairing_code}</strong></>
+                          ) : (
+                            <>
+                              <DeviceStatusDot lastSeen={d.last_seen_at} />
+                              <span>{formatRelativeTime(d.last_seen_at)}</span>
+                              {d.agent_version ? <span>· v{d.agent_version}</span> : null}
+                            </>
+                          )}
+                        </p>
+                        {d.settings?.diagnostics?.camera_status === 'error' &&
+                        d.settings.diagnostics.last_error ? (
+                          <p className="text-xs text-red-600 mt-1">
+                            ⚠️ Camera lỗi: {d.settings.diagnostics.last_error}
+                          </p>
+                        ) : null}
+                        {d.settings?.pending_camera_url ? (
+                          <p className="text-xs text-amber-600 mt-1">
+                            ⏳ Đang chờ PC áp dụng URL camera mới...
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {d.status === 'active' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setEditingCameraId((cur) => (cur === d.id ? null : d.id))
+                            }
+                          >
+                            Đổi camera từ xa
+                          </Button>
                         )}
-                      </p>
+                        <Button variant="outline" size="sm" onClick={() => revokeDevice(d.id)}>
+                          Thu hồi
+                        </Button>
+                      </div>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => revokeDevice(d.id)}>
-                      Thu hồi
-                    </Button>
+
+                    {editingCameraId === d.id && (
+                      <div className="mt-3 bg-gray-50 border rounded-lg p-3 space-y-2">
+                        <p className="text-xs text-gray-600">
+                          Dán URL RTSP mới (vd sau khi camera đổi IP qua DHCP). PC sẽ tự áp dụng ở
+                          lần đồng bộ tiếp theo (vài phút) — không cần chạm vào PC camera.
+                        </p>
+                        <Input
+                          value={cameraUrlInput}
+                          onChange={(e) => setCameraUrlInput(e.target.value)}
+                          placeholder="rtsp://admin:matkhau@192.168.1.100:554/cam/realmonitor?channel=1&subtype=1"
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => pushCameraUrl(d.id)} disabled={savingCameraUrl}>
+                            {savingCameraUrl ? 'Đang gửi...' : 'Gửi cho PC'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingCameraId(null);
+                              setCameraUrlInput('');
+                            }}
+                          >
+                            Hủy
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -587,12 +684,18 @@ export function FaceRecognitionSection({
           </button>
           {showAdvanced && (
             <div className="px-4 pb-4 text-xs text-gray-600 space-y-2 border-t bg-gray-50">
+              <p>
+                Cách nhanh nhất: double-click <code>optigo-setup.bat</code> — làm hết các bước dưới
+                trong một wizard.
+              </p>
               <p>1. Tải zip → giải nén → <code>cai-dat.bat</code></p>
               <p>2. Tạo mã ghép nối → <code>ghep-noi.bat</code></p>
               <p>3. <code>chay-agent.bat</code> — nhận diện + preview (8766) + embedding (8765)</p>
               <p>
-                Camera IP (RTSP): double-click <code>cau-hinh-camera.bat</code> trên PC camera — chọn hãng
-                (Hikvision/Dahua/Reolink) hoặc dán URL RTSP. Không cần sửa code hay file thủ công.
+                Camera IP (RTSP): double-click <code>cau-hinh-camera.bat</code> trên PC camera → chọn
+                <strong> Tự động dò camera trong mạng LAN</strong> (không cần biết IP), hoặc chọn hãng
+                (Hikvision/Dahua/Reolink) / dán URL RTSP thủ công. Không cần sửa code hay file thủ công.
+                Camera lỗi? Chạy <code>python main.py doctor</code> để biết nguyên nhân chính xác.
               </p>
               <p>
                 Đăng ký qua web cần <code>chay-agent.bat</code> đang chạy. Hoặc dùng{' '}

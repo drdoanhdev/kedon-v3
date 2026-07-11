@@ -2,6 +2,40 @@
  * Logic nghiệp vụ nhận diện khuôn mặt & check-in phòng chờ.
  */
 import { supabaseAdmin } from './tenantApi';
+import { assertConsentForEnroll, logFaceAudit } from './faceBiometricGovernance';
+import { deletePendingFaceSnapshot } from './faceSnapshotUpload';
+
+/**
+ * Ngưỡng tin cậy tối thiểu để tự động check-in bằng khuôn mặt.
+ * Đồng bộ với `match_threshold` mặc định trong services/face-agent/config.example.json.
+ * Dưới ngưỡng này, rủi ro nhận nhầm bệnh nhân tăng đáng kể (ArcFace cosine similarity).
+ */
+export const MIN_CHECKIN_CONFIDENCE = 0.5;
+
+/** Chiều dài vector embedding của InsightFace buffalo_l / ArcFace. */
+export const FACE_EMBEDDING_DIM = 512;
+
+export const FACE_EMBEDDING_MODEL = 'insightface_arcface';
+
+/**
+ * Kiểm tra embedding hợp lệ (đúng model buffalo_l, không NaN/Infinity).
+ * Trả về thông báo lỗi hoặc null nếu OK.
+ */
+export function validateFaceEmbedding(embedding: unknown): string | null {
+  if (!Array.isArray(embedding)) {
+    return 'Embedding phải là mảng số';
+  }
+  if (embedding.length !== FACE_EMBEDDING_DIM) {
+    return `Embedding phải có ${FACE_EMBEDDING_DIM} chiều (buffalo_l), nhận được ${embedding.length}`;
+  }
+  for (let i = 0; i < embedding.length; i++) {
+    const v = embedding[i];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      return `Embedding chứa giá trị không hợp lệ tại vị trí ${i}`;
+    }
+  }
+  return null;
+}
 
 function getTodayStartVN(): string {
   const now = new Date();
@@ -123,13 +157,25 @@ export async function checkInPatientToQueue(params: CheckInParams): Promise<Chec
   };
 }
 
+export interface UpsertEmbeddingOptions {
+  /** Bỏ qua kiểm tra đồng ý (chỉ dùng cho luồng nội bộ đã kiểm tra trước). */
+  skipConsent?: boolean;
+  /** Thông tin phục vụ nhật ký kiểm toán. */
+  actor?: string | null;
+  ip?: string | null;
+  deviceId?: string | null;
+  source?: string;
+}
+
 export async function upsertFaceEmbedding(
   tenantId: string,
   patientId: number,
-  embedding: number[]
+  embedding: number[],
+  options: UpsertEmbeddingOptions = {}
 ): Promise<void> {
-  if (!Array.isArray(embedding) || embedding.length < 128) {
-    throw new Error('Embedding không hợp lệ');
+  const embeddingError = validateFaceEmbedding(embedding);
+  if (embeddingError) {
+    throw new Error(embeddingError);
   }
 
   const { data: patient } = await supabaseAdmin
@@ -143,12 +189,19 @@ export async function upsertFaceEmbedding(
     throw new Error('Bệnh nhân không thuộc phòng khám này');
   }
 
+  if (!options.skipConsent) {
+    const consentError = await assertConsentForEnroll(tenantId, patientId);
+    if (consentError) {
+      throw new Error(consentError);
+    }
+  }
+
   const now = new Date().toISOString();
   const baseRow = {
     tenant_id: tenantId,
     patient_id: patientId,
     embedding,
-    model: 'insightface_arcface',
+    model: FACE_EMBEDDING_MODEL,
     updated_at: now,
   };
   const extendedRow = {
@@ -170,4 +223,75 @@ export async function upsertFaceEmbedding(
   }
 
   if (error) throw new Error(error.message);
+
+  await logFaceAudit(tenantId, 'enroll', {
+    patientId,
+    actor: options.actor ?? null,
+    ip: options.ip ?? null,
+    deviceId: options.deviceId ?? null,
+    detail: { source: options.source ?? 'unknown', dim: embedding.length },
+  });
+}
+
+export interface DeleteBiometricsOptions {
+  actor?: string | null;
+  reason?: string;
+}
+
+export interface DeleteBiometricsResult {
+  embeddingsDeleted: number;
+  pendingDeleted: number;
+}
+
+/**
+ * Xóa toàn bộ dữ liệu sinh trắc của 1 bệnh nhân: embedding + pending faces (kèm snapshot).
+ * Dùng khi bệnh nhân rút đồng ý hoặc bị xóa hồ sơ.
+ */
+export async function deleteFaceBiometrics(
+  tenantId: string,
+  patientId: number,
+  options: DeleteBiometricsOptions = {}
+): Promise<DeleteBiometricsResult> {
+  const { data: deletedEmbeddings } = await supabaseAdmin
+    .from('face_embeddings')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('patient_id', patientId)
+    .select('id');
+
+  // Pending faces đã gán cho bệnh nhân này — xóa kèm snapshot storage.
+  const { data: pendingRows } = await supabaseAdmin
+    .from('PendingFaces')
+    .select('id, snapshot_url')
+    .eq('tenant_id', tenantId)
+    .eq('assigned_to', patientId);
+
+  let pendingDeleted = 0;
+  if (pendingRows && pendingRows.length > 0) {
+    for (const row of pendingRows) {
+      await deletePendingFaceSnapshot(row.snapshot_url as string | null);
+    }
+    const { data: deletedPending } = await supabaseAdmin
+      .from('PendingFaces')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('assigned_to', patientId)
+      .select('id');
+    pendingDeleted = deletedPending?.length || 0;
+  }
+
+  await logFaceAudit(tenantId, 'delete', {
+    patientId,
+    actor: options.actor ?? null,
+    detail: {
+      reason: options.reason ?? 'manual',
+      embeddings: deletedEmbeddings?.length || 0,
+      pending: pendingDeleted,
+    },
+  });
+
+  return {
+    embeddingsDeleted: deletedEmbeddings?.length || 0,
+    pendingDeleted,
+  };
 }

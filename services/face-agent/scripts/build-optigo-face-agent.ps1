@@ -13,6 +13,8 @@ $include = @(
     "main.py",
     "requirements.txt",
     "config.example.json",
+    "optigo-setup.bat",
+    "giao-dien-cai-dat.bat",
     "cai-dat.bat",
     "cau-hinh-camera.bat",
     "chay-agent.bat",

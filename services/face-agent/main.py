@@ -3,6 +3,8 @@ import argparse
 import base64
 import json
 import os
+import platform
+import subprocess
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,7 +14,10 @@ import requests
 
 from agent.config import load_config, save_config
 from agent.camera import CameraStream, parse_camera_config, prepare_camera_url_in_config
+from agent.diagnostics import classify_camera_open_error, run_camera_doctor
+from agent.discovery import DiscoveredCamera, discover_cameras
 from agent.preview_profile import apply_low_power_settings
+from agent.rtsp_presets import RTSP_PRESETS, build_rtsp_url
 from agent.preview_server import FrameStore, LiveCapture, start_preview_server
 from agent.face_overlay import OverlayState
 from agent.recognizer import FaceRecognizer
@@ -239,14 +244,68 @@ def report_unknown(cfg: dict, embedding: list, quality: float, snapshot_b64: str
         print(f"⚠️ report-unknown lỗi mạng: {err}")
 
 
-def heartbeat(cfg: dict) -> None:
+def heartbeat(
+    cfg: dict,
+    *,
+    camera_status: str = "ok",
+    last_error: str | None = None,
+    applied_camera_url: str | None = None,
+) -> dict | None:
+    """Báo trạng thái agent. Trả về JSON server (có thể chứa pending_camera_url nếu admin
+    đã đẩy cấu hình camera mới từ web — xem PATCH /api/face-devices/[id])."""
     base = cfg["api_base_url"].rstrip("/")
-    requests.post(
-        f"{base}/api/face-devices/heartbeat",
-        headers=api_headers(cfg["device_token"]),
-        json={"agent_version": cfg.get("agent_version", "1.0.0"), "camera_status": "ok"},
-        timeout=10,
-    )
+    payload = {"agent_version": cfg.get("agent_version", "1.0.0"), "camera_status": camera_status}
+    if last_error:
+        payload["last_error"] = last_error[:300]
+    if applied_camera_url:
+        payload["applied_camera_url"] = applied_camera_url
+    try:
+        res = requests.post(
+            f"{base}/api/face-devices/heartbeat",
+            headers=api_headers(cfg["device_token"]),
+            json=payload,
+            timeout=10,
+        )
+        if res.ok and res.text:
+            return res.json()
+    except requests.RequestException as err:
+        print(f"⚠️ heartbeat lỗi mạng: {err}")
+    except ValueError:
+        pass
+    return None
+
+
+def _apply_pending_camera_url(cfg: dict, camera: CameraStream, pending_url: str) -> bool:
+    """Thử mở camera mới do admin đẩy từ web trước khi áp dụng — không làm gián đoạn nếu sai."""
+    from agent.camera import CameraConfig, mask_camera_url, normalize_rtsp_url
+
+    fixed, warnings = normalize_rtsp_url(pending_url.strip())
+    for msg in warnings:
+        print(f"⚠️  {msg}")
+    print(f"🌐 Web yêu cầu đổi camera: {mask_camera_url(fixed)} — đang kiểm tra...")
+
+    new_cfg = CameraConfig(camera_url=fixed, camera_index=cfg.get("camera_index", 0))
+    test_cam = CameraStream(new_cfg)
+    ok = False
+    try:
+        test_cam.open()
+        read_ok, frame = test_cam.read()
+        ok = bool(read_ok and frame is not None)
+    except RuntimeError as err:
+        print(f"❌ Camera mới từ web lỗi: {err} — giữ nguyên camera hiện tại.")
+    finally:
+        test_cam.close()
+
+    if not ok:
+        print(f"❌ Không mở được camera mới ({mask_camera_url(fixed)}) — giữ nguyên camera hiện tại.")
+        return False
+
+    camera.reconfigure(new_cfg)
+    cfg["camera_url"] = fixed
+    save_config(CONFIG_PATH, cfg)
+    print("✅ Đã áp dụng camera mới từ web.")
+    heartbeat(cfg, applied_camera_url=fixed)
+    return True
 
 
 def start_embed_server(recognizer: FaceRecognizer, host: str, port: int) -> ThreadingHTTPServer:
@@ -268,9 +327,15 @@ def start_embed_server(recognizer: FaceRecognizer, host: str, port: int) -> Thre
         def do_OPTIONS(self) -> None:
             self.send_response(204)
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
+
+        def do_GET(self) -> None:
+            if self.path.rstrip("/") == "/health":
+                self._send_json(200, {"ok": True, "service": "embed", "model": "buffalo_l"})
+                return
+            self._send_json(404, {"error": "Not found"})
 
         def do_POST(self) -> None:
             if self.path != "/embed":
@@ -325,13 +390,6 @@ def cmd_serve(args: argparse.Namespace) -> None:
         server.shutdown()
 
 
-RTSP_PRESETS: dict[str, str] = {
-    "hikvision": "rtsp://{user}:{password}@{ip}:554/Streaming/Channels/102",
-    "dahua": "rtsp://{user}:{password}@{ip}:554/cam/realmonitor?channel=1&subtype=1",
-    "reolink": "rtsp://{user}:{password}@{ip}:554/h264Preview_01_sub",
-}
-
-
 def _prompt_choice(prompt: str, choices: dict[str, str], default_key: str | None = None) -> str:
     keys = list(choices.keys())
     print(prompt)
@@ -352,17 +410,46 @@ def _prompt_choice(prompt: str, choices: dict[str, str], default_key: str | None
         print("Lựa chọn không hợp lệ, thử lại.")
 
 
-def _build_rtsp_from_preset(preset_key: str) -> str:
-    preset = RTSP_PRESETS[preset_key]
+def _build_rtsp_from_preset(preset_key: str, ip: str | None = None) -> str:
     print()
     print("Nhập thông tin camera (lấy từ nhãn camera hoặc app NVR):")
-    ip = input("  IP camera (vd 192.168.1.100): ").strip()
+    if not ip:
+        ip = input("  IP camera (vd 192.168.1.100): ").strip()
+    else:
+        print(f"  IP camera: {ip} (đã dò được)")
     user = input("  Tên đăng nhập [admin]: ").strip() or "admin"
     password = input("  Mật khẩu: ").strip()
     if not ip or not password:
         print("❌ Thiếu IP hoặc mật khẩu.")
         sys.exit(1)
-    return preset.format(user=user, password=password, ip=ip)
+    return build_rtsp_url(preset_key, ip, user, password)
+
+
+def _run_discovery_scan(timeout_sec: float = 3.0) -> list[DiscoveredCamera]:
+    print()
+    print("🔎 Đang dò camera trong mạng LAN (vài giây)...")
+    cameras = discover_cameras(timeout_sec=timeout_sec)
+    if not cameras:
+        print("❌ Không tìm thấy camera nào. Camera có thể ở mạng khác, hoặc chặn ONVIF/RTSP.")
+        print("   Hãy nhập IP thủ công (xem nhãn camera hoặc app NVR).")
+    return cameras
+
+
+def _pick_discovered_camera(cameras: list[DiscoveredCamera]) -> DiscoveredCamera | None:
+    print()
+    print(f"Tìm thấy {len(cameras)} camera:")
+    for i, cam in enumerate(cameras, 1):
+        print(f"  {i}. {cam.label}")
+    print(f"  {len(cameras) + 1}. Không có trong danh sách — nhập IP thủ công")
+    while True:
+        raw = input(f"Chọn (1-{len(cameras) + 1}): ").strip()
+        if raw.isdigit():
+            idx = int(raw)
+            if 1 <= idx <= len(cameras):
+                return cameras[idx - 1]
+            if idx == len(cameras) + 1:
+                return None
+        print("Lựa chọn không hợp lệ, thử lại.")
 
 
 def cmd_config_camera(args: argparse.Namespace) -> None:
@@ -429,11 +516,30 @@ def cmd_config_camera(args: argparse.Namespace) -> None:
         source = _prompt_choice(
             "Cách nhập URL RTSP:",
             {
+                "auto": "Tự động dò camera trong mạng LAN (khuyến nghị)",
                 "preset": "Chọn hãng camera (Hikvision / Dahua / Reolink)",
                 "custom": "Dán URL RTSP đầy đủ (copy từ VLC hoặc app camera)",
             },
-            "preset",
+            "auto",
         )
+        discovered_ip: str | None = None
+        if source == "auto":
+            cameras = _run_discovery_scan()
+            if cameras:
+                picked = _pick_discovered_camera(cameras)
+                if picked is not None:
+                    discovered_ip = picked.ip
+                    source = "preset"
+                    default_brand = picked.brand_guess or "dahua"
+                else:
+                    source = "preset"
+                    default_brand = "dahua"
+            else:
+                source = "preset"
+                default_brand = "dahua"
+        else:
+            default_brand = "dahua"
+
         if source == "preset":
             brand = _prompt_choice(
                 "Chọn hãng:",
@@ -442,9 +548,9 @@ def cmd_config_camera(args: argparse.Namespace) -> None:
                     "dahua": "Dahua",
                     "reolink": "Reolink",
                 },
-                "dahua",
+                default_brand,
             )
-            rtsp_url = _build_rtsp_from_preset(brand)
+            rtsp_url = _build_rtsp_from_preset(brand, ip=discovered_ip)
         else:
             print()
             print("Ví dụ:")
@@ -484,6 +590,23 @@ def cmd_config_camera(args: argparse.Namespace) -> None:
         print("Chạy lại chay-agent.bat để áp dụng cấu hình mới.")
 
 
+def cmd_discover_camera(_args: argparse.Namespace) -> None:
+    """Dò camera IP trong mạng LAN (ONVIF + quét cổng RTSP) — không cần biết trước IP."""
+    print()
+    print("=" * 48)
+    print("  DÒ CAMERA TRONG MẠNG LAN")
+    print("=" * 48)
+    cameras = _run_discovery_scan()
+    if not cameras:
+        sys.exit(1)
+    print()
+    print(f"Tìm thấy {len(cameras)} camera:")
+    for cam in cameras:
+        print(f"  - {cam.label}")
+    print()
+    print("Chạy 'python main.py config-camera' để chọn và cấu hình camera này.")
+
+
 def cmd_test_camera(_args: argparse.Namespace) -> None:
     cfg = _bootstrap_cfg(load_config(CONFIG_PATH))
     cam_cfg = parse_camera_config(cfg)
@@ -497,12 +620,62 @@ def cmd_test_camera(_args: argparse.Namespace) -> None:
             print(f"✅ Đọc được khung hình {w}x{h}")
         else:
             print("❌ Mở được stream nhưng không đọc được frame")
+            _print_camera_diagnostics(cfg, cam_cfg)
             sys.exit(1)
     except RuntimeError as err:
-        print(f"❌ {err}")
+        print(f"❌ {classify_camera_open_error(cam_cfg, err)}")
+        _print_camera_diagnostics(cfg, cam_cfg)
         sys.exit(1)
     finally:
         camera.close()
+
+
+def _print_camera_diagnostics(cfg: dict, cam_cfg) -> None:
+    print()
+    print("🩺 Đang chẩn đoán nguyên nhân...")
+    report = run_camera_doctor(cam_cfg, raw_camera_url=cfg.get("camera_url"))
+    report.print_report()
+
+
+def cmd_doctor(_args: argparse.Namespace) -> None:
+    """Kiểm tra toàn diện: FFmpeg, mạng, camera — cho biết chính xác vấn đề nằm ở đâu."""
+    cfg = _bootstrap_cfg(load_config(CONFIG_PATH))
+    cam_cfg = parse_camera_config(cfg)
+
+    print()
+    print("=" * 48)
+    print("  CHẨN ĐOÁN — Optigo Face Agent")
+    print("=" * 48)
+    print()
+
+    print(f"Ghép nối: {'✅ Đã ghép nối' if cfg.get('device_token') else '❌ Chưa ghép nối'}")
+    print(f"Camera:   {CameraStream(cam_cfg).label}")
+    print()
+
+    report = run_camera_doctor(cam_cfg, raw_camera_url=cfg.get("camera_url"))
+    report.print_report()
+
+    print()
+    camera = CameraStream(cam_cfg)
+    try:
+        camera.open()
+        ok, frame = camera.read()
+        if ok and frame is not None:
+            h, w = frame.shape[:2]
+            print(f"✅ Camera mở và đọc được khung hình {w}x{h}")
+        else:
+            print("❌ Mở được stream nhưng không đọc được khung hình")
+            report.add("frame_read", False, "Không đọc được khung hình từ camera")
+    except RuntimeError as err:
+        print(f"❌ {classify_camera_open_error(cam_cfg, err)}")
+        report.add("camera_open", False, str(err))
+    finally:
+        camera.close()
+
+    print()
+    print(report.summary_line())
+    if not report.all_ok:
+        sys.exit(1)
 
 
 def cmd_preview(_args: argparse.Namespace) -> None:
@@ -547,8 +720,9 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     from agent.preview_profile import resolve_preview_profile
 
-    recognizer = FaceRecognizer()
-    threshold = float(cfg.get("match_threshold", 0.45))
+    liveness_enabled = bool(cfg.get("liveness_enabled", True))
+    recognizer = FaceRecognizer(liveness_enabled=liveness_enabled)
+    threshold = float(cfg.get("match_threshold", 0.5))
     cooldown = int(cfg.get("check_in_cooldown_sec", 60))
     min_face_quality = float(cfg.get("min_face_quality", 0.35))
     confirm_matches = int(cfg.get("confirm_matches", 3))
@@ -579,12 +753,15 @@ def cmd_run(args: argparse.Namespace) -> None:
     last_check_in: dict[int, float] = {}
     last_sync = 0.0
     last_unknown = 0.0
+    last_liveness_warning_log = 0.0
     camera_ok = True
     recognize_interval = profile.recognize_interval_sec
 
     print("🚀 Agent đang chạy. Nhấn Ctrl+C để dừng.")
     if confirm_matches > 1:
         print(f"   Xác nhận nhận diện: {confirm_matches} lần liên tiếp trước check-in")
+    if liveness_enabled:
+        print("   Chống giả mạo (liveness) tối thiểu: bật — ảnh in/màn hình đứng yên sẽ bị chặn")
     try:
         camera.open()
         print(f"📷 Camera: {camera.label}")
@@ -605,7 +782,20 @@ def cmd_run(args: argparse.Namespace) -> None:
             if now - last_sync >= sync_interval:
                 sync_embeddings(cfg, recognizer)
                 last_sync = now
-                heartbeat(cfg)
+                if camera.last_read_ok or not uses_rtsp:
+                    hb_response = heartbeat(cfg)
+                else:
+                    hb_response = heartbeat(
+                        cfg,
+                        camera_status="error",
+                        last_error=classify_camera_open_error(cam_cfg),
+                    )
+
+                pending_url = (hb_response or {}).get("pending_camera_url")
+                if pending_url and pending_url.strip() != (cfg.get("camera_url") or "").strip():
+                    if _apply_pending_camera_url(cfg, camera, pending_url):
+                        cam_cfg = parse_camera_config(cfg)
+                        uses_rtsp = cam_cfg.uses_network_stream
 
             frame = live.get_latest_copy()
             match = None
@@ -633,6 +823,12 @@ def cmd_run(args: argparse.Namespace) -> None:
                 camera_ok = True
             else:
                 tracker.reset_streak()
+
+                liveness_warning = recognizer.last_liveness_warning
+                if liveness_warning and now - last_liveness_warning_log >= 30:
+                    print(f"🛡️ Liveness check chặn check-in: {liveness_warning}")
+                    last_liveness_warning_log = now
+
                 if not camera.last_read_ok and camera.config.uses_network_stream:
                     if camera_ok:
                         print("⚠️ Mất tín hiệu camera IP, đang thử kết nối lại...")
@@ -658,9 +854,159 @@ def cmd_run(args: argparse.Namespace) -> None:
         camera.close()
 
 
+def _register_windows_autostart() -> None:
+    """Đăng ký chạy chay-agent.bat mỗi khi Windows đăng nhập — khỏi cần double-click mỗi lần bật máy."""
+    if platform.system().lower() != "windows":
+        print("⚠️  Tự khởi động cùng hệ thống hiện chỉ hỗ trợ Windows.")
+        return
+
+    bat_path = Path(__file__).resolve().parent / "chay-agent.bat"
+    task_name = "OptigoFaceAgent"
+    cmd = [
+        "schtasks", "/Create", "/TN", task_name,
+        "/TR", f'"{bat_path}"',
+        "/SC", "ONLOGON", "/RL", "LIMITED", "/F",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            print(f"✅ Đã đăng ký tự khởi động cùng Windows (Task Scheduler: {task_name})")
+        else:
+            print(f"⚠️  Không đăng ký được tự khởi động: {(result.stderr or result.stdout).strip()[:200]}")
+    except (OSError, subprocess.TimeoutExpired) as err:
+        print(f"⚠️  Lỗi đăng ký tự khởi động: {err}")
+
+
+def cmd_setup(_args: argparse.Namespace) -> None:
+    """Wizard hợp nhất: ghép nối → dò/cấu hình camera → kiểm tra → tự khởi động → chạy agent.
+
+    Gộp 4 bước rời rạc (ghep-noi.bat / cau-hinh-camera.bat / test-camera / chay-agent.bat)
+    thành một luồng duy nhất cho lần cài đặt đầu tiên.
+    """
+    from agent.camera import mask_camera_url
+
+    print()
+    print("=" * 48)
+    print("  CÀI ĐẶT NHANH — Optigo Face Agent")
+    print("=" * 48)
+
+    cfg = load_config(CONFIG_PATH)
+
+    print()
+    print("Bước 1/3 — Ghép nối thiết bị")
+    if cfg.get("device_token"):
+        print("✅ Đã ghép nối trước đó, bỏ qua.")
+    else:
+        print("Lấy mã 8 ký tự từ web: Quản lý phòng khám → Nhận diện khuôn mặt → Tạo mã ghép nối")
+        print()
+        code = input("Nhập mã ghép nối: ").strip()
+        if not code:
+            print("❌ Cần mã ghép nối để tiếp tục. Chạy lại: python main.py setup")
+            sys.exit(1)
+        default_url = cfg.get("api_base_url") or "https://app.optigo.vn"
+        api_url_in = input(f"URL Optigo [{default_url}]: ").strip()
+        cmd_pair(argparse.Namespace(code=code, api_url=api_url_in or default_url, label="PC Camera"))
+        cfg = load_config(CONFIG_PATH)
+
+    print()
+    print("Bước 2/3 — Cấu hình camera")
+    cam_cfg = parse_camera_config(cfg)
+    has_camera = bool(cam_cfg.camera_url) or "camera_index" in cfg
+    reconfigure = "y"
+    if has_camera:
+        label = mask_camera_url(cam_cfg.camera_url) if cam_cfg.camera_url else f"webcam USB index {cam_cfg.camera_index}"
+        print(f"Camera hiện tại: {label}")
+        reconfigure = input("Cấu hình lại camera? [y/N]: ").strip().lower()
+    if not has_camera or reconfigure in ("y", "yes"):
+        cmd_config_camera(argparse.Namespace(rtsp_url=None, usb_index=None, test=False))
+    else:
+        print("Bỏ qua — dùng cấu hình camera hiện tại.")
+
+    print()
+    print("Bước 3/3 — Kiểm tra & khởi động")
+    cfg = _bootstrap_cfg(load_config(CONFIG_PATH))
+    cam_cfg = parse_camera_config(cfg)
+    camera = CameraStream(cam_cfg)
+    ok_camera = False
+    try:
+        camera.open()
+        read_ok, frame = camera.read()
+        ok_camera = bool(read_ok and frame is not None)
+        if ok_camera:
+            h, w = frame.shape[:2]
+            print(f"✅ Camera hoạt động tốt — khung hình {w}x{h}")
+    except RuntimeError as err:
+        print(f"❌ {classify_camera_open_error(cam_cfg, err)}")
+    finally:
+        camera.close()
+
+    if not ok_camera:
+        print()
+        print("🩺 Chẩn đoán nguyên nhân...")
+        _print_camera_diagnostics(cfg, cam_cfg)
+        print()
+        print("❌ Camera chưa hoạt động. Sửa lỗi trên rồi chạy lại: python main.py setup")
+        sys.exit(1)
+
+    print()
+    autostart = input("Tự khởi động agent mỗi khi bật máy? [Y/n]: ").strip().lower()
+    if autostart in ("", "y", "yes"):
+        _register_windows_autostart()
+
+    print()
+    print("🎉 Cài đặt hoàn tất!")
+    start_now = input("Chạy agent ngay bây giờ? [Y/n]: ").strip().lower()
+    if start_now in ("", "y", "yes"):
+        cmd_run(argparse.Namespace())
+    else:
+        print("Chạy 'chay-agent.bat' bất cứ lúc nào để bắt đầu nhận diện.")
+
+
+def cmd_setup_ui(_args: argparse.Namespace) -> None:
+    """Mở giao diện web cục bộ để ghép nối + dò/chọn camera — thay cho trả lời câu hỏi console."""
+    import webbrowser
+
+    from agent.setup_server import start_setup_server
+
+    host = "127.0.0.1"
+    port = 8767
+    server = start_setup_server(CONFIG_PATH, host=host, port=port)
+    url = f"http://{host}:{port}"
+
+    print()
+    print("=" * 48)
+    print("  GIAO DIỆN CÀI ĐẶT — Optigo Face Agent")
+    print("=" * 48)
+    print(f"🖥️  {url}")
+    print("   Đang mở trình duyệt... (nếu không tự mở, dán link trên vào trình duyệt)")
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    print("   Sau khi ghép nối + chọn camera xong, đóng cửa sổ này (Ctrl+C) rồi chạy chay-agent.bat.")
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n👋 Đóng giao diện cài đặt.")
+    finally:
+        server.shutdown()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Optigo Face Agent")
     sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser(
+        "setup",
+        help="Wizard hợp nhất (console): ghép nối + dò/cấu hình camera + kiểm tra + tự khởi động + chạy",
+    )
+
+    sub.add_parser(
+        "setup-ui",
+        help="Giao diện web cục bộ để ghép nối + dò/chọn camera (thay console)",
+    )
 
     p_pair = sub.add_parser("pair", help="Ghép nối thiết bị với mã từ web")
     p_pair.add_argument("--code", required=True, help="Mã ghép nối 8 ký tự")
@@ -674,6 +1020,10 @@ def main() -> None:
 
     sub.add_parser("test-camera", help="Kiểm tra camera USB hoặc RTSP")
 
+    sub.add_parser("doctor", help="Chẩn đoán toàn diện: FFmpeg, mạng, camera")
+
+    sub.add_parser("discover-camera", help="Dò camera IP trong mạng LAN (ONVIF + quét cổng RTSP)")
+
     p_cfg_cam = sub.add_parser("config-camera", help="Cấu hình webcam USB hoặc camera IP (RTSP)")
     p_cfg_cam.add_argument("--rtsp-url", default=None, help="URL RTSP đầy đủ (bỏ qua hướng dẫn tương tác)")
     p_cfg_cam.add_argument("--usb-index", type=int, default=None, help="Chuyển sang webcam USB theo index")
@@ -686,7 +1036,11 @@ def main() -> None:
     p_serve.add_argument("--port", type=int, default=8765)
 
     args = parser.parse_args()
-    if args.command == "pair":
+    if args.command == "setup":
+        cmd_setup(args)
+    elif args.command == "setup-ui":
+        cmd_setup_ui(args)
+    elif args.command == "pair":
         cmd_pair(args)
     elif args.command == "enroll":
         cmd_enroll(args)
@@ -694,6 +1048,10 @@ def main() -> None:
         cmd_run(args)
     elif args.command == "test-camera":
         cmd_test_camera(args)
+    elif args.command == "doctor":
+        cmd_doctor(args)
+    elif args.command == "discover-camera":
+        cmd_discover_camera(args)
     elif args.command == "config-camera":
         cmd_config_camera(args)
     elif args.command == "preview":

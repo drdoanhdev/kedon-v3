@@ -73,17 +73,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const mat = (addPower != null && row.mat && ['trai', 'phai'].includes(row.mat)) ? row.mat : null;
       const tonDauKy = row.ton_dau_ky ?? 0;
 
-      const { error } = await supabase.from('lens_stock').insert({
-        tenant_id: tenantId,
-        hang_trong_id: hangTrongId,
-        sph: sph,
-        cyl: cyl,
-        add_power: addPower,
-        mat: mat,
-        ton_dau_ky: tonDauKy,
-        ton_hien_tai: tonDauKy,
-        muc_ton_can_co: row.muc_ton_can_co ?? 10,
-      });
+      // Tạo dòng kho với tồn = 0, sau đó ghi nhận 1 giao dịch "kiểm kê" để có tồn
+      // đầu kỳ minh bạch trong sổ kho (thay vì gán ton_hien_tai trực tiếp, không truy vết được).
+      const { data: created, error } = await supabase
+        .from('lens_stock')
+        .insert({
+          tenant_id: tenantId,
+          hang_trong_id: hangTrongId,
+          sph: sph,
+          cyl: cyl,
+          add_power: addPower,
+          mat: mat,
+          ton_dau_ky: tonDauKy,
+          ton_hien_tai: 0,
+          muc_ton_can_co: row.muc_ton_can_co ?? 10,
+        })
+        .select('id, branch_id')
+        .single();
 
       if (error) {
         if (error.code === '23505') {
@@ -93,9 +99,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           results.errors.push(`Dòng ${lineNum}: ${error.message}`);
           results.skipped++;
         }
-      } else {
-        results.success++;
+        continue;
       }
+
+      if (tonDauKy > 0 && created) {
+        const { error: movementError } = await supabase.rpc('record_stocktake', {
+          p_tenant_id: tenantId,
+          p_branch_id: created.branch_id || null,
+          p_loai_hang: 'trong',
+          p_stock_ref_id: created.id,
+          p_ton_thuc_te: tonDauKy,
+          p_ghi_chu: 'Tồn đầu kỳ nhập từ Excel',
+          p_nguoi_thuc_hien: null,
+        });
+        if (movementError) {
+          results.errors.push(`Dòng ${lineNum}: Tạo dòng kho OK nhưng lỗi ghi nhận tồn đầu kỳ: ${movementError.message}`);
+        }
+      }
+
+      results.success++;
     }
 
     return res.status(200).json(results);

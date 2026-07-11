@@ -102,7 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Thuoc (drugs) — SHARED
       supabase.from('Thuoc')
-        .select('id, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_toi_thieu, la_thu_thuat')
+        .select('id, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_can_co, la_thu_thuat')
         .eq('tenant_id', tenantId)
         .eq('ngung_kinh_doanh', false),
 
@@ -155,11 +155,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       for (const batch of batches) {
         const { data } = await supabase.from('ChiTietDonThuoc')
-          .select('donthuocid, soluong, thuoc:thuocid(id, tenthuoc, giaban, gianhap, donvitinh, la_thu_thuat)')
+          .select('donthuocid, soluong, don_gia_ban, don_gia_von, thuoc:thuocid(id, tenthuoc, giaban, gianhap, donvitinh, la_thu_thuat)')
           .in('donthuocid', batch);
         if (data) chiTietThuocs = chiTietThuocs.concat(data);
       }
     }
+
+    // Giá bán/giá vốn tại thời điểm kê đơn (snapshot don_gia_ban/don_gia_von, V049).
+    // Ưu tiên snapshot để lãi lịch sử không đổi theo giá hiện tại của danh mục thuốc.
+    const giaBanTaiThoiDiem = (ct: any) =>
+      (ct.don_gia_ban !== null && ct.don_gia_ban !== undefined && ct.don_gia_ban > 0)
+        ? ct.don_gia_ban
+        : (ct.thuoc?.giaban || 0);
+    const giaVonTaiThoiDiem = (ct: any) =>
+      (ct.don_gia_von !== null && ct.don_gia_von !== undefined)
+        ? ct.don_gia_von
+        : (ct.thuoc?.gianhap || 0);
 
     // ===================== MODULE 1: TAI CHINH =====================
     // Current period financials
@@ -175,7 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Compute lai thuoc from chi tiet
     const laiThuocFromDetail = chiTietThuocs.reduce((s: number, ct: any) => {
       if (!ct.thuoc) return s;
-      return s + ct.soluong * ((ct.thuoc.giaban || 0) - (ct.thuoc.gianhap || 0));
+      return s + ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct));
     }, 0);
 
     const tongDT = dtThuoc + dtKinh;
@@ -205,10 +216,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const thuocList = chiTiets.filter((ct: any) => !ct.thuoc.la_thu_thuat && ct.thuoc.donvitinh !== 'lần');
       const ttList = chiTiets.filter((ct: any) => ct.thuoc.la_thu_thuat || ct.thuoc.donvitinh === 'lần');
 
-      const dtT = thuocList.reduce((s: number, ct: any) => s + ct.soluong * ct.thuoc.giaban, 0);
-      const dtTT = ttList.reduce((s: number, ct: any) => s + ct.soluong * ct.thuoc.giaban, 0);
-      const laiT = thuocList.reduce((s: number, ct: any) => s + ct.soluong * (ct.thuoc.giaban - (ct.thuoc.gianhap || 0)), 0);
-      const laiTT = ttList.reduce((s: number, ct: any) => s + ct.soluong * (ct.thuoc.giaban - (ct.thuoc.gianhap || 0)), 0);
+      const dtT = thuocList.reduce((s: number, ct: any) => s + ct.soluong * giaBanTaiThoiDiem(ct), 0);
+      const dtTT = ttList.reduce((s: number, ct: any) => s + ct.soluong * giaBanTaiThoiDiem(ct), 0);
+      const laiT = thuocList.reduce((s: number, ct: any) => s + ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct)), 0);
+      const laiTT = ttList.reduce((s: number, ct: any) => s + ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct)), 0);
       const noTotal = Math.max(0, (don.tongtien || 0) - (don.sotien_da_thanh_toan || 0));
       const noT = don.tongtien ? (dtT / don.tongtien) * noTotal : 0;
       const noTT = don.tongtien ? (dtTT / don.tongtien) * noTotal : 0;
@@ -252,7 +263,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!don) return;
       const day = (don.ngay_kham || '').split('T')[0];
       if (!day || !dtByDay[day]) return;
-      dtByDay[day].lai += ct.soluong * ((ct.thuoc.giaban || 0) - (ct.thuoc.gianhap || 0));
+      dtByDay[day].lai += ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct));
     });
     donKinhs.forEach((d: any) => {
       const day = (d.ngaykham || '').split('T')[0];
@@ -289,8 +300,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!drugSales[tid]) {
         drugSales[tid] = { id: tid, ten: ct.thuoc.tenthuoc || '', doanhthu: 0, lai: 0, soluong: 0 };
       }
-      drugSales[tid].doanhthu += ct.soluong * (ct.thuoc.giaban || 0);
-      drugSales[tid].lai += ct.soluong * ((ct.thuoc.giaban || 0) - (ct.thuoc.gianhap || 0));
+      drugSales[tid].doanhthu += ct.soluong * giaBanTaiThoiDiem(ct);
+      drugSales[tid].lai += ct.soluong * (giaBanTaiThoiDiem(ct) - giaVonTaiThoiDiem(ct));
       drugSales[tid].soluong += ct.soluong;
     });
     const topDrugs = Object.values(drugSales)
@@ -358,7 +369,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ===================== MODULE 3: TON KHO =====================
     const thuocTonKho = thuocs.filter((t: any) => !t.la_thu_thuat);
     const giaTriTonThuoc = thuocTonKho.reduce((s: number, t: any) => s + ((t.tonkho || 0) * (t.gianhap || 0)), 0);
-    const thuocSapHet = thuocTonKho.filter((t: any) => (t.tonkho || 0) > 0 && (t.tonkho || 0) <= (t.muc_ton_toi_thieu || 10));
+    const thuocSapHet = thuocTonKho.filter((t: any) => (t.tonkho || 0) > 0 && (t.tonkho || 0) <= (t.muc_ton_can_co || 10));
     const thuocHetHang = thuocTonKho.filter((t: any) => (t.tonkho || 0) <= 0);
 
     const giaTriTonGong = gongKinhs.reduce((s: number, g: any) => s + ((g.ton_kho || 0) * (g.gia_nhap || 0)), 0);
@@ -428,7 +439,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           giaTriTonGong,
           tongGiaTriTon: giaTriTonThuoc + giaTriTonGong,
           thuocSapHet: thuocSapHet.slice(0, 10).map((t: any) => ({
-            id: t.id, ten: t.tenthuoc, tonkho: t.tonkho, mucMin: t.muc_ton_toi_thieu,
+            id: t.id, ten: t.tenthuoc, tonkho: t.tonkho, mucMin: t.muc_ton_can_co,
           })),
           thuocHetHang: thuocHetHang.length,
           gongSapHet: gongSapHet.length,

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireFaceDevice, touchFaceDevice } from '../../../lib/faceDeviceAuth';
 import { supabaseAdmin } from '../../../lib/tenantApi';
 import { storePendingFaceSnapshot } from '../../../lib/faceSnapshotUpload';
+import { validateFaceEmbedding } from '../../../lib/faceRecognition';
 
 async function saveSnapshotFromBase64(
   tenantId: string,
@@ -33,8 +34,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { embedding, snapshot_url, snapshot_base64, quality_score } = req.body || {};
 
-  if (!Array.isArray(embedding) || embedding.length < 128) {
-    return res.status(400).json({ success: false, error: 'Thiếu embedding hợp lệ' });
+  const embeddingError = validateFaceEmbedding(embedding);
+  if (embeddingError) {
+    return res.status(400).json({ success: false, error: embeddingError });
   }
 
   const hasSnapshotPayload =
@@ -109,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ success: false, error: error.message });
   }
 
-  await touchFaceDevice(device.deviceId);
+  await touchFaceDevice(device.deviceId, { ip: device.clientIp });
 
   return res.status(201).json({
     success: true,
