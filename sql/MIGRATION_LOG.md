@@ -207,6 +207,8 @@ Theo dõi trạng thái migration trên từng database.
 | V084 | V084_face_smart_learning.sql | Smart Learning: cột centroid EMA cho face_embeddings | | |
 | V085 | V085_face_device_token_lifecycle.sql | Vòng đời device token: token_expires_at, token_rotated_at + index | | |
 | V086 | V086_face_biometric_consent_audit.sql | Đồng ý & nhật ký kiểm toán sinh trắc (face_biometric_consent, face_audit_log) | | |
+| V087 | V087_stock_ledger_and_cleanup.sql | Sổ kho thống nhất stock_movement + RPC thuốc atomic + dọn dữ liệu XNT cũ | | |
+| V088 | V088_patient_code_allocator.sql | Mã BN SaaS: counter theo tenant + trigger auto BN##### + backfill | | |
 
 ---
 

@@ -33,6 +33,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 
 interface BenhNhan {
   id?: number;
+  mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // dd/mm/yyyy hoặc yyyy
   dienthoai: string;
@@ -2209,7 +2210,7 @@ export default function BenhNhanPage() {
             <DialogHeader>
               <DialogTitle>{isEditing ? 'Sửa Bệnh Nhân' : 'Thêm Bệnh Nhân'}</DialogTitle>
               {isEditing && form.id && (
-                <div className="text-sm text-gray-500">Mã BN: {form.id}</div>
+                <div className="text-sm text-gray-500">Mã BN: {form.mabenhnhan || '—'}</div>
               )}
             </DialogHeader>
             <div className="space-y-2 py-2">
@@ -2502,7 +2503,7 @@ export default function BenhNhanPage() {
                             {bn.ten} (ID: {bn.id})
                           </div>
                           <div className="text-sm text-gray-600">
-                            Mã BN: {bn.id} • Năm sinh: {bn.namsinh} • SĐT: {bn.dienthoai || 'Chưa có'}
+                            Mã BN: {bn.mabenhnhan || '—'} • Năm sinh: {bn.namsinh} • SĐT: {bn.dienthoai || 'Chưa có'}
                           </div>
                           <div className="text-sm text-gray-500">
                             Địa chỉ: {bn.diachi}

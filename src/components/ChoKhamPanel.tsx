@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 
 interface ChoKhamBenhNhan {
   id: number;
+  mabenhnhan?: string | null;
   ten: string;
   dienthoai: string;
   namsinh: string;
@@ -296,7 +297,12 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef, ChoKhamPanelProps>(({ onCollaps
 
     const patientName = (item.BenhNhan?.ten || '').toLowerCase();
     const phone = (item.BenhNhan?.dienthoai || '').toLowerCase();
-    return patientName.includes(normalizedSearch) || phone.includes(normalizedSearch);
+    const code = (item.BenhNhan?.mabenhnhan || '').toLowerCase();
+    return (
+      patientName.includes(normalizedSearch)
+      || phone.includes(normalizedSearch)
+      || code.includes(normalizedSearch)
+    );
   });
 
   const callNextPatient = useCallback(async () => {
@@ -491,6 +497,9 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef, ChoKhamPanelProps>(({ onCollaps
                         )}
                       </div>
                       <div className="text-[10px] text-gray-400 leading-tight">
+                        {item.BenhNhan?.mabenhnhan ? (
+                          <span className="mr-1 font-medium text-gray-500">{item.BenhNhan.mabenhnhan}</span>
+                        ) : null}
                         {new Date(item.thoigian).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })}
                         {item.trangthai !== 'đã_xong' && (
                           <span className={`ml-1 ${

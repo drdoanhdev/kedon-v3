@@ -6,6 +6,7 @@ import Link from 'next/link';
 
 export interface PatientHeaderBenhNhan {
   id: number;
+  mabenhnhan?: string | null;
   ten: string;
   namsinh: string;
   dienthoai?: string;
@@ -196,8 +197,7 @@ export function PatientMobileHeader({
             <div className="flex-1 min-w-0 overflow-hidden">
               <div className="flex items-baseline overflow-hidden" style={{ gap: combinedOpacity > 0 ? '5px' : '0px' }}>
                 {/* Name */}
-                <h1
-                  className="font-extrabold text-white tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis"
+                <span className="font-extrabold text-white tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis"
                   style={{
                     fontSize: `${nameFontSize}px`,
                     /* shrink name to make room for combined info */
@@ -206,7 +206,12 @@ export function PatientMobileHeader({
                   }}
                 >
                   {benhNhan.ten}
-                </h1>
+                </span>
+                {benhNhan.mabenhnhan && combinedOpacity === 0 && (
+                  <span className="text-white/55 text-[10px] font-medium ml-1.5 flex-shrink-0">
+                    {benhNhan.mabenhnhan}
+                  </span>
+                )}
 
                 {/* Combined: year • address — fades in beside name when compact */}
                 {combinedOpacity > 0 && (
@@ -214,6 +219,7 @@ export function PatientMobileHeader({
                     className="text-white/60 whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0"
                     style={{ fontSize: '10.5px', opacity: combinedOpacity }}
                   >
+                    {benhNhan.mabenhnhan ? `${benhNhan.mabenhnhan} • ` : ''}
                     {benhNhan.namsinh}
                     {benhNhan.diachi ? ` • ${benhNhan.diachi}` : ''}
                   </span>
@@ -282,11 +288,14 @@ export function PatientMobileHeader({
               overflow:  'hidden',
             }}
           >
-            {/* Row 2: Year + Phone */}
+            {/* Row 2: Code + Year + Phone */}
             <div
               className="flex items-center gap-2 mt-1 text-white/85"
               style={{ fontSize: '12px' }}
             >
+              {benhNhan.mabenhnhan && (
+                <span className="font-medium text-white/70 flex-shrink-0">{benhNhan.mabenhnhan}</span>
+              )}
               <Calendar
                 className="text-white/60 flex-shrink-0"
                 style={{ width: '13px', height: '13px' }}
@@ -420,6 +429,9 @@ export function PatientDesktopCard({
               >
                 <span className="font-extrabold text-base text-blue-700 tracking-tight leading-tight block group-hover:text-blue-800">
                   {benhNhan.ten}
+                  {benhNhan.mabenhnhan ? (
+                    <span className="ml-2 text-xs font-semibold text-gray-400">{benhNhan.mabenhnhan}</span>
+                  ) : null}
                 </span>
                 <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 flex-wrap">
                   <span className="flex items-center gap-1">

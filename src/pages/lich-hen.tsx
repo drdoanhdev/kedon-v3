@@ -20,6 +20,7 @@ interface HenKham {
   benhnhanid: number;
   donkinhid: number | null;
   ten_benhnhan: string;
+  mabenhnhan?: string | null;
   dienthoai: string;
   ngay_hen: string;
   gio_hen: string | null;
@@ -243,7 +244,8 @@ export default function LichHen() {
     return data.filter(h =>
       h.ten_benhnhan?.toLowerCase().includes(s) ||
       h.dienthoai?.includes(s) ||
-      h.ly_do?.toLowerCase().includes(s)
+      h.ly_do?.toLowerCase().includes(s) ||
+      (h.mabenhnhan && h.mabenhnhan.toLowerCase().includes(s))
     );
   }, [data, search]);
 
@@ -672,6 +674,9 @@ export default function LichHen() {
                       </div>
 
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-800">
+                        {hen.mabenhnhan && (
+                          <span className="font-medium text-slate-600">{hen.mabenhnhan}</span>
+                        )}
                         <span className="inline-flex items-center gap-1">
                           <CalendarDays className="h-4 w-4" />
                           {formatNgay(hen.ngay_hen)}
@@ -989,6 +994,9 @@ export default function LichHen() {
                             <Link href={hen.benhnhanid ? `/ke-don-kinh?bn=${hen.benhnhanid}` : '#'} className="font-bold text-blue-700 hover:underline truncate">
                               {hen.ten_benhnhan || 'Không tên'}
                             </Link>
+                            {hen.mabenhnhan && (
+                              <span className="text-xs font-medium text-slate-500">{hen.mabenhnhan}</span>
+                            )}
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.color}`}>
                               {st.label}
                             </span>

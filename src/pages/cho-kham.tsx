@@ -16,6 +16,7 @@ import { Input } from '../components/ui/input';
 
 interface BenhNhan {
   id: number;
+  mabenhnhan?: string | null;
   ten: string;
   namsinh?: string;
   dienthoai?: string;
@@ -277,6 +278,7 @@ export default function ChoKhamPage() {
       (item) =>
         item.BenhNhan.ten.toLowerCase().includes(s) ||
         String(item.BenhNhan.id).includes(s) ||
+        (item.BenhNhan.mabenhnhan && item.BenhNhan.mabenhnhan.toLowerCase().includes(s)) ||
         (item.BenhNhan.dienthoai && item.BenhNhan.dienthoai.includes(s))
     );
   }, [danhSachCho, search]);
@@ -532,7 +534,7 @@ export default function ChoKhamPage() {
                                   {item.BenhNhan.ten}
                                 </p>
                                 <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
-                                  <span>#{item.BenhNhan.id}</span>
+                                  <span>{item.BenhNhan.mabenhnhan || `#${item.BenhNhan.id}`}</span>
                                   {item.BenhNhan.dienthoai && (
                                     <>
                                       <span>·</span>
@@ -640,7 +642,7 @@ export default function ChoKhamPage() {
                                       <p className="font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
                                         {item.BenhNhan.ten}
                                       </p>
-                                      <p className="text-xs text-gray-400">#{item.BenhNhan.id}</p>
+                                      <p className="text-xs text-gray-400">{item.BenhNhan.mabenhnhan || `#${item.BenhNhan.id}`}</p>
                                     </div>
                                     {isSelected ? (
                                       <ChevronUp className="w-4 h-4 text-gray-400 ml-auto flex-shrink-0" />

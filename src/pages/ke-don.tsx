@@ -78,6 +78,7 @@ interface DienTien {
 
 interface BenhNhan {
   id: number;
+  mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // yyyy hoặc dd/mm/yyyy
   dienthoai: string;

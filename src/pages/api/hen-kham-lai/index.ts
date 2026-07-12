@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       let query = supabase
         .from('hen_kham_lai')
-        .select('*')
+        .select('*, BenhNhan:benhnhanid(mabenhnhan)')
         .eq('tenant_id', tenantId)
         .order('ngay_hen', { ascending: true })
         .order('gio_hen', { ascending: true, nullsFirst: false });
@@ -37,7 +37,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data, error } = await query;
       if (error) throw error;
 
-      res.status(200).json({ data });
+      const enriched = (data || []).map((row: Record<string, unknown>) => {
+        const join = row.BenhNhan as { mabenhnhan?: string | null } | null | undefined;
+        const { BenhNhan: _omit, ...rest } = row;
+        return {
+          ...rest,
+          mabenhnhan: join?.mabenhnhan ?? null,
+        };
+      });
+
+      res.status(200).json({ data: enriched });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: 'Lỗi khi lấy lịch hẹn', details: message });

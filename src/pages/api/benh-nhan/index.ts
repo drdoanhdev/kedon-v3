@@ -7,6 +7,7 @@ import { deleteFaceBiometrics } from '../../../lib/faceRecognition';
 // Định nghĩa interface cho dữ liệu bệnh nhân
 interface BenhNhan {
   id: number;
+  mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // dd/mm/yyyy hoặc yyyy - keep as string for compatibility
   dienthoai: string;
@@ -216,11 +217,35 @@ function buildSearchOrFilter(rawSearch: string): string {
   const escapedSearch = escapePostgrestLikeValue(normalized);
   if (!escapedSearch) return '';
 
+  const compactNoSpace = normalized.replace(/\s+/g, '');
+  const bnCodeMatch = compactNoSpace.match(/^BN0*(\d+)$/i);
+  if (bnCodeMatch) {
+    const digits = bnCodeMatch[1];
+    const padded = digits.padStart(5, '0');
+    const candidates = Array.from(new Set([
+      compactNoSpace.toUpperCase(),
+      `BN${padded}`,
+      `BN${digits}`,
+    ]));
+    return candidates
+      .map((code) => `mabenhnhan.ilike.%${escapePostgrestLikeValue(code)}%`)
+      .join(',');
+  }
+
   const numericCandidate = normalized.replace(/[\s.-]/g, '');
   const isNumeric = /^\d+$/.test(numericCandidate);
   if (isNumeric) {
     const digits = numericCandidate.replace(/\D/g, '');
-    return `dienthoai.ilike.%${digits}%,ten.ilike.%${escapedSearch}%,id.eq.${digits},namsinh.ilike.%${digits}%`;
+    const padded = digits.padStart(5, '0');
+    return [
+      `dienthoai.ilike.%${digits}%`,
+      `ten.ilike.%${escapedSearch}%`,
+      `id.eq.${digits}`,
+      `namsinh.ilike.%${digits}%`,
+      `mabenhnhan.ilike.%${digits}%`,
+      `mabenhnhan.ilike.%BN${padded}%`,
+      `mabenhnhan.ilike.%BN${digits}%`,
+    ].join(',');
   }
 
   const yearMatch = normalized.match(/\b(19\d{2}|20\d{2})\b/);
@@ -237,6 +262,7 @@ function buildSearchOrFilter(rawSearch: string): string {
   clauses.add(`ten.ilike.%${escapedSearch}%`);
   clauses.add(`dienthoai.ilike.%${escapedSearch}%`);
   clauses.add(`namsinh.ilike.%${escapedSearch}%`);
+  clauses.add(`mabenhnhan.ilike.%${escapedSearch}%`);
 
   if (yearToken) {
     clauses.add(`namsinh.ilike.%${yearToken}%`);
@@ -388,7 +414,7 @@ export default async function handler(
         // Fetch a specific patient
         let detailQuery = supabase
           .from("BenhNhan")
-          .select("id, ten, namsinh, dienthoai, diachi, ghichu")
+          .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu")
           .eq("id", benhnhanid)
           .eq("tenant_id", tenantId);
 
@@ -402,7 +428,7 @@ export default async function handler(
         if (error && isMissingGhichuColumn(error)) {
           let fallbackQuery = supabase
             .from("BenhNhan")
-            .select("id, ten, namsinh, dienthoai, diachi")
+            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi")
             .eq("id", benhnhanid)
             .eq("tenant_id", tenantId);
 
@@ -427,7 +453,7 @@ export default async function handler(
         // Fetch patient list with pagination and search
         let query = supabase
           .from("BenhNhan")
-          .select("id, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+          .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
           .eq("tenant_id", tenantId)
           .order("id", { ascending: false });
 
@@ -446,7 +472,7 @@ export default async function handler(
         if (error && isMissingGhichuColumn(error)) {
           let fallbackQuery = supabase
             .from("BenhNhan")
-            .select("id, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
             .eq("tenant_id", tenantId)
             .order("id", { ascending: false });
 
@@ -605,6 +631,7 @@ export default async function handler(
       // Xử lý namsinh: giữ nguyên string format vì DB thực tế lưu string  
       const namsinhStr = namsinh.trim();
 
+      // Không cho client ghi đè mabenhnhan — mã do trigger/allocator quản lý
       let { data, error } = await supabase
         .from("BenhNhan")
         .update({ 

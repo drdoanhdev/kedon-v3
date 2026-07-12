@@ -46,6 +46,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, tenantId: st
         avatar_url,
         BenhNhan:benhnhanid (
           id,
+          mabenhnhan,
           ten,
           dienthoai,
           namsinh,

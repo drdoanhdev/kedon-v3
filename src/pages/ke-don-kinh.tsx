@@ -44,6 +44,7 @@ import { uploadMediaBinary } from '@/lib/media/clientUpload';
 
 interface BenhNhan {
   id: number;
+  mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // yyyy hoặc dd/mm/yyyy
   dienthoai?: string;
@@ -3525,7 +3526,7 @@ export default function KeDonKinh() {
           <DialogHeader>
             <DialogTitle>Sửa thông tin bệnh nhân</DialogTitle>
             {patientForm?.id && (
-              <div className="text-sm text-gray-500">Mã BN: {patientForm.id}</div>
+              <div className="text-sm text-gray-500">Mã BN: {patientForm.mabenhnhan || '—'}</div>
             )}
           </DialogHeader>
           <div className="space-y-2 py-2">
