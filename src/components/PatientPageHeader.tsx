@@ -61,6 +61,7 @@ export function PatientMobileHeader({
   patientNotes = [],
   onEditPatient,
   switchPageLink,
+  switchPageLabel,
   mobileTab,
   mobileTabLabels,
   onTabChange,
@@ -220,8 +221,15 @@ export function PatientMobileHeader({
               </div>
             </div>
 
+            <Link
+              href={switchPageLink}
+              className="h-7 px-2.5 ml-1 rounded-full border border-white/40 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center whitespace-nowrap hover:bg-white/20 active:bg-white/25 flex-shrink-0"
+            >
+              {switchPageLabel}
+            </Link>
+
             {/* 3-dot menu */}
-            <div ref={menuRef} className="relative flex-shrink-0 ml-1">
+            <div ref={menuRef} className="relative flex-shrink-0">
               <button
                 type="button"
                 aria-label="Thêm"
@@ -254,13 +262,6 @@ export function PatientMobileHeader({
                       Ghi chú
                     </button>
                   )}
-                  <Link
-                    href={switchPageLink}
-                    className="block px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors border-t border-gray-50"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    Chuyển sang kê đơn thuốc
-                  </Link>
                 </div>
               )}
             </div>
@@ -479,43 +480,45 @@ export function PatientDesktopCard({
               )}
             </div>
 
-            {/* 3-dot menu */}
-            <div ref={menuRef} className="relative flex-shrink-0">
-              <button
-                type="button"
-                aria-label="Menu"
-                className="h-8 w-8 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
-                onClick={() => setMenuOpen((v) => !v)}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <Link
+                href={switchPageLink}
+                className="h-8 px-3 rounded-full border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center whitespace-nowrap hover:bg-blue-50 active:bg-blue-100 transition-colors"
               >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[196px] z-50 overflow-hidden">
-                  <button
-                    type="button"
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    onClick={() => { setMenuOpen(false); onEditPatient(); }}
-                  >
-                    Sửa thông tin
-                  </button>
-                  {onManageNotes && (
+                {switchPageLabel}
+              </Link>
+
+              {/* 3-dot menu */}
+              <div ref={menuRef} className="relative flex-shrink-0">
+                <button
+                  type="button"
+                  aria-label="Menu"
+                  className="h-8 w-8 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                  onClick={() => setMenuOpen((v) => !v)}
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[196px] z-50 overflow-hidden">
                     <button
                       type="button"
-                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
-                      onClick={() => { setMenuOpen(false); onManageNotes(); }}
+                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      onClick={() => { setMenuOpen(false); onEditPatient(); }}
                     >
-                      Ghi chú
+                      Sửa thông tin
                     </button>
-                  )}
-                  <Link
-                    href={switchPageLink}
-                    className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {switchPageLabel}
-                  </Link>
-                </div>
-              )}
+                    {onManageNotes && (
+                      <button
+                        type="button"
+                        className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
+                        onClick={() => { setMenuOpen(false); onManageNotes(); }}
+                      >
+                        Ghi chú
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -951,10 +951,13 @@ export default function MobileBottomNav() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleEnterDefault();
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      if (e.ctrlKey || e.metaKey) {
+                        handleAddNewPatient();
+                        return;
                       }
+                      handleEnterDefault();
                     }}
                     className="w-full h-12 pl-10 pr-10 rounded-xl bg-gray-100 text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition-all"
                   />
@@ -1333,10 +1336,13 @@ export default function MobileBottomNav() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleEnterDefault();
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      if (e.ctrlKey || e.metaKey) {
+                        handleAddNewPatient();
+                        return;
                       }
+                      handleEnterDefault();
                     }}
                     className="w-full h-12 pl-10 pr-10 rounded-xl bg-gray-100 text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition-all"
                   />

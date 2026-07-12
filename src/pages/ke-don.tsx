@@ -1574,7 +1574,7 @@ export default function KeDon() {
             onManageNotes={openNotesManagement}
             switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
             switchPageIcon={<Glasses className="w-[18px] h-[18px]" />}
-            switchPageLabel="Kê đơn kính"
+            switchPageLabel="Đơn kính"
             mobileTab={mobileTab}
             mobileTabLabels={mobileTabLabels}
             onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
@@ -2492,7 +2492,7 @@ export default function KeDon() {
         onEditPatient={openEditPatientDialog}
         onManageNotes={openNotesManagement}
         switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
-        switchPageLabel="Kê đơn kính"
+        switchPageLabel="Đơn kính"
         familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
         renderBackgroundUploadNotice={renderBackgroundUploadNotice}
       />

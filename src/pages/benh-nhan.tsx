@@ -2286,7 +2286,21 @@ export default function BenhNhanPage() {
               <Input
                 ref={diachiRef}
                 value={form.diachi}
-                onChange={(e) => setForm({ ...form, diachi: e.target.value })}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const lastChar = value.slice(-1);
+                  if (lastChar === ' ' && value.trim()) {
+                    setForm({ ...form, diachi: capitalizeWords(value) });
+                  } else {
+                    setForm({ ...form, diachi: value });
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value) {
+                    setForm({ ...form, diachi: capitalizeWords(value) });
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.ctrlKey) {
                     e.preventDefault();
