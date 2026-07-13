@@ -19,9 +19,11 @@ import { ArrowLeft, AlertTriangle, BookOpen, Glasses } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import {
   alPercentile,
+  alToPctWeight,
   calcHighMyopiaRisk,
   calcRetinaRiskMultiplier,
   getReduction,
+  pctWeightLabel,
   resolveAL0,
   riskMultiplier,
   sexFromUi,
@@ -166,6 +168,7 @@ export default function TienLuongKsctPage() {
     const manual = alManual.trim() === '' ? null : parseFloat(alManual);
     const al0 = resolveAL0(age0, ser0, sexKey, manual);
     const ratio = al0 / crVal;
+    const pctWeight = alToPctWeight(al0, age0, sexKey);
 
     const riskMult = riskMultiplier({
       accLagHigh: accLag === 'high',
@@ -175,11 +178,11 @@ export default function TienLuongKsctPage() {
       nearwork,
     });
 
-    const control = simulateSeries(age0, al0, ser0, 0, 0, riskMult, sexKey);
+    const control = simulateSeries(age0, al0, ser0, 0, 0, riskMult, sexKey, pctWeight);
     const redA = getReduction(modeA, primaryA, combineA);
     const redB = getReduction(modeB, primaryB, combineB);
-    const seriesA = simulateSeries(age0, al0, ser0, redA.al, redA.se, riskMult, sexKey);
-    const seriesB = simulateSeries(age0, al0, ser0, redB.al, redB.se, riskMult, sexKey);
+    const seriesA = simulateSeries(age0, al0, ser0, redA.al, redA.se, riskMult, sexKey, pctWeight);
+    const seriesB = simulateSeries(age0, al0, ser0, redB.al, redB.se, riskMult, sexKey, pctWeight);
 
     const controlSE18 = control[control.length - 1].se;
     const highRisk = calcHighMyopiaRisk(controlSE18);
@@ -189,6 +192,8 @@ export default function TienLuongKsctPage() {
       al0,
       ratio,
       riskMult,
+      pctWeight,
+      pctLabel: pctWeightLabel(pctWeight),
       sex: sexKey,
       control,
       redA,
@@ -601,8 +606,11 @@ export default function TienLuongKsctPage() {
                         Dự báo đến tuổi 18
                       </span>
                     </div>
-                    <div className="-mt-1 mb-2.5 text-[10.5px] text-slate-500">
-                      Hệ số nguy cơ tổng hợp (trễ điều tiết, giác mạc, di truyền, ngoài trời, nhìn gần):{' '}
+                    <div className="-mt-1 mb-2.5 text-[10.5px] text-slate-500 leading-relaxed">
+                      AL hiện tại tương ứng khoảng{' '}
+                      <strong className="text-blue-600">{sim.pctLabel}</strong> dân số cùng tuổi/giới — tốc độ
+                      tiến triển được mô phỏng theo đúng percentile này (percentile càng cao, tốc độ càng
+                      nhanh). Hệ số nguy cơ bổ sung:{' '}
                       <strong className="text-slate-700">×{sim.riskMult.toFixed(2)}</strong>
                     </div>
 

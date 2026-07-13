@@ -1,12 +1,11 @@
-/** Myopia-control (KSCT) progression simulation — ported from tien-luong-phac-do-ksct (2).html
+/** Myopia-control (KSCT) progression simulation — ported from tien-luong-phac-do-ksct (3).html
  *
  * AL percentiles: Sanz Diez et al. 2022, Sci Rep 12:4850 (CC-BY), Chinese schoolchildren Wuhan n=14,760.
- * D/mm ≈ 2.3 (mid-range clinical estimate). Risk factors fold into a progression multiplier.
+ * Progression rate tracks the child's own AL percentile (higher percentile → faster elongation).
+ * D/mm ≈ 2.3. Risk factors are relative to default sliders (outdoor 1.5h, nearwork 3h → ×1.0).
  */
 
 export const D_PER_MM = 2.3;
-/** Population mean SE (He et al. 2023 sample average) — centers AL-from-SER estimate on P50. */
-export const POP_MEAN_SE = -0.76;
 
 export type SexKey = 'female' | 'male';
 export type PctKey = 'p10' | 'p50' | 'p95';
@@ -66,12 +65,41 @@ export function alPercentile(age: number, sex: SexKey, pct: PctKey): number {
   return tbl[15][pct];
 }
 
-/** Untreated annual AL elongation (mm/yr) = local slope of P50 curve. */
-export function baseALRate(age: number, sex: SexKey): number {
+/** Untreated annual AL elongation (mm/yr) at a given percentile band. */
+export function rateAtBand(age: number, sex: SexKey, pct: PctKey): number {
   const h = 0.05;
-  const a1 = alPercentile(Math.max(2, age - h), sex, 'p50');
-  const a2 = alPercentile(Math.min(18, age + h), sex, 'p50');
-  return Math.max(0.01, (a2 - a1) / (2 * h));
+  const a1 = alPercentile(Math.max(2, age - h), sex, pct);
+  const a2 = alPercentile(Math.min(18, age + h), sex, pct);
+  return Math.max(0.005, (a2 - a1) / (2 * h));
+}
+
+/**
+ * Scales progression vs P50 by the child's own AL percentile weight.
+ * ~P83 → ~1.4× median rate (calibration for early-onset / accelerated cases).
+ */
+export function severityMultiplier(pctWeight: number): number {
+  const k = 1.07;
+  const m = 1 + k * (pctWeight - 0.5);
+  return Math.max(0.35, Math.min(2.6, m));
+}
+
+/** pctWeight: 0=P10, 0.5=P50, 1=P95 (may extrapolate beyond). */
+export function baseALRate(age: number, sex: SexKey, pctWeight = 0.5): number {
+  return rateAtBand(age, sex, 'p50') * severityMultiplier(pctWeight);
+}
+
+/** Map patient AL onto P10–P50–P95 scale (0=P10, 0.5=P50, 1=P95). */
+export function alToPctWeight(al: number, age: number, sex: SexKey): number {
+  const p10 = alPercentile(age, sex, 'p10');
+  const p50 = alPercentile(age, sex, 'p50');
+  const p95 = alPercentile(age, sex, 'p95');
+  if (al <= p50) return (0.5 * (al - p10)) / (p50 - p10);
+  return 0.5 + (0.5 * (al - p50)) / (p95 - p50);
+}
+
+/** Display label e.g. P50, P83 from pctWeight. */
+export function pctWeightLabel(pctWeight: number): string {
+  return `P${Math.round(Math.min(99, Math.max(1, 10 + pctWeight * 85)))}`;
 }
 
 export const TX: Record<TxKey, { label: string; se: number; al: number }> = {
@@ -84,7 +112,7 @@ export const TX: Record<TxKey, { label: string; se: number; al: number }> = {
 };
 
 const COMBO_OVERRIDE: Record<string, { se: number; al: number }> = {
-  'orthok+atropine_001': { se: 0.64, al: 0.6 },
+  'atropine_001+orthok': { se: 0.64, al: 0.6 },
 };
 
 function comboKey(a: string, b: string): string {
@@ -116,7 +144,10 @@ export function getReduction(
   };
 }
 
-/** Folds additional risk-factor inputs into a single multiplier (1.0 = average). */
+/**
+ * Risk-factor multiplier. Defaults (outdoor=1.5, nearwork=3, normal lag, 0 parents, Cr=7.8)
+ * yield exactly 1.0 — only deviations move the multiplier.
+ */
 export function riskMultiplier(params: {
   accLagHigh: boolean;
   parentMyopia: number;
@@ -131,10 +162,10 @@ export function riskMultiplier(params: {
   const cr = params.cr || 7.8;
   if (cr < 7.6) m *= 1.08;
   else if (cr > 8.2) m *= 0.96;
-  const outdoor = params.outdoor || 0;
-  m *= 1 - Math.min(0.35, outdoor * 0.1);
-  const nearwork = params.nearwork || 0;
-  m *= 1 + Math.max(0, nearwork - 2) * 0.04;
+  const outdoor = Number.isNaN(params.outdoor) ? 1.5 : params.outdoor;
+  m *= Math.max(0.75, Math.min(1.15, 1 - (outdoor - 1.5) * 0.1));
+  const nearwork = Number.isNaN(params.nearwork) ? 3 : params.nearwork;
+  m *= Math.max(0.85, Math.min(1.2, 1 + (nearwork - 3) * 0.04));
   return Math.max(0.5, Math.min(1.8, m));
 }
 
@@ -147,7 +178,8 @@ export function simulateSeries(
   redAL: number,
   redSE: number,
   riskMult: number,
-  sex: SexKey
+  sex: SexKey,
+  pctWeight: number
 ): SimPoint[] {
   const pts: SimPoint[] = [{ age: age0, al: al0, se: se0 }];
   let age = age0;
@@ -155,7 +187,7 @@ export function simulateSeries(
   let se = se0;
   const step = 0.5;
   while (age < 18 - 1e-6) {
-    const base = baseALRate(age, sex) * riskMult;
+    const base = baseALRate(age, sex, pctWeight) * riskMult;
     const rAL = base * (1 - redAL);
     const rSE = base * D_PER_MM * (1 - redSE);
     al += rAL * step;
@@ -166,7 +198,10 @@ export function simulateSeries(
   return pts;
 }
 
-/** AL0: manual, or P50 offset by how far SER sits from population mean SE. */
+/**
+ * AL0: manual, or P50 minus SER/D_PER_MM
+ * (SER=0 sits on P50; no POP_MEAN_SE offset — avoids biasing younger children).
+ */
 export function resolveAL0(
   age0: number,
   ser0: number,
@@ -176,7 +211,7 @@ export function resolveAL0(
   if (manualAL != null && !Number.isNaN(manualAL) && manualAL > 0) {
     return +manualAL.toFixed(2);
   }
-  return +(alPercentile(age0, sex, 'p50') - (ser0 - POP_MEAN_SE) / D_PER_MM).toFixed(2);
+  return +(alPercentile(age0, sex, 'p50') - ser0 / D_PER_MM).toFixed(2);
 }
 
 /** High-myopia risk from adjusted control trajectory (risk factors already in SE18). */
