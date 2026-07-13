@@ -12,7 +12,22 @@ import Link from 'next/link';
 
 import React from 'react';
 
-type Tab = 'stats' | 'tenants' | 'payments' | 'users' | 'plans' | 'messages' | 'webhooks';
+type Tab = 'stats' | 'clinicStats' | 'tenants' | 'payments' | 'users' | 'plans' | 'messages' | 'webhooks';
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function startOfMonth(d = new Date()): string {
+  return toIsoDate(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+function endOfMonth(d = new Date()): string {
+  return toIsoDate(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+}
 
 // ========== Thống kê tổng quan ==========
 function StatsTab() {
@@ -68,6 +83,299 @@ function StatsTab() {
   );
 }
 
+// ========== Thống kê lâm sàng theo phòng khám ==========
+function ClinicStatsTab() {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [appliedFrom, setAppliedFrom] = useState<string | null>(null);
+  const [appliedTo, setAppliedTo] = useState<string | null>(null);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = useCallback(async (fromVal: string | null, toVal: string | null) => {
+    setLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const params = new URLSearchParams();
+      if (fromVal) params.set('from', fromVal);
+      if (toVal) params.set('to', toVal);
+      const qs = params.toString();
+      const res = await fetch(`/api/admin/clinic-stats${qs ? `?${qs}` : ''}`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        setData(json);
+        // Giữ selection nếu PK vẫn còn trong kết quả
+        setSelectedTenantId((prev) => {
+          if (!prev) return null;
+          const stillExists = (json.clinics || []).some((c: any) => c.tenant_id === prev);
+          return stillExists ? prev : null;
+        });
+      } else toast.error('Lỗi tải thống kê phòng khám');
+    } catch {
+      toast.error('Lỗi kết nối');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats(null, null);
+  }, [fetchStats]);
+
+  const applyFilter = () => {
+    const f = from || null;
+    const t = to || null;
+    setAppliedFrom(f);
+    setAppliedTo(t);
+    fetchStats(f, t);
+  };
+
+  const clearFilter = () => {
+    setFrom('');
+    setTo('');
+    setAppliedFrom(null);
+    setAppliedTo(null);
+    fetchStats(null, null);
+  };
+
+  const applyPreset = (preset: 'month' | '3months' | 'year') => {
+    const now = new Date();
+    let f = '';
+    let t = endOfMonth(now);
+    if (preset === 'month') {
+      f = startOfMonth(now);
+    } else if (preset === '3months') {
+      const d = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      f = toIsoDate(d);
+    } else {
+      f = `${now.getFullYear()}-01-01`;
+      t = `${now.getFullYear()}-12-31`;
+    }
+    setFrom(f);
+    setTo(t);
+    setAppliedFrom(f);
+    setAppliedTo(t);
+    fetchStats(f, t);
+  };
+
+  const periodLabel =
+    appliedFrom || appliedTo
+      ? `${appliedFrom || '…'} → ${appliedTo || '…'}`
+      : 'Toàn thời gian';
+
+  if (loading && !data) {
+    return <div className="text-center py-12 text-gray-400">Đang tải...</div>;
+  }
+  if (!data) {
+    return <div className="text-center py-12 text-red-400">Không tải được dữ liệu</div>;
+  }
+
+  const totals = data.totals || {};
+  const clinics: any[] = data.clinics || [];
+  const selectedClinic = selectedTenantId
+    ? clinics.find((c) => c.tenant_id === selectedTenantId) || null
+    : null;
+  const monthly: any[] = selectedClinic?.monthly || [];
+
+  const summaryCards = [
+    { label: 'Bệnh nhân', value: totals.so_benh_nhan ?? 0, color: 'bg-blue-50 text-blue-700' },
+    { label: 'Đơn thuốc', value: totals.so_don_thuoc ?? 0, color: 'bg-indigo-50 text-indigo-700' },
+    { label: 'Đơn kính', value: totals.so_don_kinh ?? 0, color: 'bg-purple-50 text-purple-700' },
+    { label: 'Doanh thu', value: formatVND(totals.doanh_thu ?? 0), color: 'bg-yellow-50 text-yellow-700' },
+    { label: 'Lãi', value: formatVND(totals.lai ?? 0), color: 'bg-green-50 text-green-700' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="bg-white rounded-xl border p-4 sm:p-5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Từ ngày</label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Đến ngày</label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={applyFilter}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            Áp dụng
+          </button>
+          <button
+            type="button"
+            onClick={clearFilter}
+            disabled={loading}
+            className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 disabled:opacity-50"
+          >
+            Toàn thời gian
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => applyPreset('month')} className="px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700">
+            Tháng này
+          </button>
+          <button type="button" onClick={() => applyPreset('3months')} className="px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700">
+            3 tháng gần nhất
+          </button>
+          <button type="button" onClick={() => applyPreset('year')} className="px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700">
+            Năm nay
+          </button>
+          <span className="text-xs text-gray-500 self-center ml-1">Đang xem: {periodLabel}</span>
+          {loading && <span className="text-xs text-blue-500 self-center">Đang tải...</span>}
+        </div>
+      </div>
+
+      {/* Totals */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        {summaryCards.map((c) => (
+          <div key={c.label} className={`rounded-xl p-4 sm:p-5 ${c.color}`}>
+            <div className="text-lg sm:text-xl font-bold break-all">{c.value}</div>
+            <div className="text-xs sm:text-sm opacity-75">{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Per-clinic table */}
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="px-4 sm:px-5 py-3 border-b">
+          <h3 className="font-semibold text-gray-800">Theo phòng khám</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Bấm một hàng để xem báo cáo theo tháng của phòng khám đó</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-gray-600">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Phòng khám</th>
+                <th className="text-left px-3 py-2 font-medium">Mã</th>
+                <th className="text-right px-3 py-2 font-medium">BN</th>
+                <th className="text-right px-3 py-2 font-medium">Đơn thuốc</th>
+                <th className="text-right px-3 py-2 font-medium">Đơn kính</th>
+                <th className="text-right px-3 py-2 font-medium">Doanh thu</th>
+                <th className="text-right px-3 py-2 font-medium">Lãi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clinics.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+                    Không có phòng khám
+                  </td>
+                </tr>
+              )}
+              {clinics.map((c) => {
+                const selected = c.tenant_id === selectedTenantId;
+                return (
+                  <tr
+                    key={c.tenant_id}
+                    onClick={() =>
+                      setSelectedTenantId((prev) => (prev === c.tenant_id ? null : c.tenant_id))
+                    }
+                    className={`border-t cursor-pointer transition ${
+                      selected ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <td className="px-3 py-2">
+                      <div className={`font-medium ${selected ? 'text-blue-800' : 'text-gray-900'}`}>
+                        {c.name}
+                        {selected && <span className="ml-2 text-xs font-normal text-blue-600">đang chọn</span>}
+                      </div>
+                      <div className="text-xs text-gray-400">{c.status}</div>
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{c.code}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{c.so_benh_nhan}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{c.so_don_thuoc}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{c.so_don_kinh}</td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatVND(c.doanh_thu)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-green-700">{formatVND(c.lai)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Monthly breakdown — per selected clinic */}
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <div className="px-4 sm:px-5 py-3 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-gray-800">Phân bổ theo tháng</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {selectedClinic
+                ? `${selectedClinic.name} (${selectedClinic.code}) · kỳ ${periodLabel} · mới → cũ`
+                : 'Chọn một phòng khám ở bảng trên để xem báo cáo theo tháng'}
+            </p>
+          </div>
+          {selectedClinic && (
+            <button
+              type="button"
+              onClick={() => setSelectedTenantId(null)}
+              className="self-start text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200"
+            >
+              Bỏ chọn
+            </button>
+          )}
+        </div>
+        {!selectedClinic ? (
+          <div className="px-3 py-10 text-center text-gray-400 text-sm">
+            Chưa chọn phòng khám
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">Tháng</th>
+                  <th className="text-right px-3 py-2 font-medium">BN</th>
+                  <th className="text-right px-3 py-2 font-medium">Đơn thuốc</th>
+                  <th className="text-right px-3 py-2 font-medium">Đơn kính</th>
+                  <th className="text-right px-3 py-2 font-medium">Doanh thu</th>
+                  <th className="text-right px-3 py-2 font-medium">Lãi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthly.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                      Không có dữ liệu theo tháng cho phòng khám này
+                    </td>
+                  </tr>
+                )}
+                {monthly.map((m) => (
+                  <tr key={m.month} className="border-t hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium text-gray-900">{m.month}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.so_benh_nhan}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.so_don_thuoc}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.so_don_kinh}</td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatVND(m.doanh_thu)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-green-700">{formatVND(m.lai)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ========== Quản lý phòng khám ==========
 function TenantsTab() {
   const { confirm } = useConfirm();
@@ -78,7 +386,13 @@ function TenantsTab() {
   const [savingPlan, setSavingPlan] = useState(false);
   const [expandedTenantId, setExpandedTenantId] = useState<string | null>(null);
   const [swipedTenantId, setSwipedTenantId] = useState<string | null>(null);
+  const [purgeModal, setPurgeModal] = useState<{ tenant: any } | null>(null);
+  const [purgeConfirmName, setPurgeConfirmName] = useState('');
+  const [purging, setPurging] = useState(false);
   const tenantTouchStartRef = React.useRef<Record<string, { x: number; y: number }>>({});
+
+  const statusLabel = (status: string) =>
+    status === 'active' ? 'Hoạt động' : status === 'suspended' ? 'Tạm khóa' : 'Ngưng HĐ';
 
   const fetchTenants = useCallback(async () => {
     setLoading(true);
@@ -152,6 +466,74 @@ function TenantsTab() {
         toast.error(err.message || 'Lỗi cập nhật');
       }
     } catch { toast.error('Lỗi kết nối'); }
+  };
+
+  const handleToggleLock = async (tenant: any) => {
+    if (tenant.status === 'inactive') {
+      toast.error('Phòng khám đang ngưng hoạt động — hãy khôi phục trước');
+      return;
+    }
+    const nextStatus = tenant.status === 'suspended' ? 'active' : 'suspended';
+    const ok = await confirm(
+      nextStatus === 'suspended'
+        ? `Tạm khóa phòng khám "${tenant.name}"?\nNgười dùng sẽ không truy cập được cho đến khi mở khóa.`
+        : `Mở khóa phòng khám "${tenant.name}" và cho phép hoạt động trở lại?`
+    );
+    if (!ok) return;
+    await handleStatusChange(tenant.id, nextStatus);
+  };
+
+  const openPurgeModal = (tenant: any) => {
+    setPurgeConfirmName('');
+    setPurgeModal({ tenant });
+    setSwipedTenantId(null);
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!purgeModal) return;
+    const tenant = purgeModal.tenant;
+    const typed = purgeConfirmName.trim();
+    if (!typed) {
+      toast.error('Hãy gõ đúng tên hoặc mã phòng khám để xác nhận');
+      return;
+    }
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+    const matchName = tenant.name && norm(tenant.name) === norm(typed);
+    const matchCode = tenant.code && norm(tenant.code) === norm(typed);
+    if (!matchName && !matchCode) {
+      toast.error('Xác nhận không khớp tên hoặc mã phòng khám');
+      return;
+    }
+
+    setPurging(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/tenants/purge', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ tenantId: tenant.id, confirmName: typed }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const summary = data.data;
+        toast.success(
+          data.message ||
+            `Đã xóa vĩnh viễn "${tenant.name}"` +
+              (summary
+                ? ` (R2: ${summary.mediaDeleted}, users: ${summary.authUsersDeleted})`
+                : '')
+        );
+        setPurgeModal(null);
+        setPurgeConfirmName('');
+        fetchTenants();
+      } else {
+        toast.error(data.message || 'Lỗi xóa vĩnh viễn phòng khám');
+      }
+    } catch {
+      toast.error('Lỗi kết nối');
+    } finally {
+      setPurging(false);
+    }
   };
 
   const openPlanModal = (tenant: any) => {
@@ -331,7 +713,7 @@ function TenantsTab() {
                       t.status === 'suspended' ? 'bg-red-100 text-red-700' :
                       'bg-gray-100 text-gray-600'
                     }`}>
-                      {t.status === 'active' ? 'Hoạt động' : t.status === 'suspended' ? 'Tạm ngưng' : 'Ngưng HĐ'}
+                      {statusLabel(t.status)}
                     </span>
                   </td>
                   <td className="px-2 py-2 text-gray-500 whitespace-nowrap">
@@ -343,16 +725,29 @@ function TenantsTab() {
                       : '—'}
                   </td>
                   <td className="px-2 py-2 text-center whitespace-nowrap">
-                    <div className="flex items-center gap-1 justify-center">
+                    <div className="flex items-center gap-1 justify-center flex-wrap">
                       <select
                         value={t.status}
                         onChange={(e) => handleStatusChange(t.id, e.target.value)}
                         className="text-xs border rounded px-1 py-1"
                       >
                         <option value="active">Hoạt động</option>
-                        <option value="suspended">Tạm ngưng</option>
+                        <option value="suspended">Tạm khóa</option>
                         <option value="inactive">Ngưng HĐ</option>
                       </select>
+                      {t.status !== 'inactive' && (
+                        <button
+                          onClick={() => handleToggleLock(t)}
+                          className={`px-1.5 py-1 text-xs rounded font-medium ${
+                            t.status === 'suspended'
+                              ? 'bg-green-50 text-green-700 hover:bg-green-100'
+                              : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                          }`}
+                          title={t.status === 'suspended' ? 'Mở khóa phòng khám' : 'Tạm khóa phòng khám'}
+                        >
+                          {t.status === 'suspended' ? 'Mở khóa' : 'Khóa'}
+                        </button>
+                      )}
                       <button
                         onClick={() => openPlanModal(t)}
                         className="px-1.5 py-1 bg-purple-50 text-purple-700 text-xs rounded hover:bg-purple-100 font-medium"
@@ -371,12 +766,19 @@ function TenantsTab() {
                       ) : (
                         <button
                           onClick={() => handleSoftDeleteTenant(t)}
-                          className="px-1.5 py-1 bg-red-50 text-red-700 text-xs rounded hover:bg-red-100 font-medium"
+                          className="px-1.5 py-1 bg-orange-50 text-orange-700 text-xs rounded hover:bg-orange-100 font-medium"
                           title="Xóa mềm phòng khám"
                         >
                           🗑
                         </button>
                       )}
+                      <button
+                        onClick={() => openPurgeModal(t)}
+                        className="px-1.5 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 font-medium"
+                        title="Xóa vĩnh viễn — không hoàn tác"
+                      >
+                        Xóa VV
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -405,39 +807,55 @@ function TenantsTab() {
               onTouchEnd={(e) => handleTenantTouchEnd(t.id, e)}
             >
               <div
-                className={`absolute inset-y-0 right-0 w-[140px] border-l border-gray-200 bg-gray-100 p-2 flex flex-col justify-center gap-2 transition-opacity duration-200 ${
+                className={`absolute inset-y-0 right-0 w-[168px] border-l border-gray-200 bg-gray-100 p-2 flex flex-col justify-center gap-1.5 transition-opacity duration-200 ${
                   isSwiped ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`}
               >
+                {t.status !== 'inactive' && (
+                  <button
+                    onClick={() => handleToggleLock(t)}
+                    className={`h-8 rounded-lg text-white text-xs font-semibold ${
+                      t.status === 'suspended' ? 'bg-green-600' : 'bg-amber-600'
+                    }`}
+                  >
+                    {t.status === 'suspended' ? 'Mở khóa' : 'Tạm khóa'}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     openPlanModal(t);
                     setSwipedTenantId(null);
                   }}
-                  className="h-9 rounded-lg bg-purple-600 text-white text-xs font-semibold"
+                  className="h-8 rounded-lg bg-purple-600 text-white text-xs font-semibold"
                 >
                   💎 Đổi gói
                 </button>
                 {t.status === 'inactive' ? (
                   <button
                     onClick={() => handleRestoreTenant(t)}
-                    className="h-9 rounded-lg bg-green-600 text-white text-xs font-semibold"
+                    className="h-8 rounded-lg bg-green-600 text-white text-xs font-semibold"
                   >
                     ↩ Khôi phục
                   </button>
                 ) : (
                   <button
                     onClick={() => handleSoftDeleteTenant(t)}
-                    className="h-9 rounded-lg bg-red-500 text-white text-xs font-semibold"
+                    className="h-8 rounded-lg bg-orange-500 text-white text-xs font-semibold"
                   >
                     🗑 Xóa mềm
                   </button>
                 )}
+                <button
+                  onClick={() => openPurgeModal(t)}
+                  className="h-8 rounded-lg bg-red-700 text-white text-xs font-semibold"
+                >
+                  Xóa vĩnh viễn
+                </button>
               </div>
 
               <div
                 className={`relative touch-pan-y bg-white p-3 transition-transform duration-300 ease-out will-change-transform ${
-                  isSwiped ? '-translate-x-[140px]' : 'translate-x-0'
+                  isSwiped ? '-translate-x-[168px]' : 'translate-x-0'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -451,7 +869,7 @@ function TenantsTab() {
                       t.status === 'suspended' ? 'bg-red-100 text-red-700' :
                       'bg-gray-100 text-gray-600'
                     }`}>
-                      {t.status === 'active' ? 'Hoạt động' : t.status === 'suspended' ? 'Tạm ngưng' : 'Ngưng HĐ'}
+                      {t.status === 'active' ? 'Hoạt động' : t.status === 'suspended' ? 'Tạm khóa' : 'Ngưng HĐ'}
                     </span>
                     <button
                       onClick={() => toggleTenantDetails(t.id)}
@@ -529,7 +947,7 @@ function TenantsTab() {
                           className="h-9 w-full text-xs border rounded-lg px-2"
                         >
                           <option value="active">Hoạt động</option>
-                          <option value="suspended">Tạm ngưng</option>
+                          <option value="suspended">Tạm khóa</option>
                           <option value="inactive">Ngưng HĐ</option>
                         </select>
                       </div>
@@ -545,6 +963,63 @@ function TenantsTab() {
           <div className="text-center py-12 text-gray-400 bg-white rounded-xl border">Chưa có phòng khám nào</div>
         )}
       </div>
+
+      {/* Modal xóa vĩnh viễn */}
+      {purgeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-red-700 mb-1">Xóa vĩnh viễn phòng khám</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              <span className="font-semibold text-gray-900">{purgeModal.tenant.name}</span>
+              {purgeModal.tenant.code ? (
+                <span className="text-gray-500"> (mã: {purgeModal.tenant.code})</span>
+              ) : null}
+            </p>
+            <div className="text-sm bg-red-50 text-red-800 rounded-lg p-3 mb-4 space-y-1.5">
+              <p className="font-medium">Thao tác này không thể hoàn tác.</p>
+              <ul className="list-disc pl-4 space-y-1 text-xs">
+                <li>Xóa toàn bộ dữ liệu lâm sàng / kho / tin nhắn trên Supabase</li>
+                <li>Xóa ảnh trên R2 (đơn kính, đơn thuốc, gọng, khuôn mặt)</li>
+                <li>Xóa mọi tài khoản đăng nhập của chủ PK và thành viên</li>
+              </ul>
+            </div>
+            <label className="text-sm font-medium text-gray-700">
+              Gõ đúng tên hoặc mã phòng khám để xác nhận
+            </label>
+            <input
+              type="text"
+              value={purgeConfirmName}
+              onChange={(e) => setPurgeConfirmName(e.target.value)}
+              placeholder={purgeModal.tenant.code || purgeModal.tenant.name}
+              className="mt-1 w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-400 focus:outline-none"
+              disabled={purging}
+              autoFocus
+            />
+            <div className="flex gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (purging) return;
+                  setPurgeModal(null);
+                  setPurgeConfirmName('');
+                }}
+                className="flex-1 px-3 py-2 rounded-lg border text-gray-700 hover:bg-gray-50"
+                disabled={purging}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handlePermanentDelete}
+                className="flex-1 px-3 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-60"
+                disabled={purging || !purgeConfirmName.trim()}
+              >
+                {purging ? 'Đang xóa...' : 'Xóa vĩnh viễn'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal kích hoạt gói */}
       {planModal && (
@@ -2278,6 +2753,7 @@ function formatVND(amount: number): string {
 // ========== Trang chính ==========
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'stats', label: 'Tổng quan', icon: '📊' },
+  { key: 'clinicStats', label: 'Thống kê PK', icon: '📈' },
   { key: 'tenants', label: 'Phòng khám', icon: '🏥' },
   { key: 'payments', label: 'Thanh toán', icon: '💳' },
   { key: 'webhooks', label: 'Webhook Logs', icon: '🔗' },
@@ -2342,6 +2818,7 @@ export default function AdminPage() {
 
         {/* Content */}
         {tab === 'stats' && <StatsTab />}
+        {tab === 'clinicStats' && <ClinicStatsTab />}
         {tab === 'tenants' && <TenantsTab />}
         {tab === 'payments' && <PaymentsTab />}
         {tab === 'webhooks' && <WebhooksTab />}

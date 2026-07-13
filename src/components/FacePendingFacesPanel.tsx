@@ -26,6 +26,7 @@ import {
 } from './ui/dialog';
 import { Input } from './ui/input';
 import { PatientSearchInput, type PatientSearchHit } from './PatientSearchInput';
+import { useFaceRealtimeRefresh } from '@/hooks/useFaceRealtimeRefresh';
 
 interface PendingFace {
   id: number;
@@ -37,6 +38,15 @@ interface PendingFace {
   reject_reason?: string | null;
   assigned_at?: string | null;
   benh_nhan?: { id: number; ten: string } | null;
+}
+
+interface FaceSuggestion {
+  patient_id: number;
+  ten: string;
+  dienthoai: string | null;
+  mabenhnhan: string | null;
+  similarity: number;
+  similarity_pct: number;
 }
 
 interface Stats {
@@ -63,6 +73,14 @@ function qualityColor(score: number | null) {
   if (s >= 0.8) return 'bg-green-500';
   if (s >= 0.6) return 'bg-yellow-500';
   return 'bg-red-500';
+}
+
+function qualityLabel(score: number | null) {
+  if (score == null) return 'N/A';
+  const pct = Math.round(score * 100);
+  if (pct >= 80) return `${pct}% tốt`;
+  if (pct >= 60) return `${pct}% TB`;
+  return `${pct}% kém`;
 }
 
 function statusBadge(status: string) {
@@ -93,6 +111,9 @@ export function FacePendingFacesPanel() {
   const [assignPatient, setAssignPatient] = useState<PatientSearchHit | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<FaceSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [pickedFromSuggestion, setPickedFromSuggestion] = useState<FaceSuggestion | null>(null);
 
   const fetchData = useCallback(async () => {
     const params = new URLSearchParams();
@@ -114,12 +135,12 @@ export function FacePendingFacesPanel() {
       .finally(() => setLoading(false));
   }, [fetchData]);
 
-  useEffect(() => {
-    const t = setInterval(() => {
-      fetchData().catch(() => {});
-    }, 30000);
-    return () => clearInterval(t);
-  }, [fetchData]);
+  // Realtime PendingFaces + polling fallback (thay setInterval 30s thuần)
+  useFaceRealtimeRefresh({
+    onRefresh: () => fetchData().catch(() => {}),
+    tables: ['PendingFaces'],
+    fallbackPollMs: 30000,
+  });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -136,7 +157,17 @@ export function FacePendingFacesPanel() {
   const openAssign = (face: PendingFace) => {
     setSelected(face);
     setAssignPatient(null);
+    setPickedFromSuggestion(null);
+    setSuggestions([]);
     setAssignOpen(true);
+    setSuggestionsLoading(true);
+    axios
+      .get(`/api/pending-faces/${face.id}/suggest`)
+      .then((res) => {
+        setSuggestions(Array.isArray(res.data?.data) ? res.data.data : []);
+      })
+      .catch(() => setSuggestions([]))
+      .finally(() => setSuggestionsLoading(false));
   };
 
   const openReject = (face: PendingFace) => {
@@ -145,12 +176,23 @@ export function FacePendingFacesPanel() {
     setRejectOpen(true);
   };
 
+  const pickSuggestion = (s: FaceSuggestion) => {
+    setAssignPatient({
+      id: s.patient_id,
+      ten: s.ten,
+      dienthoai: s.dienthoai || undefined,
+    });
+    setPickedFromSuggestion(s);
+  };
+
   const handleAssign = async () => {
     if (!selected || !assignPatient) return;
     setBusy(true);
     try {
       await axios.post(`/api/pending-faces/${selected.id}/assign`, {
         patient_id: assignPatient.id,
+        from_suggestion: Boolean(pickedFromSuggestion),
+        suggested_similarity: pickedFromSuggestion?.similarity,
       });
       toast.success(`Đã gán cho ${assignPatient.ten}`);
       setAssignOpen(false);
@@ -311,9 +353,11 @@ export function FacePendingFacesPanel() {
                 <div className="absolute top-2 left-2">{statusBadge(face.status)}</div>
                 <div className="absolute top-2 right-2">
                   <span
-                    className={`inline-block w-3 h-3 rounded-full ${qualityColor(face.quality_score)}`}
+                    className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white ${qualityColor(face.quality_score)}`}
                     title="Chất lượng ảnh"
-                  />
+                  >
+                    {qualityLabel(face.quality_score)}
+                  </span>
                 </div>
               </div>
               <CardContent className="p-2 space-y-1">
@@ -360,13 +404,66 @@ export function FacePendingFacesPanel() {
               <div className="text-sm">
                 <p className="font-medium">Khách lạ #{selected.id}</p>
                 <p className="text-gray-500">{formatTime(selected.detected_at)}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Chất lượng: {qualityLabel(selected.quality_score)}
+                </p>
               </div>
             </div>
           )}
+
+          <div className="mb-3">
+            <p className="text-sm font-medium text-gray-700 mb-1.5">Gợi ý có thể là</p>
+            {suggestionsLoading ? (
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <RefreshCw className="w-3 h-3 animate-spin" /> Đang so khớp khuôn mặt...
+              </p>
+            ) : suggestions.length === 0 ? (
+              <p className="text-xs text-gray-500">Không tìm thấy bệnh nhân tương tự — hãy tìm thủ công bên dưới.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {suggestions.map((s) => {
+                  const active = assignPatient?.id === s.patient_id;
+                  return (
+                    <li key={s.patient_id}>
+                      <button
+                        type="button"
+                        onClick={() => pickSuggestion(s)}
+                        className={`w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          active
+                            ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-400'
+                            : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium truncate">{s.ten}</span>
+                          <Badge
+                            className={
+                              s.similarity_pct >= 50
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }
+                          >
+                            {s.similarity_pct}% giống
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                          {[s.mabenhnhan, s.dienthoai].filter(Boolean).join(' · ') || '—'}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
           <PatientSearchInput
             selected={assignPatient}
-            onSelect={setAssignPatient}
-            placeholder="Tìm bệnh nhân (tên, SĐT, mã BN)..."
+            onSelect={(p) => {
+              setAssignPatient(p);
+              setPickedFromSuggestion(null);
+            }}
+            placeholder="Hoặc tìm bệnh nhân (tên, SĐT, mã BN)..."
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignOpen(false)}>

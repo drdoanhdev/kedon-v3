@@ -16,7 +16,7 @@ import { Toaster } from 'react-hot-toast';
 // Register auth interceptors at module level (before any component effects run)
 initializeApiAuthHeaders();
 
-const noHeaderPages = ['/login', '/register'];
+const noHeaderPages = ['/login', '/register', '/kiosk-nhan-dien/[deviceId]'];
 type MobileHeaderThemeKey =
   | 'overview'
   | 'schedule'
@@ -232,7 +232,9 @@ function resolveMobileHeader(pathname: string): MobileHeaderConfig {
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
-  const showHeader = !noHeaderPages.includes(router.pathname);
+  const showHeader =
+    !noHeaderPages.includes(router.pathname) &&
+    !router.pathname.startsWith('/kiosk-nhan-dien');
   const mobileThemeColor = router.pathname === '/benh-nhan'
     ? '#3a7efb'
     : router.pathname === '/lich-hen'

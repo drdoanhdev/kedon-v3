@@ -79,6 +79,7 @@ export default async function handler(
 
     await touchFaceDevice(device.deviceId, { ip: device.clientIp });
 
+    // validateFaceEmbedding trả về null nếu OK, string nếu lỗi → !null = học khi embedding hợp lệ
     if (
       result.status !== 'patient_not_found' &&
       Array.isArray(embedding) &&

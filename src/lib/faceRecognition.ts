@@ -95,9 +95,37 @@ export async function checkInPatientToQueue(params: CheckInParams): Promise<Chec
   const { data: existing } = await existingQuery.maybeSingle();
 
   if (existing) {
-    if (avatar) {
+    const touchPayload: Record<string, unknown> = {
+      last_face_checkin_at: new Date().toISOString(),
+    };
+    if (avatar) touchPayload.avatar_url = avatar;
+    const { error: touchError } = await supabase
+      .from('ChoKham')
+      .update(touchPayload)
+      .eq('id', existing.id);
+    // Cột chưa migrate → vẫn trả already_in_queue bình thường
+    if (touchError?.message?.includes('last_face_checkin_at') && avatar) {
       await supabase.from('ChoKham').update({ avatar_url: avatar }).eq('id', existing.id);
     }
+
+    // Vị trí chờ hiện tại (nếu còn trạng thái chờ)
+    let queuePosition: number | undefined;
+    try {
+      let waitingQuery = supabase
+        .from('ChoKham')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .gte('thoigian', todayStart)
+        .eq('trangthai', 'chờ')
+        .order('thoigian', { ascending: true });
+      if (branchId) waitingQuery = waitingQuery.eq('branch_id', branchId);
+      const { data: waiting } = await waitingQuery;
+      const idx = (waiting || []).findIndex((r) => r.id === existing.id);
+      if (idx >= 0) queuePosition = idx + 1;
+    } catch {
+      // ignore
+    }
+
     return {
       success: true,
       status: 'already_in_queue',
@@ -106,6 +134,7 @@ export async function checkInPatientToQueue(params: CheckInParams): Promise<Chec
         patient_id: patient.id,
         name: patient.ten,
         queue_id: existing.id,
+        queue_position: queuePosition,
       },
     };
   }
@@ -122,6 +151,7 @@ export async function checkInPatientToQueue(params: CheckInParams): Promise<Chec
     done_at: null,
     avatar_url: avatar || null,
     tenant_id: tenantId,
+    last_face_checkin_at: new Date().toISOString(),
     ...(branchId ? { branch_id: branchId } : {}),
   };
   if (checkInSource) insertPayload.check_in_source = checkInSource;
@@ -132,9 +162,18 @@ export async function checkInPatientToQueue(params: CheckInParams): Promise<Chec
     .select()
     .single();
 
-  if (insertError?.message?.includes('check_in_source')) {
-    delete insertPayload.check_in_source;
-    const retry = await supabase.from('ChoKham').insert(insertPayload).select().single();
+  if (
+    insertError?.message?.includes('check_in_source') ||
+    insertError?.message?.includes('last_face_checkin_at')
+  ) {
+    const retryPayload = { ...insertPayload };
+    if (insertError.message.includes('check_in_source')) {
+      delete retryPayload.check_in_source;
+    }
+    if (insertError.message.includes('last_face_checkin_at')) {
+      delete retryPayload.last_face_checkin_at;
+    }
+    const retry = await supabase.from('ChoKham').insert(retryPayload).select().single();
     newRecord = retry.data;
     insertError = retry.error;
   }

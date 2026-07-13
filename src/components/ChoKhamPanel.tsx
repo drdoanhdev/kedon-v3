@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { X, PanelLeftClose } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { useFaceRealtimeRefresh } from '@/hooks/useFaceRealtimeRefresh';
 
 interface ChoKhamBenhNhan {
   id: number;
@@ -148,9 +149,14 @@ const ChoKhamPanel = forwardRef<ChoKhamPanelRef, ChoKhamPanelProps>(({ onCollaps
 
   useEffect(() => {
     fetchQueue();
-    const interval = setInterval(fetchQueue, 10000);
-    return () => clearInterval(interval);
   }, [fetchQueue]);
+
+  // Realtime ChoKham + polling fallback (thay setInterval 10s)
+  useFaceRealtimeRefresh({
+    onRefresh: fetchQueue,
+    tables: ['ChoKham'],
+    fallbackPollMs: 15000,
+  });
 
   useEffect(() => {
     fetchCleanupLogs();

@@ -3,6 +3,7 @@ import { requireTenant, setNoCacheHeaders, supabaseAdmin } from '../../../lib/te
 import { upsertFaceEmbedding, validateFaceEmbedding } from '../../../lib/faceRecognition';
 import { planHasFeature } from '../../../lib/featureConfig';
 import { checkEmbeddingServiceHealth, getEmbeddingServiceUrl } from '../../../lib/faceEmbeddingService';
+import { normalize } from '../../../lib/faceSmartLearning';
 
 async function assertTenantFeature(tenantId: string, res: NextApiResponse): Promise<boolean> {
   const { data: tenantRow } = await supabaseAdmin
@@ -73,23 +74,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { tenantId } = ctx;
   if (!(await assertTenantFeature(tenantId, res))) return;
 
-  const { patient_id, image_base64 } = req.body || {};
+  const { patient_id, image_base64, images_base64 } = req.body || {};
   const patientId = parseInt(String(patient_id), 10);
 
-  if (!patientId || typeof image_base64 !== 'string' || image_base64.length < 100) {
+  const images: string[] = Array.isArray(images_base64)
+    ? images_base64.filter((x: unknown) => typeof x === 'string' && (x as string).length >= 100)
+    : typeof image_base64 === 'string' && image_base64.length >= 100
+      ? [image_base64]
+      : [];
+
+  if (!patientId || images.length === 0) {
     return res.status(400).json({ success: false, error: 'Thiếu patient_id hoặc ảnh' });
   }
 
+  if (images.length > 5) {
+    return res.status(400).json({ success: false, error: 'Tối đa 5 ảnh mỗi lần đăng ký' });
+  }
+
   try {
-    const { embedding, quality } = await fetchEmbeddingFromService(image_base64);
+    const results = [];
+    for (const img of images) {
+      results.push(await fetchEmbeddingFromService(img));
+    }
+
+    // Trung bình các embedding rồi chuẩn hóa L2 → centroid ổn định hơn 1 góc
+    const dim = results[0].embedding.length;
+    const avg = new Array(dim).fill(0);
+    for (const r of results) {
+      for (let i = 0; i < dim; i++) avg[i] += r.embedding[i];
+    }
+    for (let i = 0; i < dim; i++) avg[i] /= results.length;
+    const embedding = normalize(avg);
+    const quality =
+      results.reduce((s, r) => s + (r.quality ?? 0.5), 0) / results.length;
+
     await upsertFaceEmbedding(tenantId, patientId, embedding, {
       actor: ctx.userId,
-      source: 'web_enroll',
+      source: images.length > 1 ? 'web_enroll_multi_angle' : 'web_enroll',
     });
     return res.status(200).json({
       success: true,
-      message: `Đã đăng ký khuôn mặt cho bệnh nhân #${patientId}`,
+      message: `Đã đăng ký khuôn mặt cho bệnh nhân #${patientId} (${images.length} góc)`,
       quality,
+      angles: images.length,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Lỗi xử lý ảnh';

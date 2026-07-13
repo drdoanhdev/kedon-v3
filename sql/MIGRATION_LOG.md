@@ -209,6 +209,8 @@ Theo dõi trạng thái migration trên từng database.
 | V086 | V086_face_biometric_consent_audit.sql | Đồng ý & nhật ký kiểm toán sinh trắc (face_biometric_consent, face_audit_log) | | |
 | V087 | V087_stock_ledger_and_cleanup.sql | Sổ kho thống nhất stock_movement + RPC thuốc atomic + dọn dữ liệu XNT cũ | | |
 | V088 | V088_patient_code_allocator.sql | Mã BN SaaS: counter theo tenant + trigger auto BN##### + backfill | | |
+| V089 | V089_face_realtime_publication.sql | Bật Realtime publication cho ChoKham + PendingFaces (kiosk / toast tức thì) | | |
+| V090 | V090_face_kiosk_last_checkin.sql | ChoKham.last_face_checkin_at — phản hồi kiosk khi nhận diện lại | | |
 
 ---
 

@@ -36,6 +36,7 @@ export function FaceEnrollModal({
   const [consentChecked, setConsentChecked] = useState(false);
   const [savingConsent, setSavingConsent] = useState(false);
   const [embedHealth, setEmbedHealth] = useState<{ ok: boolean; message: string } | null>(null);
+  const [enrollDone, setEnrollDone] = useState(false);
 
   const checkEnrollment = useCallback(async () => {
     try {
@@ -82,6 +83,7 @@ export function FaceEnrollModal({
   useEffect(() => {
     if (open) {
       setConsentChecked(false);
+      setEnrollDone(false);
       void checkEnrollment();
       void checkConsent();
       void checkEmbedHealth();
@@ -90,7 +92,15 @@ export function FaceEnrollModal({
 
   const handleEnrolled = () => {
     setHasFace(true);
+    setEnrollDone(true);
   };
+
+  // Tự đóng modal sau khi đăng ký thành công
+  useEffect(() => {
+    if (!enrollDone || !open) return;
+    const t = setTimeout(() => onOpenChange(false), 2500);
+    return () => clearTimeout(t);
+  }, [enrollDone, open, onOpenChange]);
 
   const grantConsent = async () => {
     setSavingConsent(true);

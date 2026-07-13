@@ -17,13 +17,14 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { FaceEnrollCamera } from './FaceEnrollCamera';
 import { PatientSearchInput, type PatientSearchHit } from './PatientSearchInput';
+import { useFaceRealtimeRefresh } from '@/hooks/useFaceRealtimeRefresh';
 
 const FACE_AGENT_DOWNLOAD_URL =
   process.env.NEXT_PUBLIC_FACE_AGENT_DOWNLOAD_URL || '/downloads/OptigoFaceAgent.zip';
 
 const AGENT_PREVIEW_STORAGE_KEY = 'optigo_face_agent_preview_base';
 const DEFAULT_AGENT_PREVIEW = 'http://127.0.0.1:8766';
-const POLL_MS = 8000;
+const POLL_MS = 30000;
 
 interface FaceDevice {
   id: string;
@@ -157,6 +158,7 @@ export function FaceRecognitionSection({
   const [cameraUrlInput, setCameraUrlInput] = useState('');
   const [savingCameraUrl, setSavingCameraUrl] = useState(false);
   const [isLocalDev, setIsLocalDev] = useState(false);
+  const [openingKioskId, setOpeningKioskId] = useState<string | null>(null);
   const pendingIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
@@ -214,9 +216,14 @@ export function FaceRecognitionSection({
 
   useEffect(() => {
     fetchAll();
-    const t = setInterval(fetchAll, POLL_MS);
-    return () => clearInterval(t);
   }, [fetchAll]);
+
+  // Realtime PendingFaces + polling fallback (devices vẫn poll qua cùng fetchAll)
+  useFaceRealtimeRefresh({
+    onRefresh: fetchAll,
+    tables: ['PendingFaces'],
+    fallbackPollMs: POLL_MS,
+  });
 
   const createDevice = async () => {
     setCreating(true);
@@ -274,6 +281,22 @@ export function FaceRecognitionSection({
       toast.error(msg || 'Lỗi gửi cấu hình camera');
     } finally {
       setSavingCameraUrl(false);
+    }
+  };
+
+  const openKiosk = async (id: string) => {
+    setOpeningKioskId(id);
+    try {
+      const { data } = await axios.post(`/api/face-devices/${id}?action=kiosk-token`, {});
+      const path = data?.data?.kiosk_path as string | undefined;
+      if (!path) throw new Error('missing path');
+      window.open(path, '_blank', 'noopener,noreferrer');
+      toast.success('Đã mở màn hình kiosk — gắn tablet/TV cạnh camera');
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err) ? err.response?.data?.error : null;
+      toast.error(msg || 'Không mở được kiosk');
+    } finally {
+      setOpeningKioskId(null);
     }
   };
 
@@ -476,15 +499,25 @@ export function FaceRecognitionSection({
                       </div>
                       <div className="flex items-center gap-2">
                         {d.status === 'active' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setEditingCameraId((cur) => (cur === d.id ? null : d.id))
-                            }
-                          >
-                            Đổi camera từ xa
-                          </Button>
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={openingKioskId === d.id}
+                              onClick={() => void openKiosk(d.id)}
+                            >
+                              {openingKioskId === d.id ? 'Đang mở...' : 'Màn hình kiosk'}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setEditingCameraId((cur) => (cur === d.id ? null : d.id))
+                              }
+                            >
+                              Đổi camera từ xa
+                            </Button>
+                          </>
                         )}
                         <Button variant="outline" size="sm" onClick={() => revokeDevice(d.id)}>
                           Thu hồi

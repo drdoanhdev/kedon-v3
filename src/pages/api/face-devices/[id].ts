@@ -47,6 +47,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
+  // Tạo / xoay kiosk token để mở màn hình chào bệnh nhân
+  if (req.method === 'POST' && req.query.action === 'kiosk-token') {
+    const { generateKioskToken } = await import('../../../lib/faceKiosk');
+    const { data: existing, error: fetchError } = await supabaseAdmin
+      .from('face_devices')
+      .select('id, status, settings, device_label')
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId)
+      .maybeSingle();
+
+    if (fetchError || !existing) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy thiết bị' });
+    }
+    if (existing.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Thiết bị cần ở trạng thái active' });
+    }
+
+    const settings = (existing.settings as Record<string, unknown>) || {};
+    const rotate = Boolean(req.body?.rotate);
+    const current =
+      typeof settings.kiosk_token === 'string' && settings.kiosk_token.startsWith('fk_')
+        ? settings.kiosk_token
+        : null;
+    const kioskToken = rotate || !current ? generateKioskToken() : current;
+
+    const { error: updateError } = await supabaseAdmin
+      .from('face_devices')
+      .update({
+        settings: {
+          ...settings,
+          kiosk_token: kioskToken,
+          kiosk_token_rotated_at: new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('tenant_id', ctx.tenantId);
+
+    if (updateError) {
+      return res.status(500).json({ success: false, error: updateError.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        device_id: id,
+        device_label: existing.device_label,
+        kiosk_token: kioskToken,
+        kiosk_path: `/kiosk-nhan-dien/${id}?token=${encodeURIComponent(kioskToken)}`,
+      },
+      message: rotate || !current ? 'Đã tạo kiosk token mới' : 'Đã lấy kiosk token hiện có',
+    });
+  }
+
   if (req.method === 'PATCH') {
     const { device_label, branch_id, pending_camera_url } = req.body || {};
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };

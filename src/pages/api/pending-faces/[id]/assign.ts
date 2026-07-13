@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!ctx) return;
 
   const { id } = req.query;
-  const { patient_id } = req.body;
+  const { patient_id, suggested_similarity, from_suggestion } = req.body;
 
   if (!id || !patient_id) {
     return res.status(400).json({ success: false, error: 'Missing id or patient_id' });
@@ -70,7 +70,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await logFaceAudit(ctx.tenantId, 'assign', {
       patientId: parseInt(String(patient_id), 10),
       actor: ctx.userId,
-      detail: { pending_face_id: id },
+      detail: {
+        pending_face_id: id,
+        from_suggestion: Boolean(from_suggestion),
+        suggested_similarity:
+          typeof suggested_similarity === 'number' ? suggested_similarity : undefined,
+      },
     });
 
     return res.status(200).json({

@@ -20,16 +20,25 @@ type FaceDetectorLike = {
 
 const READY_HOLD_MS = 1500;
 const READY_SCORE_THRESHOLD = 88;
-/** Poll snapshot từ agent — interval đồng bộ với agent /health */
 const AGENT_SNAPSHOT_INTERVAL_MS_DEFAULT = 130;
+
+type EnrollPose = 'front' | 'left' | 'right';
+
+const POSE_STEPS: { id: EnrollPose; label: string; hint: string }[] = [
+  { id: 'front', label: 'Chính diện', hint: 'Nhìn thẳng vào camera, mặt nằm trong oval' },
+  { id: 'left', label: 'Nghiêng trái nhẹ', hint: 'Quay mặt nhẹ sang trái (~15°), vẫn nhìn camera' },
+  { id: 'right', label: 'Nghiêng phải nhẹ', hint: 'Quay mặt nhẹ sang phải (~15°), vẫn nhìn camera' },
+];
 
 interface FaceEnrollCameraProps {
   patientId: number | null;
   onEnrolled?: () => void;
   /** Chỉ xem camera + hướng dẫn, không lưu embedding */
   previewOnly?: boolean;
-  /** Xem camera IP/RTSP qua agent (vd http://127.0.0.1:8766) — chạy python main.py run hoặc preview */
+  /** Xem camera IP/RTSP qua agent (vd http://127.0.0.1:8766) */
   agentPreviewBase?: string;
+  /** Bật chụp 3 góc (mặc định true khi đăng ký thật) */
+  multiAngle?: boolean;
 }
 
 function domRectToBounds(rect: DOMRectReadOnly): FaceBounds {
@@ -46,6 +55,7 @@ export function FaceEnrollCamera({
   onEnrolled,
   previewOnly = false,
   agentPreviewBase,
+  multiAngle = true,
 }: FaceEnrollCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -59,11 +69,16 @@ export function FaceEnrollCamera({
   const patientIdRef = useRef(patientId);
   const previewOnlyRef = useRef(previewOnly);
   const agentPreviewBaseRef = useRef(agentPreviewBase);
-  const saveEnrollmentRef = useRef<() => Promise<void>>(async () => {});
+  const poseIndexRef = useRef(0);
+  const capturedRef = useRef<string[]>([]);
+  const capturePoseRef = useRef<() => Promise<void>>(async () => {});
 
   patientIdRef.current = patientId;
   previewOnlyRef.current = previewOnly;
   agentPreviewBaseRef.current = agentPreviewBase;
+
+  const useMulti = multiAngle && !previewOnly;
+  const totalPoses = useMulti ? POSE_STEPS.length : 1;
 
   const [cameraError, setCameraError] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
@@ -72,6 +87,14 @@ export function FaceEnrollCamera({
   const [saving, setSaving] = useState(false);
   const [detectorLabel, setDetectorLabel] = useState('');
   const [faceDetectorAvailable, setFaceDetectorAvailable] = useState(false);
+  const [manualOnly, setManualOnly] = useState(false);
+  const [poseIndex, setPoseIndex] = useState(0);
+  const [capturedCount, setCapturedCount] = useState(0);
+  const [done, setDone] = useState(false);
+
+  poseIndexRef.current = poseIndex;
+
+  const currentPose = POSE_STEPS[Math.min(poseIndex, POSE_STEPS.length - 1)];
 
   const stopCamera = useCallback(() => {
     if (rafRef.current != null) {
@@ -86,10 +109,25 @@ export function FaceEnrollCamera({
     setHoldProgress(0);
   }, []);
 
-  const captureFrameBase64 = useCallback((): string | null => {
+  const captureFrameBase64 = useCallback(async (): Promise<string | null> => {
     const base = agentPreviewBaseRef.current?.replace(/\/$/, '');
     if (base) {
-      return null;
+      try {
+        const res = await fetch(`${base}/snapshot?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Agent chưa có khung hình');
+        const blob = await res.blob();
+        return await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            resolve(dataUrl.split(',')[1] || null);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        return null;
+      }
     }
 
     const video = videoRef.current;
@@ -106,58 +144,69 @@ export function FaceEnrollCamera({
     return dataUrl.split(',')[1] || null;
   }, []);
 
-  const saveEnrollment = useCallback(async () => {
-    if (previewOnlyRef.current || !patientIdRef.current || savingRef.current) return;
-
-    const base = agentPreviewBaseRef.current?.replace(/\/$/, '');
-    let imageBase64 = captureFrameBase64();
-
-    if (!imageBase64 && base) {
+  const finalizeEnrollment = useCallback(
+    async (images: string[]) => {
+      if (!patientIdRef.current) return;
+      savingRef.current = true;
+      setSaving(true);
       try {
-        const res = await fetch(`${base}/snapshot?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error('Agent chưa có khung hình');
-        const blob = await res.blob();
-        imageBase64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            resolve(dataUrl.split(',')[1] || null);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
+        await axios.post('/api/face-embeddings/from-image', {
+          patient_id: patientIdRef.current,
+          images_base64: images,
         });
-      } catch {
-        toast.error('Không lấy được ảnh từ agent. Chạy python main.py run hoặc preview.');
-        return;
+        toast.success(
+          images.length > 1
+            ? `Đã đăng ký ${images.length} góc khuôn mặt cho BN #${patientIdRef.current}`
+            : `Đã đăng ký khuôn mặt cho BN #${patientIdRef.current}`
+        );
+        setDone(true);
+        onEnrolled?.();
+        readySinceRef.current = null;
+        setHoldProgress(0);
+      } catch (err: unknown) {
+        const msg = axios.isAxiosError(err) ? err.response?.data?.error : null;
+        toast.error(typeof msg === 'string' ? msg : 'Lỗi lưu khuôn mặt');
+        // Cho phép thử lại góc hiện tại
+        capturedRef.current = capturedRef.current.slice(0, poseIndexRef.current);
+        setCapturedCount(capturedRef.current.length);
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
       }
-    }
+    },
+    [onEnrolled]
+  );
 
+  const capturePose = useCallback(async () => {
+    if (previewOnlyRef.current || !patientIdRef.current || savingRef.current || done) return;
+
+    const imageBase64 = await captureFrameBase64();
     if (!imageBase64) {
-      toast.error('Không chụp được khung hình');
+      toast.error(
+        agentPreviewBaseRef.current
+          ? 'Không lấy được ảnh từ agent. Chạy chay-agent.bat hoặc python main.py run.'
+          : 'Không chụp được khung hình'
+      );
       return;
     }
 
-    savingRef.current = true;
-    setSaving(true);
-    try {
-      await axios.post('/api/face-embeddings/from-image', {
-        patient_id: patientIdRef.current,
-        image_base64: imageBase64,
-      });
-      toast.success(`Đã đăng ký khuôn mặt cho BN #${patientIdRef.current}`);
-      onEnrolled?.();
-      readySinceRef.current = null;
-      setHoldProgress(0);
-    } catch (err: unknown) {
-      const msg = axios.isAxiosError(err) ? err.response?.data?.error : null;
-      toast.error(typeof msg === 'string' ? msg : 'Lỗi lưu khuôn mặt');
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  }, [captureFrameBase64, onEnrolled]);
+    const nextCaptured = [...capturedRef.current, imageBase64];
+    capturedRef.current = nextCaptured;
+    setCapturedCount(nextCaptured.length);
+    readySinceRef.current = null;
+    setHoldProgress(0);
 
-  saveEnrollmentRef.current = saveEnrollment;
+    if (nextCaptured.length >= totalPoses) {
+      await finalizeEnrollment(nextCaptured);
+      return;
+    }
+
+    const nextIdx = nextCaptured.length;
+    setPoseIndex(nextIdx);
+    toast.success(`Đã chụp góc ${nextIdx}/${totalPoses} — tiếp theo: ${POSE_STEPS[nextIdx].label}`);
+  }, [captureFrameBase64, done, finalizeEnrollment, totalPoses]);
+
+  capturePoseRef.current = capturePose;
 
   const getProcessCanvas = useCallback(() => {
     if (!processCanvasRef.current) {
@@ -173,6 +222,8 @@ export function FaceEnrollCamera({
       getSize: () => { w: number; h: number },
       mirrorOverlay = false
     ) => {
+      if (done || savingRef.current) return false;
+
       const { w, h } = getSize();
       if (w <= 0 || h <= 0) return false;
 
@@ -235,7 +286,13 @@ export function FaceEnrollCamera({
       const isReady = result.score >= READY_SCORE_THRESHOLD && result.status === 'ready';
       const now = Date.now();
 
-      if (isReady && !previewOnlyRef.current && patientIdRef.current && !savingRef.current) {
+      if (
+        isReady &&
+        !previewOnlyRef.current &&
+        patientIdRef.current &&
+        !savingRef.current &&
+        !manualOnly
+      ) {
         if (readySinceRef.current == null) {
           readySinceRef.current = now;
         }
@@ -245,7 +302,7 @@ export function FaceEnrollCamera({
         if (elapsed >= READY_HOLD_MS) {
           readySinceRef.current = null;
           setHoldProgress(0);
-          await saveEnrollmentRef.current();
+          await capturePoseRef.current();
         }
       } else {
         readySinceRef.current = null;
@@ -254,7 +311,7 @@ export function FaceEnrollCamera({
 
       return true;
     },
-    [getProcessCanvas]
+    [done, getProcessCanvas, manualOnly]
   );
 
   const tick = useCallback(async () => {
@@ -267,10 +324,15 @@ export function FaceEnrollCamera({
       return;
     }
 
-    await processFaceFrame(video, overlay, () => ({
-      w: video.videoWidth,
-      h: video.videoHeight,
-    }), true);
+    await processFaceFrame(
+      video,
+      overlay,
+      () => ({
+        w: video.videoWidth,
+        h: video.videoHeight,
+      }),
+      true
+    );
 
     rafRef.current = requestAnimationFrame(() => {
       void tick();
@@ -305,6 +367,7 @@ export function FaceEnrollCamera({
       let failStreak = 0;
 
       setCameraError('');
+      setManualOnly(false);
       stopCamera();
       setDetectorLabel('Camera IP (agent)');
       setCameraReady(false);
@@ -326,18 +389,20 @@ export function FaceEnrollCamera({
       if (FaceDetectorCtor) {
         detectorRef.current = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 1 });
         setFaceDetectorAvailable(true);
+        setManualOnly(false);
         setDetectorLabel('Camera IP (agent) · FaceDetector');
       } else {
         detectorRef.current = null;
         setFaceDetectorAvailable(false);
-        setDetectorLabel('Camera IP (agent)');
+        setManualOnly(true);
+        setDetectorLabel('Camera IP (agent) · chụp thủ công');
         setGuide({
           status: 'no_face',
-          message: 'Preview agent — chụp thủ công khi đã chọn bệnh nhân',
+          message: 'Trình duyệt không hỗ trợ hướng dẫn tự động — chụp thủ công',
           score: 0,
           hints: [
-            'Trình duyệt không hỗ trợ hướng dẫn tự động — dùng Chrome/Edge để có oval + tự chụp',
-            'Vẫn có thể bấm Chụp & lưu ngay khi thấy mặt trong khung',
+            'Dùng Chrome/Edge để có oval + tự chụp, hoặc bấm «Chụp góc này» khi thấy mặt rõ',
+            'Vẫn đăng ký được qua camera agent (không cần FaceDetector)',
           ],
           checks: [],
         });
@@ -358,7 +423,7 @@ export function FaceEnrollCamera({
             }
           }
         } catch {
-          // Agent chưa sẵn sàng — dùng interval mặc định.
+          // Agent chưa sẵn sàng
         }
 
         while (active) {
@@ -416,11 +481,14 @@ export function FaceEnrollCamera({
     let cancelled = false;
     const start = async () => {
       setCameraError('');
+      setManualOnly(false);
       stopCamera();
 
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('Trình duyệt không hỗ trợ camera. Dùng Chrome hoặc Edge.');
+          throw new Error(
+            'Trình duyệt không hỗ trợ webcam. Dùng Chrome/Edge hoặc đăng ký qua camera agent (tab Camera IP).'
+          );
         }
 
         const FaceDetectorCtor = (
@@ -430,15 +498,25 @@ export function FaceEnrollCamera({
         if (FaceDetectorCtor) {
           detectorRef.current = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 1 });
           setFaceDetectorAvailable(true);
-          setDetectorLabel('FaceDetector');
+          setManualOnly(false);
+          setDetectorLabel('Webcam · FaceDetector');
         } else {
+          // Fallback: vẫn mở webcam, chụp thủ công — không chặn hoàn toàn
           detectorRef.current = null;
           setFaceDetectorAvailable(false);
-          setDetectorLabel('');
-          setCameraError(
-            'Trình duyệt chưa hỗ trợ nhận diện khuôn mặt tự động. Vui lòng dùng Chrome hoặc Edge mới nhất.'
-          );
-          return;
+          setManualOnly(true);
+          setDetectorLabel('Webcam · chụp thủ công');
+          setGuide({
+            status: 'no_face',
+            message: 'Trình duyệt không hỗ trợ hướng dẫn tự động',
+            score: 0,
+            hints: [
+              'Nên dùng Chrome hoặc Edge để tự căn oval và chụp',
+              'Hoặc chuyển sang camera agent (IP/USB) nếu đã chạy chay-agent.bat',
+              'Vẫn có thể bấm «Chụp góc này» khi mặt rõ trong khung',
+            ],
+            checks: [],
+          });
         }
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -482,7 +560,8 @@ export function FaceEnrollCamera({
     cameraReady &&
     Boolean(patientId) &&
     !saving &&
-    (guide?.status === 'ready' || (agentPreviewMode && !faceDetectorAvailable));
+    !done &&
+    (manualOnly || guide?.status === 'ready' || (agentPreviewMode && !faceDetectorAvailable));
 
   const statusColor =
     guide?.status === 'ready'
@@ -491,8 +570,52 @@ export function FaceEnrollCamera({
         ? 'text-gray-700 bg-gray-50 border-gray-200'
         : 'text-amber-800 bg-amber-50 border-amber-200';
 
+  if (done) {
+    return (
+      <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center space-y-3">
+        <CheckCircle2 className="w-14 h-14 text-green-600 mx-auto" />
+        <p className="text-lg font-semibold text-green-900">Đăng ký khuôn mặt thành công</p>
+        <p className="text-sm text-green-800">
+          Đã lưu {capturedCount || totalPoses} góc. Bệnh nhân có thể check-in bằng camera cửa vào.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {useMulti && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-gray-600">
+            <span>
+              Góc {Math.min(poseIndex + 1, totalPoses)}/{totalPoses}:{' '}
+              <strong>{currentPose.label}</strong>
+            </span>
+            <span>
+              Đã chụp {capturedCount}/{totalPoses}
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            {POSE_STEPS.map((step, i) => (
+              <div
+                key={step.id}
+                className={`h-1.5 flex-1 rounded-full ${
+                  i < capturedCount
+                    ? 'bg-green-500'
+                    : i === poseIndex
+                      ? 'bg-blue-500'
+                      : 'bg-gray-200'
+                }`}
+                title={step.label}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-md px-2.5 py-1.5">
+            {currentPose.hint}
+          </p>
+        </div>
+      )}
+
       <div className="relative mx-auto max-w-md aspect-[3/4] bg-gray-900 rounded-xl overflow-hidden">
         {agentPreviewMode ? (
           <img
@@ -515,7 +638,6 @@ export function FaceEnrollCamera({
           </>
         )}
 
-        {/* Oval guide overlay */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
           <div
             className="w-[58%] h-[72%] rounded-[50%] border-2 border-dashed border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
@@ -543,7 +665,14 @@ export function FaceEnrollCamera({
       {cameraError ? (
         <div className="flex gap-2 items-start text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <p>{cameraError}</p>
+          <div>
+            <p>{cameraError}</p>
+            {!agentPreviewMode && (
+              <p className="mt-1 text-xs opacity-90">
+                Gợi ý: dùng Chrome/Edge, hoặc đăng ký qua camera agent (đã chạy chay-agent.bat).
+              </p>
+            )}
+          </div>
         </div>
       ) : (
         guide && (
@@ -560,16 +689,22 @@ export function FaceEnrollCamera({
         )
       )}
 
-      {guide && (
+      {guide && guide.checks.length > 0 && (
         <ul className="grid grid-cols-2 gap-2 text-xs">
           {guide.checks.map((c) => (
             <li
               key={c.id}
               className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md border ${
-                c.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-600'
+                c.ok
+                  ? 'bg-green-50 border-green-200 text-green-800'
+                  : 'bg-gray-50 border-gray-200 text-gray-600'
               }`}
             >
-              {c.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5 opacity-50" />}
+              {c.ok ? (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 opacity-50" />
+              )}
               {c.label}
             </li>
           ))}
@@ -578,11 +713,7 @@ export function FaceEnrollCamera({
 
       <div className="flex flex-wrap gap-2 items-center">
         {!previewOnly && (
-          <Button
-            type="button"
-            disabled={!canCapture}
-            onClick={() => void saveEnrollment()}
-          >
+          <Button type="button" disabled={!canCapture} onClick={() => void capturePose()}>
             {saving ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
@@ -591,7 +722,9 @@ export function FaceEnrollCamera({
             ) : (
               <>
                 <Camera className="w-4 h-4 mr-1" />
-                Chụp & lưu ngay
+                {useMulti
+                  ? `Chụp góc này (${poseIndex + 1}/${totalPoses})`
+                  : 'Chụp & lưu ngay'}
               </>
             )}
           </Button>
@@ -607,10 +740,17 @@ export function FaceEnrollCamera({
         </p>
       )}
 
-      {!previewOnly && patientId && (
+      {!previewOnly && patientId && !manualOnly && (
         <p className="text-xs text-gray-500">
           Khi đạt yêu cầu, hệ thống tự chụp sau ~1.5 giây giữ yên. Cần chạy{' '}
-          <code className="bg-gray-100 px-1 rounded">chay-agent.bat</code> trên PC camera (đã gồm dịch vụ embedding).
+          <code className="bg-gray-100 px-1 rounded">chay-agent.bat</code> trên PC camera (đã gồm
+          dịch vụ embedding).
+        </p>
+      )}
+
+      {!previewOnly && patientId && manualOnly && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Chế độ chụp thủ công: căn mặt trong oval rồi bấm nút chụp từng góc.
         </p>
       )}
     </div>

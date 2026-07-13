@@ -51,11 +51,11 @@ export function analyzeFaceGuide(
   if (!face || frameWidth <= 0 || frameHeight <= 0) {
     return {
       status: 'no_face',
-      message: 'Không thấy khuôn mặt',
+      message: 'Không thấy khuôn mặt trong khung',
       hints: [
         'Nhìn thẳng vào camera',
-        'Đảm bảo mặt nằm trong khung oval',
-        'Tăng ánh sáng phòng nếu cần',
+        'Đảm bảo mặt nằm trong khung oval trắng',
+        'Bật thêm đèn nếu phòng quá tối',
       ],
       checks: [
         { id: 'face', label: 'Phát hiện khuôn mặt', ok: false },
@@ -86,27 +86,30 @@ export function analyzeFaceGuide(
 
   if (faceHeightRatio < MIN_FACE_HEIGHT_RATIO) {
     status = 'too_far';
-    message = 'Tiến gần camera hơn';
+    message = 'Quá xa — tiến gần camera hơn';
     hints.push('Đưa mặt vào gần hơn cho đến khi vừa khung oval');
+    hints.push(`Kích thước mặt hiện tại ~${Math.round(faceHeightRatio * 100)}% khung (cần ≥28%)`);
   } else if (faceHeightRatio > MAX_FACE_HEIGHT_RATIO) {
     status = 'too_close';
-    message = 'Lùi xa camera một chút';
-    hints.push('Lùi lại để toàn bộ mặt nằm trong oval');
+    message = 'Quá gần — lùi xa camera một chút';
+    hints.push('Lùi lại để toàn bộ mặt (trán đến cằm) nằm trong oval');
   } else if (!centerOk) {
     status = 'off_center';
     message = 'Căn mặt vào giữa khung oval';
     if (faceCx < OVAL_CENTER_X - 0.04) hints.push('Di chuyển sang phải một chút');
     if (faceCx > OVAL_CENTER_X + 0.04) hints.push('Di chuyển sang trái một chút');
     if (faceCy < OVAL_CENTER_Y - 0.04) hints.push('Hạ cằm xuống một chút');
-    if (faceCy > OVAL_CENTER_Y + 0.04) hints.push('Ngẩng lên một chút');
+    if (faceCy > OVAL_CENTER_Y + 0.04) hints.push('Ngẩng đầu lên một chút');
   } else if (!aspectOk) {
     status = 'tilted';
-    message = 'Nhìn thẳng vào camera';
-    hints.push('Giữ đầu thẳng, không nghiêng quá');
+    message = 'Mặt đang nghiêng — nhìn thẳng vào camera';
+    hints.push('Giữ đầu thẳng, không nghiêng trái/phải quá');
+    hints.push('Tháo khẩu trang / hạ kính râm nếu có');
   } else if (!lightOk) {
     status = 'too_dark';
-    message = 'Cần thêm ánh sáng';
+    message = 'Quá tối — cần thêm ánh sáng';
     hints.push('Bật đèn hoặc quay mặt về phía nguồn sáng');
+    hints.push('Tránh đứng ngược sáng (cửa sổ phía sau)');
   }
 
   const checks: FaceGuideCheck[] = [
@@ -118,7 +121,7 @@ export function analyzeFaceGuide(
   ];
 
   let score = 0;
-  if (true) score += 25;
+  score += 25;
   if (sizeOk) score += 25;
   if (centerOk) score += 25;
   if (lightOk) score += 12;
@@ -150,9 +153,8 @@ export function sampleFaceBrightness(
 
   const data = ctx.getImageData(x, y, w, h).data;
   let sum = 0;
-  const pixels = data.length / 4;
   for (let i = 0; i < data.length; i += 4) {
     sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
   }
-  return sum / pixels;
+  return sum / (data.length / 4);
 }
