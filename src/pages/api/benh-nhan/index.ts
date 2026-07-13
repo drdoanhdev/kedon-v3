@@ -10,12 +10,21 @@ interface BenhNhan {
   mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // dd/mm/yyyy hoặc yyyy - keep as string for compatibility
+  gioitinh?: string | null; // Nam | Nữ | null
   dienthoai: string;
   diachi: string;
   ghichu?: string | null;
   tuoi?: number; // chỉ trả về khi xem danh sách
   created_at?: string; // ngày lập hồ sơ
   ngay_kham_gan_nhat?: string; // ngày khám gần nhất
+}
+
+function normalizeGioiTinh(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (s === 'Nam' || s === 'Nữ') return s;
+  throw new Error('INVALID_GIOITINH');
 }
 
 // Định nghĩa interface cho lỗi Supabase
@@ -27,10 +36,18 @@ interface SupabaseError {
 }
 
 function isMissingGhichuColumn(error: unknown): boolean {
+  return isMissingColumn(error, 'ghichu');
+}
+
+function isMissingGioitinhColumn(error: unknown): boolean {
+  return isMissingColumn(error, 'gioitinh');
+}
+
+function isMissingColumn(error: unknown, column: string): boolean {
   if (!error || typeof error !== 'object') return false;
   const maybe = error as { message?: string; details?: string; hint?: string; code?: string };
   const text = `${maybe.message || ''} ${maybe.details || ''} ${maybe.hint || ''}`.toLowerCase();
-  return text.includes('ghichu') && (text.includes('column') || maybe.code === '42703');
+  return text.includes(column.toLowerCase()) && (text.includes('column') || maybe.code === '42703');
 }
 
 function isMissingRelationError(error: unknown): boolean {
@@ -414,7 +431,7 @@ export default async function handler(
         // Fetch a specific patient
         let detailQuery = supabase
           .from("BenhNhan")
-          .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu")
+          .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, ghichu")
           .eq("id", benhnhanid)
           .eq("tenant_id", tenantId);
 
@@ -424,8 +441,41 @@ export default async function handler(
 
         let { data, error } = await detailQuery.single();
 
-        // Backward compatibility: some DBs may not have ghichu column yet.
+        // Backward compatibility: some DBs may not have gioitinh / ghichu yet.
+        if (error && isMissingGioitinhColumn(error)) {
+          let fallbackQuery = supabase
+            .from("BenhNhan")
+            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu")
+            .eq("id", benhnhanid)
+            .eq("tenant_id", tenantId);
+
+          if (branchId) {
+            fallbackQuery = fallbackQuery.eq("branch_id", branchId);
+          }
+
+          const fallback = await fallbackQuery.single();
+          data = fallback.data as any;
+          error = fallback.error as any;
+        }
+
         if (error && isMissingGhichuColumn(error)) {
+          let fallbackQuery = supabase
+            .from("BenhNhan")
+            .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi")
+            .eq("id", benhnhanid)
+            .eq("tenant_id", tenantId);
+
+          if (branchId) {
+            fallbackQuery = fallbackQuery.eq("branch_id", branchId);
+          }
+
+          const fallback = await fallbackQuery.single();
+          data = fallback.data as any;
+          error = fallback.error as any;
+        }
+
+        // Both optional columns may be missing
+        if (error && (isMissingGioitinhColumn(error) || isMissingGhichuColumn(error))) {
           let fallbackQuery = supabase
             .from("BenhNhan")
             .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi")
@@ -453,7 +503,7 @@ export default async function handler(
         // Fetch patient list with pagination and search
         let query = supabase
           .from("BenhNhan")
-          .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+          .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
           .eq("tenant_id", tenantId)
           .order("id", { ascending: false });
 
@@ -468,8 +518,50 @@ export default async function handler(
 
         let { data, error, count } = await query.range(from, to);
 
-        // Backward compatibility: some DBs may not have ghichu column yet.
+        // Backward compatibility: some DBs may not have gioitinh / ghichu yet.
+        if (error && isMissingGioitinhColumn(error)) {
+          let fallbackQuery = supabase
+            .from("BenhNhan")
+            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .eq("tenant_id", tenantId)
+            .order("id", { ascending: false });
+
+          if (branchId) {
+            fallbackQuery = fallbackQuery.eq("branch_id", branchId);
+          }
+
+          if (searchOrFilter) {
+            fallbackQuery = fallbackQuery.or(searchOrFilter);
+          }
+
+          const fallback = await fallbackQuery.range(from, to);
+          data = fallback.data as any;
+          error = fallback.error as any;
+          count = fallback.count as any;
+        }
+
         if (error && isMissingGhichuColumn(error)) {
+          let fallbackQuery = supabase
+            .from("BenhNhan")
+            .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .eq("tenant_id", tenantId)
+            .order("id", { ascending: false });
+
+          if (branchId) {
+            fallbackQuery = fallbackQuery.eq("branch_id", branchId);
+          }
+
+          if (searchOrFilter) {
+            fallbackQuery = fallbackQuery.or(searchOrFilter);
+          }
+
+          const fallback = await fallbackQuery.range(from, to);
+          data = fallback.data as any;
+          error = fallback.error as any;
+          count = fallback.count as any;
+        }
+
+        if (error && (isMissingGioitinhColumn(error) || isMissingGhichuColumn(error))) {
           let fallbackQuery = supabase
             .from("BenhNhan")
             .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
@@ -523,7 +615,7 @@ export default async function handler(
   if (req.method === "POST") {
     if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
-      const { ten, namsinh, dienthoai, diachi, ghichu } = req.body as BenhNhan;
+      const { ten, namsinh, dienthoai, diachi, ghichu, gioitinh } = req.body as BenhNhan;
 
       if (!ten || !namsinh || !diachi) {
         return res.status(400).json({ message: "Name, birth date/year, and address are required" });
@@ -533,12 +625,20 @@ export default async function handler(
         return res.status(400).json({ message: "Birth date must be in dd/mm/yyyy or yyyy format" });
       }
 
+      let gioitinhNorm: string | null;
+      try {
+        gioitinhNorm = normalizeGioiTinh(gioitinh);
+      } catch {
+        return res.status(400).json({ message: "Gender must be Nam, Nữ, or empty" });
+      }
+
       // Xử lý namsinh: giữ nguyên string format vì DB thực tế lưu string
       const namsinhStr = namsinh.trim();
 
       const insertBase = {
         ten,
         namsinh: namsinhStr,
+        gioitinh: gioitinhNorm,
         dienthoai,
         diachi,
         tenant_id: tenantId,
@@ -547,8 +647,13 @@ export default async function handler(
 
       const insertPatientRow = async (row: Record<string, unknown>) => {
         let result = await supabase.from("BenhNhan").insert([row]).select().single();
+        if (result.error && isMissingGioitinhColumn(result.error)) {
+          const { gioitinh: _omitGt, ...withoutGioitinh } = row;
+          result = await supabase.from("BenhNhan").insert([withoutGioitinh]).select().single();
+          row = withoutGioitinh;
+        }
         if (result.error && isMissingGhichuColumn(result.error)) {
-          const { ghichu: _omit, ...withoutGhichu } = row;
+          const { ghichu: _omitGh, ...withoutGhichu } = row;
           result = await supabase.from("BenhNhan").insert([withoutGhichu]).select().single();
         }
         return result;
@@ -618,7 +723,7 @@ export default async function handler(
   if (req.method === "PUT") {
     if (!(await requirePermission(ctx, res, 'manage_patients'))) return;
     try {
-      const { id, ten, namsinh, dienthoai, diachi, ghichu } = req.body as BenhNhan;
+      const { id, ten, namsinh, dienthoai, diachi, ghichu, gioitinh } = req.body as BenhNhan;
 
       if (!id || !ten || !namsinh || !diachi) {
         return res.status(400).json({ message: "ID, name, birth date/year, and address are required" });
@@ -628,33 +733,53 @@ export default async function handler(
         return res.status(400).json({ message: "Birth date must be in dd/mm/yyyy or yyyy format" });
       }
 
+      let gioitinhNorm: string | null;
+      try {
+        gioitinhNorm = normalizeGioiTinh(gioitinh);
+      } catch {
+        return res.status(400).json({ message: "Gender must be Nam, Nữ, or empty" });
+      }
+
       // Xử lý namsinh: giữ nguyên string format vì DB thực tế lưu string  
       const namsinhStr = namsinh.trim();
 
       // Không cho client ghi đè mabenhnhan — mã do trigger/allocator quản lý
+      let currentPayload: Record<string, unknown> = {
+        ten,
+        namsinh: namsinhStr,
+        gioitinh: gioitinhNorm,
+        dienthoai,
+        diachi,
+        ghichu: ghichu || null,
+      };
+
       let { data, error } = await supabase
         .from("BenhNhan")
-        .update({ 
-          ten, 
-          namsinh: namsinhStr, // Lưu string thay vì int
-          dienthoai, 
-          diachi,
-          ghichu: ghichu || null,
-        })
+        .update(currentPayload)
         .eq("id", id)
         .eq("tenant_id", tenantId)
         .select()
         .single();
 
-      if (error && isMissingGhichuColumn(error)) {
+      if (error && isMissingGioitinhColumn(error)) {
+        const { gioitinh: _omitGt, ...withoutGioitinh } = currentPayload;
+        currentPayload = withoutGioitinh;
         const fallback = await supabase
           .from("BenhNhan")
-          .update({ 
-            ten,
-            namsinh: namsinhStr,
-            dienthoai,
-            diachi,
-          })
+          .update(currentPayload)
+          .eq("id", id)
+          .eq("tenant_id", tenantId)
+          .select()
+          .single();
+        data = fallback.data as any;
+        error = fallback.error as any;
+      }
+
+      if (error && isMissingGhichuColumn(error)) {
+        const { ghichu: _omitGh, ...withoutGhichu } = currentPayload;
+        const fallback = await supabase
+          .from("BenhNhan")
+          .update(withoutGhichu)
           .eq("id", id)
           .eq("tenant_id", tenantId)
           .select()

@@ -81,6 +81,7 @@ interface BenhNhan {
   mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // yyyy hoặc dd/mm/yyyy
+  gioitinh?: string | null;
   dienthoai: string;
   diachi: string;
   tuoi?: number;
@@ -1483,7 +1484,11 @@ export default function KeDon() {
       return;
     }
     try {
-      const payload = { ...patientForm, namsinh: namsinhStr };
+      const payload = {
+        ...patientForm,
+        namsinh: namsinhStr,
+        gioitinh: patientForm.gioitinh?.trim() || null,
+      };
       await axios.put('/api/benh-nhan', payload);
       toast.success('Đã cập nhật thông tin bệnh nhân');
       setBenhNhan(payload);
@@ -3049,6 +3054,16 @@ export default function KeDon() {
               placeholder="VD: 1980 hoặc 01/01/1980"
               onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); savePatientInfo(); } }}
             />
+            <Label>Giới tính</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={patientForm?.gioitinh || ''}
+              onChange={(e) => setPatientForm((prev) => prev ? { ...prev, gioitinh: e.target.value } as BenhNhan : prev)}
+            >
+              <option value="">— Chưa chọn —</option>
+              <option value="Nam">Nam</option>
+              <option value="Nữ">Nữ</option>
+            </select>
             <Label>Điện Thoại</Label>
             <Input
               value={patientForm?.dienthoai || ''}

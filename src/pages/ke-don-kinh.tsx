@@ -47,6 +47,7 @@ interface BenhNhan {
   mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // yyyy hoặc dd/mm/yyyy
+  gioitinh?: string | null;
   dienthoai?: string;
   diachi?: string;
   tuoi?: number;
@@ -1182,8 +1183,10 @@ export default function KeDonKinh() {
         if (benhNhanData && typeof benhNhanData === 'object' && benhNhanData.id) {
           setBenhNhan({
             id: benhNhanData.id,
+            mabenhnhan: benhNhanData.mabenhnhan,
             ten: benhNhanData.ten || '',
             namsinh: benhNhanData.namsinh || '',
+            gioitinh: benhNhanData.gioitinh || null,
             dienthoai: benhNhanData.dienthoai || '',
             diachi: benhNhanData.diachi || '',
             tuoi: benhNhanData.tuoi,
@@ -1401,7 +1404,11 @@ export default function KeDonKinh() {
       return;
     }
     try {
-      const payload = { ...patientForm, namsinh: namsinhStr };
+      const payload = {
+        ...patientForm,
+        namsinh: namsinhStr,
+        gioitinh: patientForm.gioitinh?.trim() || null,
+      };
       await axios.put('/api/benh-nhan', payload);
       toast.success('Đã cập nhật thông tin bệnh nhân');
       setBenhNhan(payload);
@@ -2239,6 +2246,7 @@ export default function KeDonKinh() {
               switchPageLink={`/ke-don?bn=${benhnhanid}`}
               switchPageIcon={<Pill className="w-[18px] h-[18px]" />}
               switchPageLabel="Đơn thuốc"
+              extraLinks={benhnhanid ? [{ href: `/tien-luong-ksct?bn=${benhnhanid}`, label: 'Tiên lượng KSCT' }] : []}
               mobileTab={mobileTab}
               mobileTabLabels={mobileTabLabels}
               onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
@@ -2277,6 +2285,7 @@ export default function KeDonKinh() {
               onManageNotes={openNotesManagement}
               switchPageLink={`/ke-don?bn=${benhnhanid}`}
               switchPageLabel="Đơn thuốc"
+              extraLinks={benhnhanid ? [{ href: `/tien-luong-ksct?bn=${benhnhanid}`, label: 'Tiên lượng KSCT' }] : []}
               familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
               renderBackgroundUploadNotice={renderBackgroundUploadNotice}
             />
@@ -3543,6 +3552,16 @@ export default function KeDonKinh() {
               placeholder="VD: 1980 hoặc 01/01/1980"
               onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); savePatientInfo(); } }}
             />
+            <Label>Giới tính</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={patientForm?.gioitinh || ''}
+              onChange={(e) => setPatientForm((prev) => prev ? { ...prev, gioitinh: e.target.value } as BenhNhan : prev)}
+            >
+              <option value="">— Chưa chọn —</option>
+              <option value="Nam">Nam</option>
+              <option value="Nữ">Nữ</option>
+            </select>
             <Label>Điện Thoại</Label>
             <Input
               value={patientForm?.dienthoai || ''}

@@ -177,7 +177,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sotien_da_thanh_toan,
           lai,
           trangthai_thanh_toan,
-          benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi),
+          benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi),
           branch:branches(id, ten_chi_nhanh)
         `, { count: "exact" })
         .eq("tenant_id", tenantId)
@@ -365,7 +365,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sotien_da_thanh_toan,
           lai,
           trangthai_thanh_toan,
-          benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)
+          benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)
         `)
         .single();
 
@@ -495,7 +495,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sotien_da_thanh_toan,
       lai,
           trangthai_thanh_toan,
-          benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)
+          benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)
         `)
         .single();
 
@@ -599,7 +599,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sotien_da_thanh_toan,
           lai,
           trangthai_thanh_toan,
-          benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)
+          benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)
         `)
         .single();
 

@@ -9,6 +9,7 @@ export interface PatientHeaderBenhNhan {
   mabenhnhan?: string | null;
   ten: string;
   namsinh: string;
+  gioitinh?: string | null;
   dienthoai?: string;
   diachi?: string;
   tuoi?: number;
@@ -20,6 +21,11 @@ export interface PatientHeaderNote {
   note_type: 'important' | 'normal';
 }
 
+export interface PatientHeaderExtraLink {
+  href: string;
+  label: string;
+}
+
 interface BaseProps {
   benhNhan: PatientHeaderBenhNhan | null;
   benhnhanid: string | null;
@@ -27,6 +33,8 @@ interface BaseProps {
   onEditPatient: () => void;
   switchPageLink: string;
   switchPageLabel: string;
+  /** Additional action links shown beside the primary switch link */
+  extraLinks?: PatientHeaderExtraLink[];
   onManageNotes?: () => void;
   familySummaryText?: string;
   /** Interactive family UI (chip). Takes precedence over familySummaryText when set. */
@@ -63,6 +71,7 @@ export function PatientMobileHeader({
   onEditPatient,
   switchPageLink,
   switchPageLabel,
+  extraLinks = [],
   mobileTab,
   mobileTabLabels,
   onTabChange,
@@ -220,6 +229,7 @@ export function PatientMobileHeader({
                     style={{ fontSize: '10.5px', opacity: combinedOpacity }}
                   >
                     {benhNhan.mabenhnhan ? `${benhNhan.mabenhnhan} • ` : ''}
+                    {benhNhan.gioitinh ? `${benhNhan.gioitinh} • ` : ''}
                     {benhNhan.namsinh}
                     {benhNhan.diachi ? ` • ${benhNhan.diachi}` : ''}
                   </span>
@@ -233,6 +243,15 @@ export function PatientMobileHeader({
             >
               {switchPageLabel}
             </Link>
+            {extraLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="h-7 px-2.5 rounded-full border border-white/40 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center whitespace-nowrap hover:bg-white/20 active:bg-white/25 flex-shrink-0"
+              >
+                {link.label}
+              </Link>
+            ))}
 
             {/* 3-dot menu */}
             <div ref={menuRef} className="relative flex-shrink-0">
@@ -268,6 +287,16 @@ export function PatientMobileHeader({
                       Ghi chú
                     </button>
                   )}
+                  {extraLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="block w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors border-t border-gray-50"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
@@ -301,6 +330,7 @@ export function PatientMobileHeader({
                 style={{ width: '13px', height: '13px' }}
               />
               <span>
+                {benhNhan.gioitinh ? `${benhNhan.gioitinh} • ` : ''}
                 {benhNhan.namsinh}
                 {benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi}t)` : ''}
               </span>
@@ -394,6 +424,7 @@ export function PatientDesktopCard({
   onEditPatient,
   switchPageLink,
   switchPageLabel,
+  extraLinks = [],
   onManageNotes,
   familySummaryText,
   familySection,
@@ -436,6 +467,7 @@ export function PatientDesktopCard({
                 <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 flex-wrap">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-gray-400" />
+                    {benhNhan.gioitinh ? `${benhNhan.gioitinh} • ` : ''}
                     {benhNhan.namsinh}
                     {benhNhan.tuoi !== undefined ? ` (${benhNhan.tuoi} tuổi)` : ''}
                   </span>
@@ -492,13 +524,22 @@ export function PatientDesktopCard({
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
               <Link
                 href={switchPageLink}
                 className="h-8 px-3 rounded-full border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center whitespace-nowrap hover:bg-blue-50 active:bg-blue-100 transition-colors"
               >
                 {switchPageLabel}
               </Link>
+              {extraLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="h-8 px-3 rounded-full border border-pink-200 text-pink-700 text-xs font-semibold inline-flex items-center whitespace-nowrap hover:bg-pink-50 active:bg-pink-100 transition-colors"
+                >
+                  {link.label}
+                </Link>
+              ))}
 
               {/* 3-dot menu */}
               <div ref={menuRef} className="relative flex-shrink-0">
@@ -528,6 +569,16 @@ export function PatientDesktopCard({
                         Ghi chú
                       </button>
                     )}
+                    {extraLinks.map((link) => (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className="block w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
                   </div>
                 )}
               </div>

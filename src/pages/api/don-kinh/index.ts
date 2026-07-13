@@ -49,7 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       let query = supabase
         .from('DonKinh')
-        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi), branch:branches(id, ten_chi_nhanh)`, { count: "exact" })
+        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi), branch:branches(id, ten_chi_nhanh)`, { count: "exact" })
         .eq('tenant_id', tenantId);
 
       // Branch filter (enterprise multi-branch)
@@ -252,7 +252,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         supabase
           .from('DonKinh')
           .insert([payload])
-          .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`)
+          .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)`)
           .maybeSingle();
 
       let { data, error } = await insertDonKinh(insertPayload);
@@ -310,7 +310,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               .update({ gianhap_trong: realLensCost, gianhap_gong: realFrameCost, gia_von_gong: realFrameCost, lai: newLai })
               .eq('id', donKinhId)
               .eq('tenant_id', tenantId)
-              .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`)
+              .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)`)
               .maybeSingle();
             if (refreshed) finalData = refreshed;
           }
@@ -447,7 +447,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         updateQuery = updateQuery.eq('branch_id', branchId);
       }
       const { data, error } = await updateQuery
-  .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`).maybeSingle();
+  .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)`).maybeSingle();
 
       if (error) throw error;
 
@@ -491,7 +491,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 .update({ gianhap_trong: realLensCost, gianhap_gong: realFrameCost, gia_von_gong: realFrameCost, lai: newLai })
                 .eq('id', donKinhId)
                 .eq('tenant_id', tenantId)
-                .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`)
+                .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)`)
                 .maybeSingle();
               if (refreshed) finalData = refreshed;
             }
@@ -549,7 +549,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         patchQuery = patchQuery.eq('branch_id', branchId);
       }
       const { data: updated, error: updErr } = await patchQuery
-        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, dienthoai, diachi)`) // include relations
+        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi)`) // include relations
         .maybeSingle();
 
       if (updErr) {

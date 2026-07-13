@@ -49,6 +49,7 @@ interface BenhNhanData {
   ten: string;
   mabenhnhan?: string | null;
   namsinh?: string;
+  gioitinh?: string | null;
   dienthoai?: string;
   diachi?: string;
 }
@@ -177,12 +178,18 @@ const PrintDonKinh: React.FC<PrintDonKinhProps> = ({ config, don, benhNhan }) =>
                   <td className="label">Năm sinh:</td>
                   <td>{benhNhan.namsinh || ''}</td>
                 </tr>
-                {benhNhan.mabenhnhan && (
-                  <tr>
-                    <td className="label">Mã BN:</td>
-                    <td colSpan={3} style={{ fontWeight: 600 }}>{benhNhan.mabenhnhan}</td>
-                  </tr>
-                )}
+                <tr>
+                  <td className="label">Giới tính:</td>
+                  <td>{benhNhan.gioitinh || ''}</td>
+                  {benhNhan.mabenhnhan ? (
+                    <>
+                      <td className="label">Mã BN:</td>
+                      <td style={{ fontWeight: 600 }}>{benhNhan.mabenhnhan}</td>
+                    </>
+                  ) : (
+                    <td colSpan={2}></td>
+                  )}
+                </tr>
                 {(config.hien_thi_ngay_kham ?? true) && (
                 <tr>
                   <td className="label">Ngày đo:</td>

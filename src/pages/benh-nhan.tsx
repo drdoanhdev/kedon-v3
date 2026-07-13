@@ -36,6 +36,7 @@ interface BenhNhan {
   mabenhnhan?: string | null;
   ten: string;
   namsinh: string; // dd/mm/yyyy hoặc yyyy
+  gioitinh?: string | null; // Nam | Nữ | null
   dienthoai: string;
   diachi: string;
   ghichu?: string | null;
@@ -147,6 +148,7 @@ export default function BenhNhanPage() {
   const [form, setForm] = useState<BenhNhan>({
     ten: "",
     namsinh: "",
+    gioitinh: "",
     dienthoai: "",
     diachi: "",
   });
@@ -366,6 +368,7 @@ export default function BenhNhanPage() {
     setForm({
       ten: quickName,
       namsinh: quickDob,
+      gioitinh: "",
       dienthoai: quickPhone,
       diachi: quickAddress,
     });
@@ -872,6 +875,7 @@ export default function BenhNhanPage() {
     setForm({
       ten: seed.ten,
       namsinh: seed.namsinh,
+      gioitinh: "",
       dienthoai: seed.dienthoai,
       diachi: seed.diachi,
     });
@@ -1005,7 +1009,11 @@ export default function BenhNhanPage() {
       toast.error('Năm sinh phải là yyyy hoặc dd/mm/yyyy');
       return;
     }
-    const finalForm: BenhNhan = { ...form, namsinh: namsinhStr };
+    const finalForm: BenhNhan = {
+      ...form,
+      namsinh: namsinhStr,
+      gioitinh: form.gioitinh?.trim() || null,
+    };
 
     setIsSubmitting(true);
     try {
@@ -1046,7 +1054,7 @@ export default function BenhNhanPage() {
   }, [form, isEditing, currentPage, rowsPerPage, debouncedSearch, isSubmitting]);
 
   const handleEdit = useCallback((bn: BenhNhan) => {
-    setForm(bn);
+    setForm({ ...bn, gioitinh: bn.gioitinh || "" });
     setIsEditing(true);
     setOpen(true);
   }, []);
@@ -1439,6 +1447,7 @@ export default function BenhNhanPage() {
                             <div className="flex items-center justify-between gap-2 min-w-0">
                               <span className={`flex-1 min-w-0 text-[16px] leading-5 truncate ${isSelected ? 'font-bold text-green-800' : 'font-semibold text-gray-800'}`}>
                                 {bn.ten}
+                                {bn.gioitinh ? ` (${bn.gioitinh})` : ''}
                               </span>
                               <span className="inline-flex items-center gap-1 text-[13px] text-gray-500 shrink-0 ml-2">
                                 <Calendar className="w-4 h-4 text-gray-500 shrink-0" />
@@ -1837,6 +1846,7 @@ export default function BenhNhanPage() {
                       >
                         <div className="flex items-center gap-1">Tuổi {renderSortIndicator('tuoi')}</div>
                       </th>
+                      <th className="px-2 py-1">Giới tính</th>
                       <th
                         className="px-2 py-1 cursor-pointer select-none"
                         onClick={(e) => handleSort('dienthoai', e.shiftKey)}
@@ -1900,6 +1910,7 @@ export default function BenhNhanPage() {
                           </td>
                           <td className="px-2 py-1">{typeof bn.namsinh === 'number' ? bn.namsinh : bn.namsinh}</td>
                           <td className="px-2 py-1">{bn.tuoi ?? ""}</td>
+                          <td className="px-2 py-1">{bn.gioitinh || ""}</td>
                           <td className="px-2 py-1">{bn.dienthoai}</td>
                           <td className="px-2 py-1">{bn.diachi}</td>
                           <td className="px-1 py-1 text-xs text-gray-600 whitespace-nowrap">{bn.created_at ? new Date(bn.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}</td>
@@ -2266,6 +2277,16 @@ export default function BenhNhanPage() {
                   }
                 }}
               />
+              <Label>Giới tính</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={form.gioitinh || ""}
+                onChange={(e) => setForm({ ...form, gioitinh: e.target.value })}
+              >
+                <option value="">— Chưa chọn —</option>
+                <option value="Nam">Nam</option>
+                <option value="Nữ">Nữ</option>
+              </select>
               <Label>Điện Thoại</Label>
               <Input
                 ref={dienthoaiRef}
@@ -2503,7 +2524,7 @@ export default function BenhNhanPage() {
                             {bn.ten} (ID: {bn.id})
                           </div>
                           <div className="text-sm text-gray-600">
-                            Mã BN: {bn.mabenhnhan || '—'} • Năm sinh: {bn.namsinh} • SĐT: {bn.dienthoai || 'Chưa có'}
+                            Mã BN: {bn.mabenhnhan || '—'} • Năm sinh: {bn.namsinh}{bn.gioitinh ? ` • ${bn.gioitinh}` : ''} • SĐT: {bn.dienthoai || 'Chưa có'}
                           </div>
                           <div className="text-sm text-gray-500">
                             Địa chỉ: {bn.diachi}
