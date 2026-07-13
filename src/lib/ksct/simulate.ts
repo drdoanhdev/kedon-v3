@@ -1,4 +1,4 @@
-/** Myopia-control (KSCT) progression simulation — ported from tien-luong-phac-do-ksct (1).html
+/** Myopia-control (KSCT) progression simulation — ported from tien-luong-phac-do-ksct (2).html
  *
  * AL percentiles: Sanz Diez et al. 2022, Sci Rep 12:4850 (CC-BY), Chinese schoolchildren Wuhan n=14,760.
  * D/mm ≈ 2.3 (mid-range clinical estimate). Risk factors fold into a progression multiplier.
