@@ -2,10 +2,14 @@
  *
  * AL percentiles: Sanz Diez et al. 2022, Sci Rep 12:4850 (CC-BY), Chinese schoolchildren Wuhan n=14,760.
  * Progression rate tracks the child's own AL percentile (higher percentile → faster elongation).
- * D/mm ≈ 2.3. Risk factors are relative to default sliders (outdoor 1.5h, nearwork 3h → ×1.0).
+ * Calibrated hotter for clinic: D/mm=2.5, PROGRESSION_SCALE=1.3, severity k=1.4.
  */
 
-export const D_PER_MM = 2.3;
+/** mm AL → D SE conversion. Raised from 2.3 for stronger clinical SE trajectories. */
+export const D_PER_MM = 2.5;
+
+/** Global untreated+treated progression multiplier (1.0 = original Sanz Diez slope). */
+export const PROGRESSION_SCALE = 1.3;
 
 export type SexKey = 'female' | 'male';
 export type PctKey = 'p10' | 'p50' | 'p95';
@@ -78,14 +82,15 @@ export function rateAtBand(age: number, sex: SexKey, pct: PctKey): number {
  * ~P83 → ~1.4× median rate (calibration for early-onset / accelerated cases).
  */
 export function severityMultiplier(pctWeight: number): number {
-  const k = 1.07;
+  // Higher k → early-onset / high-percentile kids progress more aggressively vs P50.
+  const k = 1.4;
   const m = 1 + k * (pctWeight - 0.5);
-  return Math.max(0.35, Math.min(2.6, m));
+  return Math.max(0.35, Math.min(2.8, m));
 }
 
 /** pctWeight: 0=P10, 0.5=P50, 1=P95 (may extrapolate beyond). */
 export function baseALRate(age: number, sex: SexKey, pctWeight = 0.5): number {
-  return rateAtBand(age, sex, 'p50') * severityMultiplier(pctWeight);
+  return rateAtBand(age, sex, 'p50') * severityMultiplier(pctWeight) * PROGRESSION_SCALE;
 }
 
 /** Map patient AL onto P10–P50–P95 scale (0=P10, 0.5=P50, 1=P95). */
