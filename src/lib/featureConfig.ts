@@ -11,6 +11,8 @@ export type FeatureKey =
   | 'prescription_glasses'
   | 'waiting_room'
   | 'drug_catalog'
+  | 'lens_catalog'
+  | 'frame_catalog'
   | 'basic_reports'
   | 'categories'
   | 'appointments'
@@ -43,6 +45,8 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'prescription_glasses',
     'waiting_room',
     'drug_catalog',
+    'lens_catalog',
+    'frame_catalog',
     'basic_reports',
     'categories',
   ],
@@ -52,6 +56,8 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'prescription_glasses',
     'waiting_room',
     'drug_catalog',
+    'lens_catalog',
+    'frame_catalog',
     'basic_reports',
     'categories',
     'appointments',
@@ -64,6 +70,8 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'prescription_glasses',
     'waiting_room',
     'drug_catalog',
+    'lens_catalog',
+    'frame_catalog',
     'basic_reports',
     'categories',
     'appointments',
@@ -84,6 +92,8 @@ const PLAN_FEATURES: Record<PlanKey, FeatureKey[]> = {
     'prescription_glasses',
     'waiting_room',
     'drug_catalog',
+    'lens_catalog',
+    'frame_catalog',
     'basic_reports',
     'categories',
     'appointments',
@@ -187,6 +197,8 @@ const FEATURE_MIN_PLAN: Record<FeatureKey, PlanKey> = {
   prescription_glasses: 'trial',
   waiting_room: 'trial',
   drug_catalog: 'trial',
+  lens_catalog: 'trial',
+  frame_catalog: 'trial',
   basic_reports: 'trial',
   categories: 'trial',
   appointments: 'basic',
@@ -214,6 +226,8 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   prescription_glasses: 'Kê đơn kính',
   waiting_room: 'Phòng chờ khám',
   drug_catalog: 'Danh mục thuốc',
+  lens_catalog: 'Danh mục tròng',
+  frame_catalog: 'Danh mục gọng',
   basic_reports: 'Báo cáo cơ bản',
   categories: 'Danh mục',
   appointments: 'Lịch hẹn khám',

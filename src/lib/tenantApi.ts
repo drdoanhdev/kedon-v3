@@ -606,12 +606,24 @@ export async function resolveBranchAccess(
 import { planHasFeature, roleHasPermission, getMinPlanForFeature, PLAN_LABELS, FEATURE_LABELS, type FeatureKey, type Permission, type PlanKey } from './featureConfig';
 
 // Cache tenant plan để tránh query lặp
-const tenantPlanCache = new Map<string, { plan: string; expiry: number }>();
+const tenantPlanCache = new Map<
+  string,
+  { plan: string; planExpiresAt: string | null; expiry: number }
+>();
 const PLAN_CACHE_TTL = 120_000; // 2 phút
+
+function isPaidPlanExpired(plan: string, planExpiresAt: string | null | undefined): boolean {
+  if (!plan || plan === 'trial') return false;
+  if (!planExpiresAt) return false;
+  const expires = new Date(planExpiresAt).getTime();
+  if (!Number.isFinite(expires)) return false;
+  return Date.now() > expires;
+}
 
 /**
  * Kiểm tra tenant có quyền truy cập feature không.
  * Gọi SAU requireTenant() — cần TenantContext.
+ * Paid plan hết hạn (plan_expires_at) → từ chối như PLAN_EXPIRED.
  */
 export async function requireFeature(
   ctx: TenantContext,
@@ -622,19 +634,36 @@ export async function requireFeature(
   // 1. Lấy plan của tenant (cached)
   const now = Date.now();
   let plan = 'trial';
+  let planExpiresAt: string | null = null;
   const cached = tenantPlanCache.get(ctx.tenantId);
   if (cached && cached.expiry > now) {
     plan = cached.plan;
+    planExpiresAt = cached.planExpiresAt;
   } else {
     const { data, error } = await supabaseAdmin
       .from('tenants')
-      .select('plan')
+      .select('plan, plan_expires_at')
       .eq('id', ctx.tenantId)
       .single();
     if (!error && data) {
       plan = data.plan || 'trial';
-      tenantPlanCache.set(ctx.tenantId, { plan, expiry: now + PLAN_CACHE_TTL });
+      planExpiresAt = data.plan_expires_at || null;
+      tenantPlanCache.set(ctx.tenantId, {
+        plan,
+        planExpiresAt,
+        expiry: now + PLAN_CACHE_TTL,
+      });
     }
+  }
+
+  // 1b. Paid plan hết hạn → không dùng feature trả phí
+  if (isPaidPlanExpired(plan, planExpiresAt)) {
+    res.status(403).json({
+      message: 'Gói dịch vụ đã hết hạn. Vui lòng gia hạn để tiếp tục sử dụng tính năng này.',
+      code: 'PLAN_EXPIRED',
+      requiredFeature: feature,
+    });
+    return false;
   }
 
   // 2. Check plan → feature
@@ -684,7 +713,16 @@ export async function checkTrialLimit(
 
   if (!tenant) return true;
 
-  // Chỉ check trial
+  // Paid plan hết hạn → chặn tạo đơn mới
+  if (isPaidPlanExpired(tenant.plan, tenant.plan_expires_at)) {
+    res.status(403).json({
+      message: 'Gói dịch vụ đã hết hạn. Vui lòng gia hạn để tiếp tục tạo đơn.',
+      code: 'PLAN_EXPIRED',
+    });
+    return false;
+  }
+
+  // Chỉ check trial limits bên dưới
   if (tenant.plan !== 'trial') return true;
 
   // Check hết hạn ngày

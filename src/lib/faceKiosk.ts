@@ -1,13 +1,18 @@
 /**
  * Xác thực token kiosk (public, không cần đăng nhập nhân viên).
- * Token lưu trong face_devices.settings.kiosk_token — chỉ dùng đọc sự kiện check-in.
+ * Chỉ lưu SHA-256 hash trong settings.kiosk_token_hash; plaintext trả về một lần khi tạo/xoay.
  */
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from './tenantApi';
+import { timingSafeEqualString } from './timingSafeEqual';
 
 export function generateKioskToken(): string {
   return `fk_${randomBytes(24).toString('base64url')}`;
+}
+
+export function hashKioskToken(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
 export interface KioskDeviceContext {
@@ -15,6 +20,19 @@ export interface KioskDeviceContext {
   tenantId: string;
   branchId: string | null;
   deviceLabel: string;
+}
+
+function extractKioskToken(req: NextApiRequest): string {
+  const header = req.headers['x-kiosk-token'];
+  const fromHeader = Array.isArray(header) ? header[0] : header;
+  if (typeof fromHeader === 'string' && fromHeader.trim()) {
+    return fromHeader.trim();
+  }
+  // Legacy query — vẫn chấp nhận để không gãy bookmark cũ
+  if (typeof req.query.token === 'string' && req.query.token.trim()) {
+    return req.query.token.trim();
+  }
+  return '';
 }
 
 export async function requireKioskDevice(
@@ -26,12 +44,7 @@ export async function requireKioskDevice(
     : (req.query.deviceId as string | undefined) ||
       (Array.isArray(req.query.id) ? req.query.id[0] : (req.query.id as string | undefined));
 
-  const tokenRaw =
-    (typeof req.query.token === 'string' && req.query.token) ||
-    (typeof req.headers['x-kiosk-token'] === 'string' && req.headers['x-kiosk-token']) ||
-    '';
-
-  const token = tokenRaw.trim();
+  const token = extractKioskToken(req);
   if (!deviceId || !token || !token.startsWith('fk_')) {
     res.status(401).json({ success: false, error: 'Thiếu deviceId hoặc kiosk token' });
     return null;
@@ -54,10 +67,37 @@ export async function requireKioskDevice(
   }
 
   const settings = (device.settings as Record<string, unknown>) || {};
-  const stored = typeof settings.kiosk_token === 'string' ? settings.kiosk_token : '';
-  if (!stored || stored !== token) {
+  const storedHash =
+    typeof settings.kiosk_token_hash === 'string' ? settings.kiosk_token_hash : '';
+  const legacyPlain =
+    typeof settings.kiosk_token === 'string' && settings.kiosk_token.startsWith('fk_')
+      ? settings.kiosk_token
+      : '';
+
+  const tokenHash = hashKioskToken(token);
+  const hashOk = Boolean(storedHash && timingSafeEqualString(storedHash, tokenHash));
+  const legacyOk = Boolean(legacyPlain && timingSafeEqualString(legacyPlain, token));
+
+  if (!hashOk && !legacyOk) {
     res.status(401).json({ success: false, error: 'Kiosk token không hợp lệ' });
     return null;
+  }
+
+  // Migrate legacy plaintext → hash
+  if (legacyOk && !storedHash) {
+    const { kiosk_token: _removed, ...rest } = settings;
+    void supabaseAdmin
+      .from('face_devices')
+      .update({
+        settings: {
+          ...rest,
+          kiosk_token_hash: tokenHash,
+          kiosk_token_rotated_at:
+            settings.kiosk_token_rotated_at || new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', device.id);
   }
 
   return {

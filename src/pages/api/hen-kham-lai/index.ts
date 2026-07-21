@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
-  if (!(await requireFeature(ctx, res, 'appointments'))) return;
+  if (!(await requireFeature(ctx, res, 'appointments', 'manage_appointments'))) return;
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
   if (!branchAccess) return;
   const { tenantId } = ctx;

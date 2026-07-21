@@ -54,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!branch_id || !item_type || !item_id) {
         return res.status(400).json({ error: 'Thiếu branch_id, item_type hoặc item_id' });
       }
-      const VALID_TYPES = ['thuoc', 'hang_trong', 'gong_kinh', 'nhom_gia_gong'];
+      const VALID_TYPES = ['thuoc', 'hang_trong', 'gong_kinh'];
       if (!VALID_TYPES.includes(item_type)) {
         return res.status(400).json({ error: 'item_type không hợp lệ' });
       }

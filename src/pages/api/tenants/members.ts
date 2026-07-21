@@ -7,7 +7,7 @@
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { invalidateUserPermissionCache } from '../../../lib/permissions';
+import { invalidateUserPermissionCache, requirePermission } from '../../../lib/permissions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -15,6 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant - owner/admin mới quản lý thành viên
   const ctx = await requireTenant(req, res, { allowedRoles: ['owner', 'admin'] });
   if (!ctx) return;
+  if (!(await requirePermission(ctx, res, 'manage_members'))) return;
   const { tenantId, userId } = ctx;
 
   // GET: Danh sách thành viên của phòng khám

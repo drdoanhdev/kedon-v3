@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin as supabase } from '../tenantApi';
 import { getMediaStorageProviderForRow } from './storage';
+import { assertAllowedImageBuffer } from './magicBytes';
 
 interface PendingMediaRow {
   id: number;
@@ -80,18 +81,25 @@ export async function handleMediaUploadPut(
     return res.status(409).json({ message: 'Media khong o trang thai pending' });
   }
 
-  const contentTypeHeader = req.headers['content-type'];
-  const contentType = typeof contentTypeHeader === 'string'
-    ? contentTypeHeader.split(';')[0].trim()
-    : (row.mime_type || 'application/octet-stream');
-
   const body = await readRequestBody(req, options.maxFileBytes);
   if (body.length === 0) {
     return res.status(400).json({ message: 'Body rong' });
   }
 
+  let detectedMime: string;
+  try {
+    detectedMime = assertAllowedImageBuffer(body);
+  } catch (err: unknown) {
+    return res.status(400).json({
+      message: err instanceof Error ? err.message : 'File khong hop le',
+    });
+  }
+
+  // Không tin Content-Type client — dùng magic bytes
+  const contentType = detectedMime;
+
   const provider = getMediaStorageProviderForRow(row.storage_driver, row.bucket);
   await provider.putObject(row.object_path, body, contentType);
 
-  return res.status(200).json({ ok: true, size_bytes: body.length });
+  return res.status(200).json({ ok: true, size_bytes: body.length, mime_type: contentType });
 }

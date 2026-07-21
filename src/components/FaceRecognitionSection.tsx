@@ -18,9 +18,7 @@ import { Input } from './ui/input';
 import { FaceEnrollCamera } from './FaceEnrollCamera';
 import { PatientSearchInput, type PatientSearchHit } from './PatientSearchInput';
 import { useFaceRealtimeRefresh } from '@/hooks/useFaceRealtimeRefresh';
-
-const FACE_AGENT_DOWNLOAD_URL =
-  process.env.NEXT_PUBLIC_FACE_AGENT_DOWNLOAD_URL || '/downloads/OptigoFaceAgent.zip';
+import { getAuthHeaders } from '@/lib/fetchWithAuth';
 
 const AGENT_PREVIEW_STORAGE_KEY = 'optigo_face_agent_preview_base';
 const DEFAULT_AGENT_PREVIEW = 'http://127.0.0.1:8766';
@@ -159,6 +157,7 @@ export function FaceRecognitionSection({
   const [savingCameraUrl, setSavingCameraUrl] = useState(false);
   const [isLocalDev, setIsLocalDev] = useState(false);
   const [openingKioskId, setOpeningKioskId] = useState<string | null>(null);
+  const [downloadingAgent, setDownloadingAgent] = useState(false);
   const pendingIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
@@ -168,6 +167,33 @@ export function FaceRecognitionSection({
     const host = window.location.hostname;
     setIsLocalDev(host === 'localhost' || host === '127.0.0.1');
   }, []);
+
+  const downloadFaceAgent = async () => {
+    setDownloadingAgent(true);
+    try {
+      const headers = await getAuthHeaders();
+      delete headers['Content-Type'];
+      const res = await fetch('/api/face-devices/download-agent', { headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || 'Không tải được gói agent');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'OptigoFaceAgent.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setWizardStep(2);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Lỗi tải agent');
+    } finally {
+      setDownloadingAgent(false);
+    }
+  };
 
   const saveAgentPreviewBase = (value: string) => {
     const trimmed = value.trim() || DEFAULT_AGENT_PREVIEW;
@@ -418,10 +444,9 @@ export function FaceRecognitionSection({
               <code className="bg-gray-100 px-1 rounded">cau-hinh-camera.bat</code> và{' '}
               <code className="bg-gray-100 px-1 rounded">chay-agent.bat</code> trong gói.
             </p>
-            <Button asChild onClick={() => setWizardStep(2)}>
-              <a href={FACE_AGENT_DOWNLOAD_URL} download="OptigoFaceAgent.zip">
-                <Download className="w-4 h-4 mr-1" /> Tải OptigoFaceAgent.zip
-              </a>
+            <Button onClick={() => void downloadFaceAgent()} disabled={downloadingAgent}>
+              <Download className="w-4 h-4 mr-1" />
+              {downloadingAgent ? 'Đang tải...' : 'Tải OptigoFaceAgent.zip'}
             </Button>
           </div>
         </div>

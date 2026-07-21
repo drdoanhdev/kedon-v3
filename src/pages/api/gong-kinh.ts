@@ -135,10 +135,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('tenant_id', tenantId)
         .order('ten_gong');
 
-      if (!isSharedScope && branchId) {
-        query = query.eq('branch_id', branchId);
-      }
-
       if (!show_inactive) {
         query = query.eq('trang_thai', true);
       }
@@ -146,9 +142,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data, error } = await query;
       if (error) throw error;
 
+      let rows = Array.isArray(data) ? data : [];
+      // Chi nhánh hiện tại + danh mục shared (branch_id null)
+      if (!isSharedScope && branchId) {
+        rows = rows.filter((item: any) => !item.branch_id || item.branch_id === branchId);
+      }
+
       const rowsWithImage = await attachRepresentativeFrameImage(
         tenantId,
-        ((data || []) as unknown[]) as GongKinhListRow[]
+        (rows as unknown[]) as GongKinhListRow[]
       );
 
       if (includeEffectivePrice) {

@@ -1,12 +1,14 @@
-# Build OptigoFaceAgent.zip for clinic distribution (no Python knowledge required)
+# Build OptigoFaceAgent.zip for authenticated clinic download (NOT public web root)
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $distDir = Join-Path $root "dist"
-$publicDir = Join-Path (Split-Path -Parent (Split-Path -Parent $root)) "public\downloads"
+$repoRoot = Split-Path -Parent (Split-Path -Parent $root)
+$privateDir = Join-Path $repoRoot "private\downloads"
 $staging = Join-Path $distDir "OptigoFaceAgent"
 $zipPath = Join-Path $distDir "OptigoFaceAgent.zip"
-$publicZipPath = Join-Path $publicDir "OptigoFaceAgent.zip"
+$privateZipPath = Join-Path $privateDir "OptigoFaceAgent.zip"
+$publicZipPath = Join-Path $repoRoot "public\downloads\OptigoFaceAgent.zip"
 
 $include = @(
     "agent",
@@ -45,10 +47,17 @@ Get-ChildItem $staging -Recurse -Directory -Filter "__pycache__" -ErrorAction Si
 Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zipPath -Force
 Remove-Item $staging -Recurse -Force
 
-New-Item -ItemType Directory -Path $publicDir -Force | Out-Null
-Copy-Item $zipPath -Destination $publicZipPath -Force
+# Private storage only — served via /api/face-devices/download-agent after auth
+New-Item -ItemType Directory -Path $privateDir -Force | Out-Null
+Copy-Item $zipPath -Destination $privateZipPath -Force
+
+# Remove legacy public copy if present (do not redistribute as anonymous download)
+if (Test-Path $publicZipPath) {
+    Remove-Item $publicZipPath -Force
+    Write-Host "Removed public copy: $publicZipPath"
+}
 
 $sizeMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 2)
 Write-Host "Created: $zipPath ($sizeMb MB)"
-Write-Host "Public URL path: /downloads/OptigoFaceAgent.zip"
-Write-Host "Copied to: $publicZipPath"
+Write-Host "Private path: $privateZipPath"
+Write-Host "Download via authenticated API: GET /api/face-devices/download-agent"

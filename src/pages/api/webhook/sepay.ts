@@ -20,6 +20,7 @@
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { timingSafeEqualString } from '../../../lib/timingSafeEqual';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -300,24 +301,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Fail-closed: thiếu secret → từ chối toàn bộ (không xử lý payload)
+  if (!WEBHOOK_SECRET) {
+    console.error('⛔ [OptiGo] PAYMENT_WEBHOOK_SECRET chưa cấu hình — webhook bị từ chối');
+    return res.status(503).json({ error: 'Webhook not configured' });
+  }
+
   // Xác thực API Key từ SePay
   // SePay gửi header: "Authorization": "Apikey <API_KEY_CUA_BAN>"
-  if (WEBHOOK_SECRET) {
-    const authHeader = req.headers.authorization || '';
-    const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-    // Hỗ trợ cả: "Apikey xxx", "Bearer xxx", hoặc header x-api-key
-    const apiKeyHeader = req.headers['x-api-key'] || '';
-    const apiKey = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader;
-    
-    const secret = headerValue
-      .replace(/^Apikey\s+/i, '')
-      .replace(/^Bearer\s+/i, '')
-      .trim();
-    
-    if (secret !== WEBHOOK_SECRET && apiKey !== WEBHOOK_SECRET) {
-      console.warn('⛔ [OptiGo] SePay webhook bị từ chối: sai API Key');
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  const authHeader = req.headers.authorization || '';
+  const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  // Hỗ trợ cả: "Apikey xxx", "Bearer xxx", hoặc header x-api-key
+  const apiKeyHeader = req.headers['x-api-key'] || '';
+  const apiKey = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader;
+
+  const secret = headerValue
+    .replace(/^Apikey\s+/i, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+
+  if (!timingSafeEqualString(secret, WEBHOOK_SECRET) && !timingSafeEqualString(apiKey, WEBHOOK_SECRET)) {
+    console.warn('⛔ [OptiGo] SePay webhook bị từ chối: sai API Key');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {

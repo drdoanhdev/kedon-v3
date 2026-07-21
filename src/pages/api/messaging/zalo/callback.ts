@@ -12,6 +12,11 @@ import {
 import { encryptObject } from '../../../../lib/messaging/crypto';
 
 function html(message: string, ok = true): string {
+  const appOrigin =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ||
+    '';
+  const targetOrigin = JSON.stringify(appOrigin || windowSafeFallback());
   return `<!doctype html><html lang="vi"><head><meta charset="utf-8"/>
 <title>Kết nối Zalo OA</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -27,10 +32,15 @@ button{background:#2563eb;color:#fff;border:0;padding:10px 18px;border-radius:8p
 <div class="icon">${ok ? '✅' : '⚠️'}</div>
 <h1>${ok ? 'Kết nối Zalo OA thành công' : 'Kết nối thất bại'}</h1>
 <p>${message}</p>
-<button onclick="window.close();window.opener&&window.opener.postMessage({type:'zalo-oauth',ok:${ok}},'*')">Đóng cửa sổ</button>
+<button onclick="(function(){var o=${targetOrigin};if(window.opener){try{window.opener.postMessage({type:'zalo-oauth',ok:${ok}},o||window.location.origin)}catch(e){}}window.close()})()">Đóng cửa sổ</button>
 </div>
-<script>setTimeout(()=>{try{window.opener&&window.opener.postMessage({type:'zalo-oauth',ok:${ok}},'*')}catch(e){}},300)</script>
+<script>setTimeout(function(){try{var o=${targetOrigin};if(window.opener)window.opener.postMessage({type:'zalo-oauth',ok:${ok}},o||window.location.origin)}catch(e){}},300)</script>
 </body></html>`;
+}
+
+function windowSafeFallback(): string {
+  // Khi env chưa set — browser sẽ dùng window.location.origin ở runtime
+  return '';
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

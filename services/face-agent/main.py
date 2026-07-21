@@ -740,6 +740,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         post_checkin_cooldown_sec=float(cfg.get("post_checkin_cooldown_sec", 1800)),
     )
     if preview_port > 0:
+        if preview_host not in ("127.0.0.1", "localhost", "::1"):
+            print(
+                f"⚠️  CẢNH BÁO BẢO MẬT: preview_host={preview_host} — "
+                "preview không có auth, chỉ nên bind 127.0.0.1"
+            )
         start_preview_server(preview_host, preview_port, frame_store)
         print(f"🖥️  Preview web: http://{preview_host}:{preview_port}/snapshot")
 
@@ -748,6 +753,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     embed_host = cfg.get("embed_host") or "127.0.0.1"
     embed_port = int(cfg.get("embed_port") or 8765)
     if embed_port > 0:
+        if embed_host not in ("127.0.0.1", "localhost", "::1"):
+            print(
+                f"⚠️  CẢNH BÁO BẢO MẬT: embed_host={embed_host} — "
+                "embed API không có auth, chỉ nên bind 127.0.0.1"
+            )
         start_embed_server(recognizer, embed_host, embed_port)
 
     last_check_in: dict[int, float] = {}

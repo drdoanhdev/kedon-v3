@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import { useFeatureGate } from '../hooks/useFeatureGate';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -10,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Frame, Search, RefreshCw, ArrowDownToLine, Package, AlertTriangle, History, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
+import GongKinhMediaPanel from '@/components/GongKinhMediaPanel';
 
 interface GongKinhStock {
   id: number;
@@ -66,9 +68,12 @@ interface AlertSummary {
 
 export default function QuanLyKhoGong() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'import' | 'catalog'>('overview');
+  const { canAccessFeature, hasPermission } = useFeatureGate();
+  const canInventory = canAccessFeature('inventory_lens') && hasPermission('manage_inventory');
+  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'import' | 'catalog'>('catalog');
 
   const [frameStocks, setFrameStocks] = useState<GongKinhStock[]>([]);
+  const [catalogList, setCatalogList] = useState<GongKinhStock[]>([]);
   const [importHistory, setImportHistory] = useState<FrameImportRecord[]>([]);
   const [alertData, setAlertData] = useState<AlertSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,16 +112,26 @@ export default function QuanLyKhoGong() {
     try {
       const { data } = await axios.get(`/api/gong-kinh${showInactive ? '?show_inactive=1' : ''}`);
       setFrameStocks(data || []);
-    } catch {
-      toast.error('Lỗi tải dữ liệu kho gọng');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Lỗi tải dữ liệu kho gọng');
     }
   }, [showInactive]);
+
+  const fetchCatalog = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/gong-kinh?scope=shared&show_inactive=1');
+      setCatalogList(data || []);
+    } catch {
+      toast.error('Lỗi tải danh mục gọng');
+    }
+  }, []);
 
   const fetchImportHistory = useCallback(async () => {
     try {
       const { data } = await axios.get('/api/inventory/frame-import?limit=200');
       setImportHistory(data || []);
-    } catch {
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Lỗi tải lịch sử nhập gọng');
       setImportHistory([]);
     }
   }, []);
@@ -140,12 +155,16 @@ export default function QuanLyKhoGong() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchFrameStocks(), fetchImportHistory(), fetchAlerts(), fetchNhaCungCaps()]).finally(() => setLoading(false));
-  }, []);
+    const tasks: Promise<unknown>[] = [fetchCatalog(), fetchNhaCungCaps()];
+    if (canInventory) {
+      tasks.push(fetchFrameStocks(), fetchImportHistory(), fetchAlerts());
+    }
+    Promise.all(tasks).finally(() => setLoading(false));
+  }, [canInventory]);
 
   useEffect(() => {
-    fetchFrameStocks();
-  }, [fetchFrameStocks]);
+    if (canInventory) fetchFrameStocks();
+  }, [fetchFrameStocks, canInventory]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -161,12 +180,26 @@ export default function QuanLyKhoGong() {
 
     const mapped = tabMap[tabQuery];
     if (!mapped) return;
+    if (!canInventory && mapped !== 'catalog') {
+      if (activeTab !== 'catalog') setActiveTab('catalog');
+      return;
+    }
     if (activeTab !== mapped) setActiveTab(mapped);
-  }, [router.isReady, router.query.tab, activeTab]);
+  }, [router.isReady, router.query.tab, activeTab, canInventory]);
+
+  useEffect(() => {
+    if (!canInventory && activeTab !== 'catalog') setActiveTab('catalog');
+  }, [canInventory, activeTab]);
+
+  useEffect(() => {
+    if (canInventory && !router.query.tab && activeTab === 'catalog') {
+      setActiveTab('overview');
+    }
+  }, [canInventory, router.query.tab]);
 
   useEffect(() => {
     setCatalogPage(1);
-  }, [catalogSearch, frameStocks.length]);
+  }, [catalogSearch, catalogList.length]);
 
   const handleFrameImport = async () => {
     if (!selectedFrame) return;
@@ -258,16 +291,19 @@ export default function QuanLyKhoGong() {
 
     try {
       if (editingCatalog) {
-        await axios.put('/api/gong-kinh', { id: editingCatalog.id, ...payload });
+        await axios.put('/api/gong-kinh?scope=shared', { id: editingCatalog.id, ...payload });
         toast.success('Đã cập nhật gọng');
       } else {
-        await axios.post('/api/gong-kinh', payload);
+        await axios.post('/api/gong-kinh?scope=shared', payload);
         toast.success('Đã thêm gọng mới');
       }
       setShowCatalogDialog(false);
       resetCatalogForm();
-      fetchFrameStocks();
-      fetchAlerts();
+      fetchCatalog();
+      if (canInventory) {
+        fetchFrameStocks();
+        fetchAlerts();
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi lưu danh mục gọng');
     }
@@ -276,10 +312,13 @@ export default function QuanLyKhoGong() {
   const handleDeleteCatalog = async (item: GongKinhStock) => {
     if (!window.confirm(`Xóa gọng "${item.ten_gong}" khỏi danh mục?`)) return;
     try {
-      await axios.delete('/api/gong-kinh', { data: { id: item.id } });
+      await axios.delete('/api/gong-kinh?scope=shared', { data: { id: item.id } });
       toast.success('Đã xóa gọng khỏi danh mục');
-      fetchFrameStocks();
-      fetchAlerts();
+      fetchCatalog();
+      if (canInventory) {
+        fetchFrameStocks();
+        fetchAlerts();
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi xóa gọng');
     }
@@ -328,13 +367,14 @@ export default function QuanLyKhoGong() {
       return frameSortDir === 'desc' ? -cmp : cmp;
     });
 
-  const filteredCatalog = frameStocks.filter((frame) => {
+  const filteredCatalog = catalogList.filter((frame) => {
     if (!catalogSearch) return true;
     const s = catalogSearch.toLowerCase();
     return (
       (frame.ten_gong || '').toLowerCase().includes(s) ||
       (frame.ma_gong || '').toLowerCase().includes(s) ||
       (frame.mau_sac || '').toLowerCase().includes(s) ||
+      (frame.hang_san_xuat || '').toLowerCase().includes(s) ||
       (frame.NhaCungCap?.ten || '').toLowerCase().includes(s)
     );
   });
@@ -349,36 +389,58 @@ export default function QuanLyKhoGong() {
 
   return (
     <ProtectedRoute>
-      <FeatureGate feature="inventory_lens">
+      <FeatureGate feature="frame_catalog">
         <div className="min-h-screen bg-gray-50">
           <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
             <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản lý kho gọng</h1>
-                <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">Tồn kho và nhập kho gọng kính</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                  {canInventory ? 'Quản lý kho gọng' : 'Danh mục gọng'}
+                </h1>
+                <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">
+                  {canInventory ? 'Danh mục gọng, tồn kho và nhập kho' : 'Quản lý danh mục gọng dùng khi kê đơn'}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
-                  Danh mục gọng
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => { fetchFrameStocks(); fetchImportHistory(); fetchAlerts(); fetchNhaCungCaps(); }}>
+                {canInventory && (
+                  <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
+                    Danh mục gọng
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    fetchCatalog();
+                    fetchNhaCungCaps();
+                    if (canInventory) {
+                      fetchFrameStocks();
+                      fetchImportHistory();
+                      fetchAlerts();
+                    }
+                  }}
+                >
                   <RefreshCw className="w-4 h-4 mr-1" />
                   <span className="hidden sm:inline">Làm mới</span>
                 </Button>
               </div>
             </div>
 
-            <div className="grid grid-cols-4 sm:flex gap-1 mb-4 sm:mb-6 bg-white rounded-lg p-1 shadow-sm border">
+            <div className="grid grid-cols-2 sm:flex gap-1 mb-4 sm:mb-6 bg-white rounded-lg p-1 shadow-sm border overflow-x-auto">
               {[
-                { key: 'overview', label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
-                { key: 'stock', label: 'Kho gọng', mobileLabel: 'Kho gọng', icon: <Frame className="w-4 h-4" /> },
-                { key: 'catalog', label: 'Danh mục gọng', mobileLabel: 'Danh mục', icon: <Frame className="w-4 h-4" /> },
-                { key: 'import', label: 'Lịch sử nhập', mobileLabel: 'Lịch sử', icon: <History className="w-4 h-4" /> },
+                ...(canInventory
+                  ? [
+                      { key: 'overview' as const, label: 'Tổng quan', mobileLabel: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
+                      { key: 'stock' as const, label: 'Kho gọng', mobileLabel: 'Kho gọng', icon: <Frame className="w-4 h-4" /> },
+                      { key: 'import' as const, label: 'Lịch sử nhập', mobileLabel: 'Lịch sử', icon: <History className="w-4 h-4" /> },
+                    ]
+                  : []),
+                { key: 'catalog' as const, label: 'Danh mục gọng', mobileLabel: 'Danh mục', icon: <Frame className="w-4 h-4" /> },
               ].map((tab) => (
                 <button
                   key={tab.key}
-                  onClick={() => setActiveTab(tab.key as 'overview' | 'stock' | 'catalog' | 'import')}
-                  className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${
                     activeTab === tab.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
@@ -393,7 +455,7 @@ export default function QuanLyKhoGong() {
               <div className="text-center py-20 text-gray-500">Đang tải dữ liệu kho gọng...</div>
             ) : (
               <>
-                {activeTab === 'overview' && (
+                {canInventory && activeTab === 'overview' && (
                   <div className="space-y-6">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <Card>
@@ -471,7 +533,7 @@ export default function QuanLyKhoGong() {
                   </div>
                 )}
 
-                {activeTab === 'stock' && (
+                {canInventory && activeTab === 'stock' && (
                   <div className="space-y-4">
                     <Card>
                       <CardHeader>
@@ -724,7 +786,7 @@ export default function QuanLyKhoGong() {
                   </Card>
                 )}
 
-                {activeTab === 'import' && (
+                {canInventory && activeTab === 'import' && (
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg">
@@ -897,6 +959,18 @@ export default function QuanLyKhoGong() {
                       placeholder="Mô tả thêm..."
                     />
                   </div>
+
+                  {editingCatalog && (
+                    <div>
+                      <Label>Tồn kho hiện tại</Label>
+                      <Input type="number" value={editingCatalog.ton_kho ?? 0} disabled className="bg-gray-50" />
+                      <p className="text-xs text-gray-500 mt-1">Chỉ thay đổi qua Nhập kho gọng</p>
+                    </div>
+                  )}
+
+                  {editingCatalog?.id ? (
+                    <GongKinhMediaPanel gongKinhId={editingCatalog.id} className="mt-2" />
+                  ) : null}
                 </div>
 
                 <DialogFooter>
@@ -932,13 +1006,14 @@ export default function QuanLyKhoGong() {
                         />
                       </div>
                       <div>
-                        <Label>Đơn giá (VND)</Label>
+                        <Label>Đơn giá nhập / giá mua (VND)</Label>
                         <Input
                           type="number"
                           value={frameImportForm.don_gia}
                           onChange={(e) => setFrameImportForm({ ...frameImportForm, don_gia: e.target.value })}
                           placeholder="0"
                         />
+                        <p className="text-xs text-gray-500 mt-1">Giá mua lần này. Giá bán sửa ở Danh mục gọng.</p>
                       </div>
                     </div>
                     <div>

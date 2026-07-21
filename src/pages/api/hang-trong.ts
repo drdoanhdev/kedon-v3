@@ -21,22 +21,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     if (req.method === 'GET') {
       const showInactive = req.query.show_inactive === '1';
-      let query = supabase
+      const { data, error } = await supabase
         .from('HangTrong')
         .select('*, NhaCungCap:nha_cung_cap_id(id, ten)')
         .eq('tenant_id', tenantId)
         .eq('trang_thai', true)
         .order('ten_hang');
-      
-      if (!showInactive) {
-        query = query.or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
-      }
 
-      const { data, error } = await query;
       if (error) throw error;
 
+      let rows = Array.isArray(data) ? data : [];
+      if (!showInactive) {
+        rows = rows.filter((item: any) => !item.ngung_kinh_doanh);
+      }
+
       if (includeEffectivePrice) {
-        const rows = Array.isArray(data) ? data : [];
         const itemIds = rows.map((item: any) => Number(item.id)).filter((id: number) => Number.isFinite(id));
 
         const overrideByItemId = new Map<number, any>();
@@ -78,11 +77,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(effectiveRows);
       }
 
-      return res.status(200).json(data);
+      return res.status(200).json(rows);
     }
 
     if (req.method === 'POST') {
-      const { ten_hang, hang, gia_nhap, gia_ban, mo_ta, nha_cung_cap_id } = req.body;
+      const { ten_hang, hang, gia_nhap, gia_ban, mo_ta, nha_cung_cap_id, loai_trong, kieu_quan_ly } = req.body;
 
       const insertData: any = {
         ten_hang,
@@ -95,6 +94,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (nha_cung_cap_id !== undefined) {
         insertData.nha_cung_cap_id = nha_cung_cap_id ? parseInt(nha_cung_cap_id) : null;
       }
+      if (loai_trong !== undefined) insertData.loai_trong = loai_trong || 'don_trong';
+      if (kieu_quan_ly !== undefined) insertData.kieu_quan_ly = kieu_quan_ly || 'SAN_KHO';
 
       const { data, error } = await supabase
         .from('HangTrong')
@@ -109,7 +110,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PUT') {
-      const { id, ten_hang, hang, gia_nhap, gia_ban, mo_ta, ngung_kinh_doanh, nha_cung_cap_id } = req.body;
+      const { id, ten_hang, hang, gia_nhap, gia_ban, mo_ta, ngung_kinh_doanh, nha_cung_cap_id, loai_trong, kieu_quan_ly } = req.body;
 
       const updateData: any = {
         ten_hang,
@@ -124,6 +125,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (ngung_kinh_doanh !== undefined) {
         updateData.ngung_kinh_doanh = Boolean(ngung_kinh_doanh);
       }
+      if (loai_trong !== undefined) updateData.loai_trong = loai_trong || 'don_trong';
+      if (kieu_quan_ly !== undefined) updateData.kieu_quan_ly = kieu_quan_ly || 'SAN_KHO';
 
       const { data, error } = await supabase
         .from('HangTrong')

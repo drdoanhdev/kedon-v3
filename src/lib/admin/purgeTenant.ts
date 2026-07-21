@@ -208,7 +208,6 @@ async function clearClinicalData(tenantId: string, warnings: string[]): Promise<
     'thuoc_nhap_kho',
     'thuoc_huy',
     'stock_movement',
-    'nhom_gia_gong_nhap',
 
     'ChoKham',
     'DienTien',
@@ -239,7 +238,6 @@ async function clearClinicalData(tenantId: string, warnings: string[]): Promise<
     'DonThuocMau',
     'PhieuNhapKho',
     'NhaCungCap',
-    'nhom_gia_gong',
 
     // Messaging / billing / config (also CASCADE; safe to clear early)
     'tin_nhan',

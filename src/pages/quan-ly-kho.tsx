@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import { useFeatureGate } from '../hooks/useFeatureGate';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -121,7 +122,9 @@ interface AlertSummary {
 export default function QuanLyKho() {
   const router = useRouter();
   const { confirm } = useConfirm();
-  const [activeTab, setActiveTab] = useState<'lens_stock' | 'lens_order' | 'lens_nhap' | 'lens_catalog'>('lens_stock');
+  const { canAccessFeature, hasPermission } = useFeatureGate();
+  const canInventory = canAccessFeature('inventory_lens') && hasPermission('manage_inventory');
+  const [activeTab, setActiveTab] = useState<'lens_stock' | 'lens_order' | 'lens_nhap' | 'lens_catalog'>('lens_catalog');
 
   // Data states
   const [alertData, setAlertData] = useState<AlertSummary | null>(null);
@@ -139,6 +142,8 @@ export default function QuanLyKho() {
   const [lensCatalogForm, setLensCatalogForm] = useState({
     ten_hang: '',
     hang: '',
+    loai_trong: 'don_trong',
+    kieu_quan_ly: 'SAN_KHO',
     gia_nhap: '0',
     gia_ban: '0',
     nha_cung_cap_id: '',
@@ -210,18 +215,6 @@ export default function QuanLyKho() {
   const [showFrameImport, setShowFrameImport] = useState(false);
   const [selectedFrame, setSelectedFrame] = useState<GongKinhStock | null>(null);
   const [frameImportForm, setFrameImportForm] = useState({ so_luong: '', don_gia: '', ghi_chu: '' });
-
-  // Nhóm giá gọng kính
-  interface NhomGiaGongStock {
-    id: number;
-    ten_nhom: string;
-    gia_ban_tu: number;
-    gia_ban_den: number;
-    gia_ban_mac_dinh: number;
-    gia_nhap_trung_binh: number;
-    so_luong_ton: number;
-  }
-  const [nhomGiaGongs, setNhomGiaGongs] = useState<NhomGiaGongStock[]>([]);
 
   // Import receipt (phiếu nhập tổng hợp) states
   interface ImportReceipt {
@@ -309,13 +302,6 @@ export default function QuanLyKho() {
     } catch {}
   }, []);
 
-  const fetchNhomGiaGongs = useCallback(async () => {
-    try {
-      const { data } = await axios.get('/api/nhom-gia-gong');
-      setNhomGiaGongs(data || []);
-    } catch {}
-  }, []);
-
   const fetchReceipts = useCallback(async () => {
     try {
       const { data } = await axios.get('/api/inventory/import-receipt');
@@ -354,20 +340,22 @@ export default function QuanLyKho() {
   }, []);
 
   useEffect(() => {
-    Promise.all([
-      fetchAlerts(),
-      fetchLensStocks(),
-      fetchLensOrders(),
-      fetchHangTrongs(),
-      fetchLensCatalog(),
-      fetchReceipts(),
-      fetchLensNhapHistory(),
-      fetchNhaCungCaps(),
-    ])
-      .finally(() => setLoading(false));
-  }, []);
+    const tasks: Promise<unknown>[] = [fetchHangTrongs(), fetchLensCatalog(), fetchNhaCungCaps()];
+    if (canInventory) {
+      tasks.push(
+        fetchAlerts(),
+        fetchLensStocks(),
+        fetchLensOrders(),
+        fetchReceipts(),
+        fetchLensNhapHistory(),
+      );
+    }
+    Promise.all(tasks).finally(() => setLoading(false));
+  }, [canInventory]);
 
-  useEffect(() => { fetchLensStocks(); }, [stockFilter, hangTrongFilter, showInactive]);
+  useEffect(() => {
+    if (canInventory) fetchLensStocks();
+  }, [stockFilter, hangTrongFilter, showInactive, canInventory]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -387,8 +375,22 @@ export default function QuanLyKho() {
 
     const mapped = tabMap[tabQuery];
     if (!mapped) return;
+    if (!canInventory && mapped !== 'lens_catalog') {
+      if (activeTab !== 'lens_catalog') setActiveTab('lens_catalog');
+      return;
+    }
     if (activeTab !== mapped) setActiveTab(mapped);
-  }, [router.isReady, router.query.tab, activeTab]);
+  }, [router.isReady, router.query.tab, activeTab, canInventory]);
+
+  useEffect(() => {
+    if (!canInventory && activeTab !== 'lens_catalog') setActiveTab('lens_catalog');
+  }, [canInventory, activeTab]);
+
+  useEffect(() => {
+    if (canInventory && !router.query.tab && activeTab === 'lens_catalog') {
+      setActiveTab('lens_stock');
+    }
+  }, [canInventory, router.query.tab]);
 
   useEffect(() => {
     setLensCatalogPage(1);
@@ -509,6 +511,8 @@ export default function QuanLyKho() {
     setLensCatalogForm({
       ten_hang: '',
       hang: '',
+      loai_trong: 'don_trong',
+      kieu_quan_ly: 'SAN_KHO',
       gia_nhap: '0',
       gia_ban: '0',
       nha_cung_cap_id: '',
@@ -528,6 +532,8 @@ export default function QuanLyKho() {
     setLensCatalogForm({
       ten_hang: item.ten_hang || '',
       hang: item.hang || '',
+      loai_trong: item.loai_trong || 'don_trong',
+      kieu_quan_ly: item.kieu_quan_ly || 'SAN_KHO',
       gia_nhap: String(item.gia_nhap || 0),
       gia_ban: String(item.gia_ban || 0),
       nha_cung_cap_id: item.nha_cung_cap_id ? String(item.nha_cung_cap_id) : '',
@@ -540,6 +546,8 @@ export default function QuanLyKho() {
   const buildLensCatalogPayload = (overrides?: Partial<typeof lensCatalogForm>) => ({
     ten_hang: (overrides?.ten_hang ?? lensCatalogForm.ten_hang).trim(),
     hang: (overrides?.hang ?? lensCatalogForm.hang).trim() || null,
+    loai_trong: overrides?.loai_trong ?? lensCatalogForm.loai_trong,
+    kieu_quan_ly: overrides?.kieu_quan_ly ?? lensCatalogForm.kieu_quan_ly,
     gia_nhap: parseInt(overrides?.gia_nhap ?? lensCatalogForm.gia_nhap, 10) || 0,
     gia_ban: parseInt(overrides?.gia_ban ?? lensCatalogForm.gia_ban, 10) || 0,
     nha_cung_cap_id: (overrides?.nha_cung_cap_id ?? lensCatalogForm.nha_cung_cap_id) || null,
@@ -580,6 +588,8 @@ export default function QuanLyKho() {
         ...buildLensCatalogPayload({
           ten_hang: item.ten_hang || '',
           hang: item.hang || '',
+          loai_trong: item.loai_trong || 'don_trong',
+          kieu_quan_ly: item.kieu_quan_ly || 'SAN_KHO',
           gia_nhap: String(item.gia_nhap || 0),
           gia_ban: String(item.gia_ban || 0),
           nha_cung_cap_id: item.nha_cung_cap_id ? String(item.nha_cung_cap_id) : '',
@@ -590,7 +600,7 @@ export default function QuanLyKho() {
       toast.success(!item.ngung_kinh_doanh ? 'Đã đánh dấu ngừng kinh doanh' : 'Đã kích hoạt lại loại tròng');
       fetchLensCatalog();
       fetchHangTrongs();
-      fetchLensStocks();
+      if (canInventory) fetchLensStocks();
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi cập nhật trạng thái');
     }
@@ -1259,26 +1269,48 @@ export default function QuanLyKho() {
   // ============================================
   return (
     <ProtectedRoute>
-      <FeatureGate feature="inventory_lens">
+      <FeatureGate feature="lens_catalog">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6 bg-white rounded-xl border px-3 sm:px-4 py-3">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản lý kho tròng</h1>
-              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">Tồn kho tròng kính</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="text-[11px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">Hết: {topStats.het}</span>
-                <span className="text-[11px] rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5">Sắp hết: {topStats.sapHet}</span>
-                <span className="text-[11px] rounded-full bg-orange-100 text-orange-700 px-2 py-0.5">Chờ đặt: {topStats.pending}</span>
-                <span className="text-[11px] rounded-full bg-blue-100 text-blue-700 px-2 py-0.5">Đã đặt: {topStats.ordered}</span>
-                <span className="text-[11px] rounded-full bg-cyan-100 text-cyan-700 px-2 py-0.5">Cần nhập: {topStats.needImport}</span>
-              </div>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                {canInventory ? 'Quản lý kho tròng' : 'Danh mục tròng'}
+              </h1>
+              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">
+                {canInventory ? 'Danh mục tròng và tồn kho tròng kính' : 'Quản lý danh mục tròng dùng khi kê đơn'}
+              </p>
+              {canInventory && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="text-[11px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">Hết: {topStats.het}</span>
+                  <span className="text-[11px] rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5">Sắp hết: {topStats.sapHet}</span>
+                  <span className="text-[11px] rounded-full bg-orange-100 text-orange-700 px-2 py-0.5">Chờ đặt: {topStats.pending}</span>
+                  <span className="text-[11px] rounded-full bg-blue-100 text-blue-700 px-2 py-0.5">Đã đặt: {topStats.ordered}</span>
+                  <span className="text-[11px] rounded-full bg-cyan-100 text-cyan-700 px-2 py-0.5">Cần nhập: {topStats.needImport}</span>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Button variant="outline" size="sm" onClick={() => { setLensCatalogPage(1); setActiveTab('lens_catalog'); }}>
-                Danh mục tròng
-              </Button>
-              <Button onClick={() => { fetchAlerts(); fetchLensStocks(); fetchLensOrders(); fetchLensCatalog(); fetchHangTrongs(); fetchLensNhapHistory(); }} variant="outline" size="sm">
+              {canInventory && (
+                <Button variant="outline" size="sm" onClick={() => { setLensCatalogPage(1); setActiveTab('lens_catalog'); }}>
+                  Danh mục tròng
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  fetchLensCatalog();
+                  fetchHangTrongs();
+                  fetchNhaCungCaps();
+                  if (canInventory) {
+                    fetchAlerts();
+                    fetchLensStocks();
+                    fetchLensOrders();
+                    fetchLensNhapHistory();
+                  }
+                }}
+                variant="outline"
+                size="sm"
+              >
                 <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
               </Button>
             </div>
@@ -1287,14 +1319,18 @@ export default function QuanLyKho() {
           {/* Tabs */}
           <div className="flex gap-1 mb-4 sm:mb-6 bg-white rounded-xl p-1 shadow-sm border overflow-x-auto">
             {[
-              { key: 'lens_stock', label: 'Kho tròng kính', mobileLabel: 'Kho tròng', icon: <Eye className="w-4 h-4" /> },
-              { key: 'lens_order', label: 'Tròng cần đặt', mobileLabel: 'Cần đặt', icon: <Truck className="w-4 h-4" /> },
-              { key: 'lens_nhap', label: 'Lịch sử nhập', mobileLabel: 'Lịch sử', icon: <ArrowDownToLine className="w-4 h-4" /> },
-              { key: 'lens_catalog', label: 'Danh mục tròng', mobileLabel: 'Danh mục', icon: <Tags className="w-4 h-4" /> },
+              ...(canInventory
+                ? [
+                    { key: 'lens_stock' as const, label: 'Kho tròng kính', mobileLabel: 'Kho tròng', icon: <Eye className="w-4 h-4" /> },
+                    { key: 'lens_order' as const, label: 'Tròng cần đặt', mobileLabel: 'Cần đặt', icon: <Truck className="w-4 h-4" /> },
+                    { key: 'lens_nhap' as const, label: 'Lịch sử nhập', mobileLabel: 'Lịch sử', icon: <ArrowDownToLine className="w-4 h-4" /> },
+                  ]
+                : []),
+              { key: 'lens_catalog' as const, label: 'Danh mục tròng', mobileLabel: 'Danh mục', icon: <Tags className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => { setActiveTab(tab.key as any); setSwipedStockId(null); setExpandedStockId(null); }}
+                onClick={() => { setActiveTab(tab.key); setSwipedStockId(null); setExpandedStockId(null); }}
                 className={`flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition shrink-0 ${
                   activeTab === tab.key ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
                 }`}
@@ -1314,7 +1350,7 @@ export default function QuanLyKho() {
           ) : (
             <>
               {/* ======================== TAB: KHO TRÒNG KÍNH ======================== */}
-              {activeTab === 'lens_stock' && (
+              {canInventory && activeTab === 'lens_stock' && (
                 <div className="space-y-3 sm:space-y-4">
                   {/* Filters & Actions */}
                   <div className="rounded-xl border bg-white p-3 sm:p-3.5 space-y-3">
@@ -1893,7 +1929,7 @@ export default function QuanLyKho() {
               )}
 
               {/* ======================== TAB: LỊCH SỬ NHẬP ======================== */}
-              {activeTab === 'lens_nhap' && (
+              {canInventory && activeTab === 'lens_nhap' && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
@@ -2012,7 +2048,9 @@ export default function QuanLyKho() {
                         <thead>
                           <tr className="border-b bg-gray-50 text-left text-gray-500">
                             <th className="p-2 sm:p-3 font-medium">Hãng</th>
-                            <th className="p-2 sm:p-3 font-medium">Loại tròng</th>
+                            <th className="p-2 sm:p-3 font-medium">Tên loại tròng</th>
+                            <th className="p-2 sm:p-3 font-medium">Phân loại</th>
+                            <th className="p-2 sm:p-3 font-medium">Kiểu QL</th>
                             <th className="p-2 sm:p-3 font-medium text-right">Giá nhập</th>
                             <th className="p-2 sm:p-3 font-medium text-right">Giá bán</th>
                             <th className="p-2 sm:p-3 font-medium">Nhà cung cấp</th>
@@ -2023,7 +2061,7 @@ export default function QuanLyKho() {
                         <tbody>
                           {filteredLensCatalog.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="p-8 text-center text-gray-400">
+                              <td colSpan={9} className="p-8 text-center text-gray-400">
                                 Chưa có dữ liệu danh mục tròng
                               </td>
                             </tr>
@@ -2036,6 +2074,12 @@ export default function QuanLyKho() {
                                   {item.ngung_kinh_doanh && (
                                     <span className="ml-2 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">Ngừng kinh doanh</span>
                                   )}
+                                </td>
+                                <td className="p-2 sm:p-3 text-gray-600">
+                                  {item.loai_trong === 'loan' ? 'Loạn' : item.loai_trong === 'da_trong' ? 'Đa tròng' : 'Đơn tròng'}
+                                </td>
+                                <td className="p-2 sm:p-3 text-gray-600">
+                                  {item.kieu_quan_ly === 'DAT_KHI_CO_KHACH' ? 'Đặt khi có khách' : 'Sẵn kho'}
                                 </td>
                                 <td className="p-2 sm:p-3 text-right">{(item.gia_nhap || 0).toLocaleString('vi-VN')}</td>
                                 <td className="p-2 sm:p-3 text-right font-medium">{(item.gia_ban || 0).toLocaleString('vi-VN')}</td>
@@ -2101,7 +2145,7 @@ export default function QuanLyKho() {
 
               {/* ======================== TAB: KHO GỌNG KÍNH ======================== */}
               {/* ======================== TAB: TRÒNG CẦN ĐẶT ======================== */}
-              {activeTab === 'lens_order' && (
+              {canInventory && activeTab === 'lens_order' && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
@@ -2565,11 +2609,20 @@ export default function QuanLyKho() {
               if (!open) resetLensCatalogForm();
             }}
           >
-            <DialogContent>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingLensCatalog ? 'Sửa loại tròng' : 'Thêm loại tròng'}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
+                <div>
+                  <Label>Tên loại tròng *</Label>
+                  <Input
+                    value={lensCatalogForm.ten_hang}
+                    onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, ten_hang: e.target.value })}
+                    placeholder="VD: AS Crizal Blue UV"
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Hãng</Label>
@@ -2582,7 +2635,7 @@ export default function QuanLyKho() {
                   <div>
                     <Label>Nhà cung cấp</Label>
                     <select
-                      className="w-full border rounded-lg px-3 py-2 mt-1"
+                      className="w-full border rounded-lg px-3 py-2 mt-1 h-10"
                       value={lensCatalogForm.nha_cung_cap_id}
                       onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, nha_cung_cap_id: e.target.value })}
                     >
@@ -2594,13 +2647,30 @@ export default function QuanLyKho() {
                   </div>
                 </div>
 
-                <div>
-                  <Label>Tên loại tròng *</Label>
-                  <Input
-                    value={lensCatalogForm.ten_hang}
-                    onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, ten_hang: e.target.value })}
-                    placeholder="VD: AS Crizal Blue UV"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Loại tròng</Label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 mt-1 h-10"
+                      value={lensCatalogForm.loai_trong}
+                      onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, loai_trong: e.target.value })}
+                    >
+                      <option value="don_trong">Đơn tròng</option>
+                      <option value="loan">Loạn</option>
+                      <option value="da_trong">Đa tròng</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Kiểu quản lý</Label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 mt-1 h-10"
+                      value={lensCatalogForm.kieu_quan_ly}
+                      onChange={(e) => setLensCatalogForm({ ...lensCatalogForm, kieu_quan_ly: e.target.value })}
+                    >
+                      <option value="SAN_KHO">Sẵn kho</option>
+                      <option value="DAT_KHI_CO_KHACH">Đặt khi có khách</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

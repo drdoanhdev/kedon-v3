@@ -66,9 +66,9 @@ export default function Header() {
     { href: '/benh-nhan', label: 'Bệnh nhân', icon: Users, feature: 'patient_management' },
     { href: '/don-thuoc', label: 'Đơn thuốc', icon: FileText, feature: 'prescription_medicine' },
     { href: '/don-kinh', label: 'Đơn kính', icon: Glasses, feature: 'prescription_glasses' },
-    { href: '/quan-ly-kho', label: 'Kho tròng', icon: Warehouse, feature: 'inventory_lens' },
-    { href: '/quan-ly-kho-gong', label: 'Kho gọng', icon: Frame, feature: 'inventory_lens' },
-    { href: '/quan-ly-kho-thuoc', label: 'Kho thuốc', icon: Pill, feature: 'inventory_drug' },
+    { href: '/quan-ly-kho', label: 'Kho tròng', icon: Warehouse, feature: 'lens_catalog' },
+    { href: '/quan-ly-kho-gong', label: 'Kho gọng', icon: Frame, feature: 'frame_catalog' },
+    { href: '/quan-ly-kho-thuoc', label: 'Kho thuốc', icon: Pill, feature: 'drug_catalog' },
     { href: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays, feature: 'appointments' },
   ];
 

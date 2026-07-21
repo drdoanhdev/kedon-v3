@@ -25,8 +25,8 @@ const POLL_MS = 2000;
 export default function KioskNhanDienPage() {
   const router = useRouter();
   const deviceId = typeof router.query.deviceId === 'string' ? router.query.deviceId : '';
-  const token = typeof router.query.token === 'string' ? router.query.token : '';
 
+  const [token, setToken] = useState('');
   const [deviceLabel, setDeviceLabel] = useState('Camera nhận diện');
   const [state, setState] = useState<KioskState>('idle');
   const [event, setEvent] = useState<KioskEvent | null>(null);
@@ -36,6 +36,24 @@ export default function KioskNhanDienPage() {
 
   const lastKeyRef = useRef('');
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Token từ hash (#token=) ưu tiên; fallback query ?token= (legacy) rồi chuyển sang hash
+  useEffect(() => {
+    if (typeof window === 'undefined' || !router.isReady) return;
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+    const fromHash = hashParams.get('token') || '';
+    const fromQuery = typeof router.query.token === 'string' ? router.query.token : '';
+    const resolved = (fromHash || fromQuery).trim();
+    if (!resolved) return;
+    setToken(resolved);
+    if (fromQuery && !fromHash) {
+      const path = `/kiosk-nhan-dien/${deviceId}#token=${encodeURIComponent(resolved)}`;
+      window.history.replaceState(null, '', path);
+    }
+  }, [router.isReady, router.query.token, deviceId]);
 
   const eventKey = useCallback((e: KioskEvent) => {
     return `${e.type}:${e.queue_id || e.pending_id || ''}:${e.at}`;
@@ -65,7 +83,8 @@ export default function KioskNhanDienPage() {
     if (!deviceId || !token) return;
     try {
       const { data } = await axios.get(`/api/kiosk/${deviceId}`, {
-        params: { token, since_ms: 90000 },
+        params: { since_ms: 90000 },
+        headers: { 'x-kiosk-token': token },
         timeout: 8000,
       });
       setReady(true);
@@ -78,6 +97,7 @@ export default function KioskNhanDienPage() {
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err) ? err.response?.data?.error : null;
       setBootError(typeof msg === 'string' ? msg : 'Không kết nối được kiosk');
+      setReady(false);
       setState('error');
     }
   }, [deviceId, token, showEvent]);

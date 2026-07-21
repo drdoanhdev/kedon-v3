@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireTenant, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { planHasFeature } from '../../../lib/featureConfig';
+import { requireTenant, requireFeature, supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
 import {
   generatePairingCode,
   generatePendingTokenPrefix,
@@ -12,6 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res, { allowedRoles: ['owner', 'admin'] });
   if (!ctx) return;
+  if (!(await requireFeature(ctx, res, 'face_recognition'))) return;
 
   const { tenantId } = ctx;
 
@@ -31,19 +31,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'POST') {
-    const { data: tenantRow } = await supabaseAdmin
-      .from('tenants')
-      .select('plan')
-      .eq('id', tenantId)
-      .single();
-
-    if (!planHasFeature(tenantRow?.plan, 'face_recognition')) {
-      return res.status(403).json({
-        success: false,
-        error: 'Cần nâng cấp gói Pro để dùng nhận diện khuôn mặt',
-      });
-    }
-
     const { device_label, branch_id } = req.body || {};
     const pairingCode = generatePairingCode();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();

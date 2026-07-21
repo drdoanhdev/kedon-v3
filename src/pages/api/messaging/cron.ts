@@ -16,6 +16,7 @@
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '../../../lib/tenantApi';
+import { timingSafeEqualString } from '../../../lib/timingSafeEqual';
 import { decryptObject, encryptObject } from '../../../lib/messaging/crypto';
 import {
   refreshAccessToken,
@@ -243,11 +244,9 @@ async function markFailed(job: JobRow, errorMsg: string) {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   res.setHeader('Cache-Control', 'no-store');
 
-  // Bảo vệ endpoint bằng secret để chỉ cron mới gọi được.
-  // Hỗ trợ 3 cách:
-  //  1) Vercel Cron: header `Authorization: Bearer <CRON_SECRET>` (env CRON_SECRET)
+  // Bảo vệ endpoint bằng secret — chỉ header (không dùng query string).
+  //  1) Vercel Cron: header `Authorization: Bearer <CRON_SECRET>`
   //  2) GitHub Actions / cron-job.org: header `x-cron-secret: <MESSAGING_CRON_SECRET>`
-  //  3) Query string ?secret=... (legacy, không khuyến khích)
   const messagingSecret = process.env.MESSAGING_CRON_SECRET;
   const vercelCronSecret = process.env.CRON_SECRET;
   if (!messagingSecret && !vercelCronSecret) {
@@ -258,12 +257,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ? authHeader.slice(7).trim()
     : '';
   const headerSecret = (req.headers['x-cron-secret'] as string) || '';
-  const querySecret = (req.query.secret as string) || '';
 
   const ok =
-    (vercelCronSecret && bearer && bearer === vercelCronSecret) ||
-    (messagingSecret && headerSecret && headerSecret === messagingSecret) ||
-    (messagingSecret && querySecret && querySecret === messagingSecret);
+    (vercelCronSecret && bearer && timingSafeEqualString(bearer, vercelCronSecret)) ||
+    (messagingSecret && headerSecret && timingSafeEqualString(headerSecret, messagingSecret));
 
   if (!ok) {
     return res.status(401).json({ message: 'Unauthorized' });

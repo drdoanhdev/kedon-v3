@@ -18,22 +18,13 @@ import { Line } from 'react-chartjs-2';
 import { ArrowLeft, AlertTriangle, BookOpen, Glasses } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import {
-  alPercentile,
-  alToPctWeight,
-  calcHighMyopiaRisk,
-  calcRetinaRiskMultiplier,
-  getReduction,
-  pctWeightLabel,
-  resolveAL0,
-  riskMultiplier,
-  sexFromUi,
-  simulateSeries,
   worseSerFromDon,
   TX_COMBINE_OPTIONS,
   TX_PRIMARY_OPTIONS,
+  type KsctSimResult,
   type TxKey,
   type TxMode,
-} from '../lib/ksct/simulate';
+} from '../lib/ksct/ui';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -100,6 +91,9 @@ export default function TienLuongKsctPage() {
   const [primaryB, setPrimaryB] = useState<TxKey>('orthok');
   const [combineB, setCombineB] = useState<TxKey>('atropine_001');
   const [activeTab, setActiveTab] = useState<'se' | 'al'>('se');
+  const [sim, setSim] = useState<KsctSimResult | null>(null);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simError, setSimError] = useState<string | null>(null);
 
   const loadPatient = useCallback(async () => {
     if (!benhnhanid) {
@@ -160,53 +154,47 @@ export default function TienLuongKsctPage() {
     loadPatient();
   }, [loadPatient]);
 
-  const sim = useMemo(() => {
-    const age0 = age;
-    const ser0 = ser;
-    const crVal = cr || 7.8;
-    const sexKey = sexFromUi(sex);
-    const manual = alManual.trim() === '' ? null : parseFloat(alManual);
-    const al0 = resolveAL0(age0, ser0, sexKey, manual);
-    const ratio = al0 / crVal;
-    const pctWeight = alToPctWeight(al0, age0, sexKey);
-
-    const riskMult = riskMultiplier({
-      accLagHigh: accLag === 'high',
-      parentMyopia,
-      cr: crVal,
-      outdoor,
-      nearwork,
-    });
-
-    const control = simulateSeries(age0, al0, ser0, 0, 0, riskMult, sexKey, pctWeight);
-    const redA = getReduction(modeA, primaryA, combineA);
-    const redB = getReduction(modeB, primaryB, combineB);
-    const seriesA = simulateSeries(age0, al0, ser0, redA.al, redA.se, riskMult, sexKey, pctWeight);
-    const seriesB = simulateSeries(age0, al0, ser0, redB.al, redB.se, riskMult, sexKey, pctWeight);
-
-    const controlSE18 = control[control.length - 1].se;
-    const highRisk = calcHighMyopiaRisk(controlSE18);
-    const retinaMult = calcRetinaRiskMultiplier(controlSE18);
-
-    return {
-      al0,
-      ratio,
-      riskMult,
-      pctWeight,
-      pctLabel: pctWeightLabel(pctWeight),
-      sex: sexKey,
-      control,
-      redA,
-      redB,
-      seriesA,
-      seriesB,
-      highRisk,
-      retinaMult,
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setSimLoading(true);
+      setSimError(null);
+      try {
+        const { data } = await axios.post('/api/ksct/simulate', {
+          sex,
+          age,
+          ser,
+          cr: cr || 7.8,
+          parentMyopia,
+          outdoor,
+          nearwork,
+          accLag,
+          alManual,
+          modeA,
+          primaryA,
+          combineA,
+          modeB,
+          primaryB,
+          combineB,
+        });
+        if (!cancelled) setSim(data?.data || null);
+      } catch (e: any) {
+        if (!cancelled) {
+          setSim(null);
+          setSimError(e?.response?.data?.error || e?.message || 'Không mô phỏng được');
+        }
+      } finally {
+        if (!cancelled) setSimLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
     };
   }, [
+    sex,
     age,
     ser,
-    sex,
     cr,
     alManual,
     modeA,
@@ -222,18 +210,16 @@ export default function TienLuongKsctPage() {
   ]);
 
   const chartData = useMemo(() => {
+    if (!sim) return { labels: [] as string[], datasets: [] as any[] };
     const key = activeTab;
     const labels = sim.control.map((p) => p.age.toFixed(1));
     const datasets: any[] = [];
 
-    if (key === 'al') {
-      const dataP95 = sim.control.map((p) => +alPercentile(p.age, sim.sex, 'p95').toFixed(2));
-      const dataP10 = sim.control.map((p) => +alPercentile(p.age, sim.sex, 'p10').toFixed(2));
-      const dataP50 = sim.control.map((p) => +alPercentile(p.age, sim.sex, 'p50').toFixed(2));
+    if (key === 'al' && sim.refBands) {
       datasets.push(
         {
           label: 'P95 (tham chiếu)',
-          data: dataP95,
+          data: sim.refBands.p95,
           borderColor: 'transparent',
           backgroundColor: '#94a3b81a',
           pointRadius: 0,
@@ -242,7 +228,7 @@ export default function TienLuongKsctPage() {
         },
         {
           label: 'P10 (tham chiếu)',
-          data: dataP10,
+          data: sim.refBands.p10,
           borderColor: 'transparent',
           backgroundColor: '#94a3b81a',
           pointRadius: 0,
@@ -251,7 +237,7 @@ export default function TienLuongKsctPage() {
         },
         {
           label: 'P50 (trung vị dân số)',
-          data: dataP50,
+          data: sim.refBands.p50,
           borderColor: '#94a3b8',
           borderDash: [3, 3],
           borderWidth: 1.5,
@@ -468,7 +454,7 @@ export default function TienLuongKsctPage() {
                       <input
                         type="number"
                         step={0.01}
-                        placeholder={`Tự động ≈ ${sim.al0} mm`}
+                        placeholder={`Tự động ≈ ${sim?.al0 ?? '…'} mm`}
                         className={`${inputCls} pr-9`}
                         value={alManual}
                         onChange={(e) => setAlManual(e.target.value)}
@@ -515,7 +501,7 @@ export default function TienLuongKsctPage() {
                       </div>
                     </div>
 
-                    {sim.ratio > 3.0 && (
+                    {sim && sim.ratio > 3.0 && (
                       <div className="border border-amber-200 bg-amber-50 rounded-2xl p-3 mb-4">
                         <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-amber-600">
                           <AlertTriangle className="w-3.5 h-3.5" />
@@ -607,17 +593,30 @@ export default function TienLuongKsctPage() {
                       </span>
                     </div>
                     <div className="-mt-1 mb-2.5 text-[10.5px] text-slate-500 leading-relaxed">
-                      AL hiện tại tương ứng khoảng{' '}
-                      <strong className="text-blue-600">{sim.pctLabel}</strong> dân số cùng tuổi/giới — tốc độ
-                      tiến triển được mô phỏng theo đúng percentile này (percentile càng cao, tốc độ càng
-                      nhanh). Hệ số nguy cơ bổ sung:{' '}
-                      <strong className="text-slate-700">×{sim.riskMult.toFixed(2)}</strong>
+                      {simLoading && <span>Đang tính mô phỏng…</span>}
+                      {simError && <span className="text-red-500">{simError}</span>}
+                      {sim && (
+                        <>
+                          AL hiện tại tương ứng khoảng{' '}
+                          <strong className="text-blue-600">{sim.pctLabel}</strong> dân số cùng tuổi/giới — tốc độ
+                          tiến triển được mô phỏng theo đúng percentile này (percentile càng cao, tốc độ càng
+                          nhanh). Hệ số nguy cơ bổ sung:{' '}
+                          <strong className="text-slate-700">×{sim.riskMult.toFixed(2)}</strong>
+                        </>
+                      )}
                     </div>
 
                     <div className="relative h-[300px] w-full">
-                      <Line data={chartData} options={chartOptions} />
+                      {sim ? (
+                        <Line data={chartData} options={chartOptions} />
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-sm text-slate-400">
+                          {simLoading ? 'Đang tải biểu đồ…' : 'Chưa có dữ liệu mô phỏng'}
+                        </div>
+                      )}
                     </div>
 
+                    {sim && (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-3.5 mt-3.5 text-[11px] font-semibold">
                       <div className="flex items-start gap-2.5">
                         <span className="w-3.5 h-3.5 rounded bg-red-500 flex-shrink-0 mt-0.5" />
@@ -645,7 +644,7 @@ export default function TienLuongKsctPage() {
                         </div>
                       </div>
                     </div>
-
+                    )}
                     <div className="border-t border-slate-100 pt-4 mt-4">
                       <span className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">
                         So sánh phác đồ điều trị
@@ -681,6 +680,8 @@ export default function TienLuongKsctPage() {
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                         Đánh giá rủi ro bệnh lý võng mạc
                       </h3>
+                      {sim ? (
+                      <>
                       <div className="mb-3.5">
                         <div className="flex justify-between text-xs mb-1">
                           <span className="font-semibold text-slate-600">
@@ -718,6 +719,10 @@ export default function TienLuongKsctPage() {
                           />
                         </div>
                       </div>
+                      </>
+                      ) : (
+                        <p className="text-xs text-slate-400 m-0">Đang tính rủi ro…</p>
+                      )}
                     </div>
 
                     <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col justify-between">

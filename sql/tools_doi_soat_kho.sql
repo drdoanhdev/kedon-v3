@@ -45,17 +45,6 @@ GROUP BY gk.id, gk.ten_gong, gk.ton_kho
 HAVING gk.ton_kho - COALESCE(SUM(sm.so_luong), 0) <> 0
 ORDER BY ABS(gk.ton_kho - COALESCE(SUM(sm.so_luong), 0)) DESC;
 
--- 1.4 Nhóm giá gọng
-SELECT
-  ngg.id, ngg.ten_nhom, ngg.so_luong_ton AS ton_tren_danh_muc,
-  COALESCE(SUM(sm.so_luong), 0) AS ton_theo_so_kho,
-  ngg.so_luong_ton - COALESCE(SUM(sm.so_luong), 0) AS lech
-FROM nhom_gia_gong ngg
-LEFT JOIN stock_movement sm ON sm.loai_hang = 'nhom_gia_gong' AND sm.stock_ref_id = ngg.id
-GROUP BY ngg.id, ngg.ten_nhom, ngg.so_luong_ton
-HAVING ngg.so_luong_ton - COALESCE(SUM(sm.so_luong), 0) <> 0
-ORDER BY ABS(ngg.so_luong_ton - COALESCE(SUM(sm.so_luong), 0)) DESC;
-
 -- ---------------------------------------------------------------------
 -- 2) TỒN KHO ÂM (nên rất hiếm sau khi p_allow_negative=FALSE cho hủy/kiểm kê;
 --    xuất bán vẫn có thể âm tạm thời nếu bán trước khi nhập kịp — cần theo dõi).
@@ -65,9 +54,7 @@ UNION ALL
 SELECT 'trong', ls.id, ht.ten_hang || ' ' || ls.sph || '/' || ls.cyl, ls.ton_hien_tai
 FROM lens_stock ls JOIN "HangTrong" ht ON ht.id = ls.hang_trong_id WHERE ls.ton_hien_tai < 0
 UNION ALL
-SELECT 'gong', id, ten_gong, ton_kho FROM "GongKinh" WHERE ton_kho < 0
-UNION ALL
-SELECT 'nhom_gia_gong', id, ten_nhom, so_luong_ton FROM nhom_gia_gong WHERE so_luong_ton < 0;
+SELECT 'gong', id, ten_gong, ton_kho FROM "GongKinh" WHERE ton_kho < 0;
 
 -- ---------------------------------------------------------------------
 -- 3) TÍNH LIÊN TỤC CỦA SỔ KHO: với từng mặt hàng, ton_sau của giao dịch N
@@ -152,5 +139,4 @@ LIMIT 200;
 SELECT
   (SELECT COALESCE(SUM(tonkho * gianhap), 0) FROM "Thuoc" WHERE tonkho > 0) AS gia_tri_ton_thuoc,
   (SELECT COALESCE(SUM(ton_hien_tai * gia_nhap_bq), 0) FROM lens_stock WHERE ton_hien_tai > 0) AS gia_tri_ton_trong,
-  (SELECT COALESCE(SUM(ton_kho * gia_nhap), 0) FROM "GongKinh" WHERE ton_kho > 0) AS gia_tri_ton_gong,
-  (SELECT COALESCE(SUM(so_luong_ton * gia_nhap_trung_binh), 0) FROM nhom_gia_gong WHERE so_luong_ton > 0) AS gia_tri_ton_nhom_gia_gong;
+  (SELECT COALESCE(SUM(ton_kho * gia_nhap), 0) FROM "GongKinh" WHERE ton_kho > 0) AS gia_tri_ton_gong;

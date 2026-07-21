@@ -128,16 +128,29 @@ export async function requireFaceDevice(
 
   const { data: tenantRow } = await supabaseAdmin
     .from('tenants')
-    .select('plan, status')
+    .select('plan, status, plan_expires_at')
     .eq('id', device.tenant_id)
     .maybeSingle();
 
-  if (!tenantRow || tenantRow.status === 'suspended') {
+  if (!tenantRow || tenantRow.status === 'suspended' || tenantRow.status === 'inactive') {
     res.status(403).json({ success: false, error: 'Phòng khám không hoạt động' });
     return null;
   }
 
   const plan = tenantRow.plan || 'trial';
+  if (
+    plan !== 'trial' &&
+    tenantRow.plan_expires_at &&
+    Date.now() > new Date(tenantRow.plan_expires_at).getTime()
+  ) {
+    res.status(403).json({
+      success: false,
+      error: 'Gói dịch vụ đã hết hạn. Vui lòng gia hạn để tiếp tục nhận diện khuôn mặt.',
+      code: 'PLAN_EXPIRED',
+    });
+    return null;
+  }
+
   if (!planHasFeature(plan, 'face_recognition')) {
     res.status(403).json({
       success: false,

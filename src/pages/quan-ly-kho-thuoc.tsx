@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import { useFeatureGate } from '../hooks/useFeatureGate';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -20,11 +21,17 @@ interface ThuocStock {
   mathuoc: string | null;
   tenthuoc: string | null;
   donvitinh: string | null;
+  hoatchat?: string | null;
+  cachdung?: string | null;
+  nhomthuoc?: string | null;
+  nha_cung_cap_id?: number | null;
   giaban: number;
   gianhap: number;
   tonkho: number | null;
   muc_ton_can_co: number | null;
-  trang_thai: string;
+  soluongmacdinh?: number | null;
+  la_thu_thuat?: boolean;
+  trang_thai?: string;
   ngung_kinh_doanh?: boolean;
 }
 
@@ -64,11 +71,14 @@ interface HuyRecord {
 // ============================================
 export default function QuanLyKhoThuoc() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'nhap' | 'huy' | 'gia' | 'catalog'>('overview');
+  const { canAccessFeature, hasPermission } = useFeatureGate();
+  const canInventory = canAccessFeature('inventory_drug') && hasPermission('manage_inventory');
+  const [activeTab, setActiveTab] = useState<'overview' | 'stock' | 'nhap' | 'huy' | 'gia' | 'catalog'>('catalog');
 
   // Data states
   const [thuocList, setThuocList] = useState<ThuocStock[]>([]);
   const [catalogList, setCatalogList] = useState<ThuocStock[]>([]);
+  const [nhaCungCaps, setNhaCungCaps] = useState<{ id: number; ten: string }[]>([]);
   const [summary, setSummary] = useState<StockSummary>({ total: 0, het: 0, sap_het: 0, du: 0 });
   const [nhapHistory, setNhapHistory] = useState<NhapKhoRecord[]>([]);
   const [huyHistory, setHuyHistory] = useState<HuyRecord[]>([]);
@@ -97,9 +107,15 @@ export default function QuanLyKhoThuoc() {
     mathuoc: '',
     tenthuoc: '',
     donvitinh: '',
+    hoatchat: '',
+    cachdung: '',
+    nhomthuoc: '',
+    nha_cung_cap_id: '',
     gianhap: '',
     giaban: '',
     muc_ton_can_co: '10',
+    soluongmacdinh: '1',
+    la_thu_thuat: false,
     ngung_kinh_doanh: false,
   });
 
@@ -115,8 +131,9 @@ export default function QuanLyKhoThuoc() {
       const { data } = await axios.get('/api/inventory/thuoc-stock', { params });
       setThuocList(data.data || []);
       setSummary(data.summary || { total: 0, het: 0, sap_het: 0, du: 0 });
-    } catch {
-      toast.error('Lỗi tải dữ liệu kho thuốc');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Lỗi tải dữ liệu kho thuốc';
+      toast.error(msg);
     }
   }, [stockFilter, searchText, showInactive]);
 
@@ -124,31 +141,57 @@ export default function QuanLyKhoThuoc() {
     try {
       const { data } = await axios.get('/api/inventory/thuoc-nhap');
       setNhapHistory(data.data || []);
-    } catch {}
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Lỗi tải lịch sử nhập kho');
+    }
   }, []);
 
   const fetchHuyHistory = useCallback(async () => {
     try {
       const { data } = await axios.get('/api/inventory/thuoc-huy');
       setHuyHistory(data.data || []);
-    } catch {}
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Lỗi tải lịch sử hủy thuốc');
+    }
   }, []);
 
   const fetchCatalog = useCallback(async () => {
     try {
-      const { data } = await axios.get('/api/thuoc');
+      // scope=shared: cùng nguồn với kê đơn / đơn mẫu (toàn tenant)
+      const { data } = await axios.get('/api/thuoc?scope=shared');
       setCatalogList(data.data || []);
     } catch {
       toast.error('Lỗi tải danh mục thuốc');
     }
   }, []);
 
-  useEffect(() => {
-    Promise.all([fetchStock(), fetchNhapHistory(), fetchHuyHistory(), fetchCatalog()])
-      .finally(() => setLoading(false));
+  const fetchNhaCungCaps = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/nha-cung-cap');
+      setNhaCungCaps(data?.data || data || []);
+    } catch {
+      setNhaCungCaps([]);
+    }
   }, []);
 
-  useEffect(() => { fetchStock(); }, [stockFilter, searchText, showInactive]);
+  useEffect(() => {
+    const tasks: Promise<unknown>[] = [fetchCatalog(), fetchNhaCungCaps()];
+    if (canInventory) {
+      tasks.push(fetchStock(), fetchNhapHistory(), fetchHuyHistory());
+    }
+    Promise.all(tasks).finally(() => setLoading(false));
+  }, [canInventory]);
+
+  useEffect(() => {
+    if (canInventory) fetchStock();
+  }, [stockFilter, searchText, showInactive, canInventory]);
+
+  useEffect(() => {
+    // Có quyền kho → mặc định mở Tổng quan (trừ khi URL chỉ định tab)
+    if (canInventory && !router.query.tab && activeTab === 'catalog') {
+      setActiveTab('overview');
+    }
+  }, [canInventory, router.query.tab]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -166,8 +209,19 @@ export default function QuanLyKhoThuoc() {
 
     const mapped = tabMap[tabQuery];
     if (!mapped) return;
+    // Gói không có kho: chỉ mở được tab danh mục
+    if (!canInventory && mapped !== 'catalog') {
+      if (activeTab !== 'catalog') setActiveTab('catalog');
+      return;
+    }
     if (activeTab !== mapped) setActiveTab(mapped);
-  }, [router.isReady, router.query.tab, activeTab]);
+  }, [router.isReady, router.query.tab, activeTab, canInventory]);
+
+  useEffect(() => {
+    if (!canInventory && activeTab !== 'catalog') {
+      setActiveTab('catalog');
+    }
+  }, [canInventory, activeTab]);
 
   useEffect(() => {
     setCatalogPage(1);
@@ -242,12 +296,27 @@ export default function QuanLyKhoThuoc() {
       mathuoc: '',
       tenthuoc: '',
       donvitinh: '',
+      hoatchat: '',
+      cachdung: '',
+      nhomthuoc: '',
+      nha_cung_cap_id: '',
       gianhap: '',
       giaban: '',
       muc_ton_can_co: '10',
+      soluongmacdinh: '1',
+      la_thu_thuat: false,
       ngung_kinh_doanh: false,
     });
     setEditingCatalog(null);
+  };
+
+  const generateMaThuoc = (list: ThuocStock[]) => {
+    let max = 0;
+    for (const cur of list) {
+      const match = cur.mathuoc?.match(/TH(\d+)/);
+      if (match) max = Math.max(max, parseInt(match[1], 10));
+    }
+    return `TH${String(max + 1).padStart(3, '0')}`;
   };
 
   const openCreateCatalog = () => {
@@ -261,23 +330,39 @@ export default function QuanLyKhoThuoc() {
       mathuoc: item.mathuoc || '',
       tenthuoc: item.tenthuoc || '',
       donvitinh: item.donvitinh || '',
+      hoatchat: item.hoatchat || '',
+      cachdung: item.cachdung || '',
+      nhomthuoc: item.nhomthuoc || '',
+      nha_cung_cap_id: item.nha_cung_cap_id ? String(item.nha_cung_cap_id) : '',
       gianhap: String(item.gianhap || 0),
       giaban: String(item.giaban || 0),
       muc_ton_can_co: String(item.muc_ton_can_co || 10),
+      soluongmacdinh: String(item.soluongmacdinh ?? 1),
+      la_thu_thuat: !!item.la_thu_thuat,
       ngung_kinh_doanh: !!item.ngung_kinh_doanh,
     });
     setShowCatalogDialog(true);
   };
 
-  const buildCatalogPayload = (overrides?: Partial<typeof catalogForm>) => ({
-    mathuoc: (overrides?.mathuoc ?? catalogForm.mathuoc).trim() || null,
-    tenthuoc: (overrides?.tenthuoc ?? catalogForm.tenthuoc).trim(),
-    donvitinh: (overrides?.donvitinh ?? catalogForm.donvitinh).trim(),
-    gianhap: parseInt(overrides?.gianhap ?? catalogForm.gianhap, 10) || 0,
-    giaban: parseInt(overrides?.giaban ?? catalogForm.giaban, 10) || 0,
-    muc_ton_can_co: parseInt(overrides?.muc_ton_can_co ?? catalogForm.muc_ton_can_co, 10) || 10,
-    ngung_kinh_doanh: overrides?.ngung_kinh_doanh ?? catalogForm.ngung_kinh_doanh,
-  });
+  const buildCatalogPayload = (overrides?: Partial<typeof catalogForm>) => {
+    const nccRaw = overrides?.nha_cung_cap_id ?? catalogForm.nha_cung_cap_id;
+    const nccId = parseInt(nccRaw, 10);
+    return {
+      mathuoc: (overrides?.mathuoc ?? catalogForm.mathuoc).trim() || null,
+      tenthuoc: (overrides?.tenthuoc ?? catalogForm.tenthuoc).trim(),
+      donvitinh: (overrides?.donvitinh ?? catalogForm.donvitinh).trim(),
+      hoatchat: (overrides?.hoatchat ?? catalogForm.hoatchat).trim() || '',
+      cachdung: (overrides?.cachdung ?? catalogForm.cachdung).trim() || '',
+      nhomthuoc: (overrides?.nhomthuoc ?? catalogForm.nhomthuoc).trim() || null,
+      nha_cung_cap_id: Number.isFinite(nccId) && nccId > 0 ? nccId : null,
+      gianhap: parseInt(overrides?.gianhap ?? catalogForm.gianhap, 10) || 0,
+      giaban: parseInt(overrides?.giaban ?? catalogForm.giaban, 10) || 0,
+      muc_ton_can_co: parseInt(overrides?.muc_ton_can_co ?? catalogForm.muc_ton_can_co, 10) || 10,
+      soluongmacdinh: parseInt(overrides?.soluongmacdinh ?? catalogForm.soluongmacdinh, 10) || 1,
+      la_thu_thuat: overrides?.la_thu_thuat ?? catalogForm.la_thu_thuat,
+      ngung_kinh_doanh: overrides?.ngung_kinh_doanh ?? catalogForm.ngung_kinh_doanh,
+    };
+  };
 
   const handleSaveCatalog = async () => {
     const payload = buildCatalogPayload();
@@ -288,16 +373,19 @@ export default function QuanLyKhoThuoc() {
 
     try {
       if (editingCatalog) {
-        await axios.put('/api/thuoc', { id: editingCatalog.id, ...payload });
+        await axios.put('/api/thuoc?scope=shared', { id: editingCatalog.id, ...payload });
         toast.success('Đã cập nhật thuốc');
       } else {
-        await axios.post('/api/thuoc', payload);
+        if (!payload.mathuoc) {
+          payload.mathuoc = generateMaThuoc(catalogList);
+        }
+        await axios.post('/api/thuoc?scope=shared', payload);
         toast.success('Đã thêm thuốc mới');
       }
       setShowCatalogDialog(false);
       resetCatalogForm();
       fetchCatalog();
-      fetchStock();
+      if (canInventory) fetchStock();
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi lưu danh mục thuốc');
     }
@@ -305,21 +393,27 @@ export default function QuanLyKhoThuoc() {
 
   const handleToggleBusinessStatus = async (item: ThuocStock) => {
     try {
-      await axios.put('/api/thuoc', {
+      await axios.put('/api/thuoc?scope=shared', {
         id: item.id,
         ...buildCatalogPayload({
           mathuoc: item.mathuoc || '',
           tenthuoc: item.tenthuoc || '',
           donvitinh: item.donvitinh || '',
+          hoatchat: item.hoatchat || '',
+          cachdung: item.cachdung || '',
+          nhomthuoc: item.nhomthuoc || '',
+          nha_cung_cap_id: item.nha_cung_cap_id ? String(item.nha_cung_cap_id) : '',
           gianhap: String(item.gianhap || 0),
           giaban: String(item.giaban || 0),
           muc_ton_can_co: String(item.muc_ton_can_co || 10),
+          soluongmacdinh: String(item.soluongmacdinh ?? 1),
+          la_thu_thuat: !!item.la_thu_thuat,
           ngung_kinh_doanh: !item.ngung_kinh_doanh,
         }),
       });
       toast.success(!item.ngung_kinh_doanh ? 'Đã đánh dấu ngưng kinh doanh' : 'Đã kích hoạt lại thuốc');
       fetchCatalog();
-      fetchStock();
+      if (canInventory) fetchStock();
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi cập nhật trạng thái');
     }
@@ -329,10 +423,10 @@ export default function QuanLyKhoThuoc() {
     if (!window.confirm(`Xóa thuốc "${item.tenthuoc || ''}" khỏi danh mục?`)) return;
 
     try {
-      await axios.delete(`/api/thuoc?id=${item.id}`);
+      await axios.delete(`/api/thuoc?scope=shared&id=${item.id}`);
       toast.success('Đã xóa thuốc khỏi danh mục');
       fetchCatalog();
-      fetchStock();
+      if (canInventory) fetchStock();
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.response?.data?.message || 'Lỗi xóa thuốc');
     }
@@ -378,7 +472,10 @@ export default function QuanLyKhoThuoc() {
     return (
       (item.tenthuoc || '').toLowerCase().includes(s) ||
       (item.mathuoc || '').toLowerCase().includes(s) ||
-      (item.donvitinh || '').toLowerCase().includes(s)
+      (item.donvitinh || '').toLowerCase().includes(s) ||
+      (item.hoatchat || '').toLowerCase().includes(s) ||
+      (item.cachdung || '').toLowerCase().includes(s) ||
+      (item.nhomthuoc || '').toLowerCase().includes(s)
     );
   });
 
@@ -395,38 +492,62 @@ export default function QuanLyKhoThuoc() {
   // ============================================
   return (
     <ProtectedRoute>
-      <FeatureGate feature="inventory_drug">
+      <FeatureGate feature="drug_catalog">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-6 px-4">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Quản lý kho thuốc</h1>
-              <p className="text-gray-500 text-sm mt-1">Xuất nhập tồn kho thuốc, vật tư y tế</p>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {canInventory ? 'Quản lý kho thuốc' : 'Danh mục thuốc'}
+              </h1>
+              <p className="text-gray-500 text-sm mt-1">
+                {canInventory
+                  ? 'Danh mục thuốc, xuất nhập tồn và đề xuất giá'
+                  : 'Quản lý danh mục thuốc dùng khi kê đơn'}
+              </p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
-                Danh mục thuốc
-              </Button>
-              <Button onClick={() => { fetchStock(); fetchNhapHistory(); fetchHuyHistory(); fetchCatalog(); }} variant="outline" size="sm">
+              {canInventory && (
+                <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
+                  Danh mục thuốc
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  fetchCatalog();
+                  fetchNhaCungCaps();
+                  if (canInventory) {
+                    fetchStock();
+                    fetchNhapHistory();
+                    fetchHuyHistory();
+                  }
+                }}
+                variant="outline"
+                size="sm"
+              >
                 <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
               </Button>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 mb-6 bg-white rounded-lg p-1 shadow-sm border">
+          <div className="flex gap-1 mb-6 bg-white rounded-lg p-1 shadow-sm border overflow-x-auto">
             {[
-              { key: 'overview', label: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
-              { key: 'stock', label: 'Tồn kho', icon: <Search className="w-4 h-4" /> },
-              { key: 'nhap', label: 'Lịch sử nhập', icon: <ArrowDownToLine className="w-4 h-4" /> },
-              { key: 'huy', label: 'Lịch sử hủy', icon: <Trash2 className="w-4 h-4" /> },
-              { key: 'gia', label: 'Giá', icon: <TrendingUp className="w-4 h-4" /> },
-              { key: 'catalog', label: 'Danh mục thuốc', icon: <Package className="w-4 h-4" /> },
+              ...(canInventory
+                ? [
+                    { key: 'overview' as const, label: 'Tổng quan', icon: <Package className="w-4 h-4" /> },
+                    { key: 'stock' as const, label: 'Tồn kho', icon: <Search className="w-4 h-4" /> },
+                    { key: 'nhap' as const, label: 'Lịch sử nhập', icon: <ArrowDownToLine className="w-4 h-4" /> },
+                    { key: 'huy' as const, label: 'Lịch sử hủy', icon: <Trash2 className="w-4 h-4" /> },
+                    { key: 'gia' as const, label: 'Giá', icon: <TrendingUp className="w-4 h-4" /> },
+                  ]
+                : []),
+              { key: 'catalog' as const, label: 'Danh mục thuốc', icon: <Package className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key as any)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
                   activeTab === tab.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
@@ -440,7 +561,7 @@ export default function QuanLyKhoThuoc() {
           ) : (
             <>
               {/* ======================== TAB: TỔNG QUAN ======================== */}
-              {activeTab === 'overview' && (
+              {canInventory && activeTab === 'overview' && (
                 <div className="space-y-6">
                   {/* Summary Cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -543,7 +664,7 @@ export default function QuanLyKhoThuoc() {
               )}
 
               {/* ======================== TAB: TỒN KHO ======================== */}
-              {activeTab === 'stock' && (
+              {canInventory && activeTab === 'stock' && (
                 <div className="space-y-4">
                   {/* Search & Filter */}
                   <div className="flex flex-wrap gap-3 items-center">
@@ -653,7 +774,7 @@ export default function QuanLyKhoThuoc() {
               )}
 
               {/* ======================== TAB: LỊCH SỬ NHẬP ======================== */}
-              {activeTab === 'nhap' && (
+              {canInventory && activeTab === 'nhap' && (
                 <Card>
                   <CardContent className="pt-6">
                     <h3 className="font-semibold mb-4">Lịch sử nhập kho</h3>
@@ -698,7 +819,7 @@ export default function QuanLyKhoThuoc() {
               )}
 
               {/* ======================== TAB: LỊCH SỬ HỦY ======================== */}
-              {activeTab === 'huy' && (
+              {canInventory && activeTab === 'huy' && (
                 <Card>
                   <CardContent className="pt-6">
                     <h3 className="font-semibold mb-4">Lịch sử hủy thuốc</h3>
@@ -737,7 +858,7 @@ export default function QuanLyKhoThuoc() {
               )}
 
               {/* ======================== TAB: GIÁ ======================== */}
-              {activeTab === 'gia' && (
+              {canInventory && activeTab === 'gia' && (
                 <PricingTab thuocList={thuocList.map(t => ({ id: t.id, tenthuoc: t.tenthuoc, donvitinh: t.donvitinh, giaban: t.giaban, gianhap: t.gianhap }))} />
               )}
 
@@ -749,7 +870,7 @@ export default function QuanLyKhoThuoc() {
                       <div className="relative flex-1 max-w-md">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <Input
-                          placeholder="Tìm theo tên thuốc, mã thuốc, đơn vị..."
+                          placeholder="Tìm theo tên, mã, hoạt chất, cách dùng..."
                           value={catalogSearch}
                           onChange={(e) => setCatalogSearch(e.target.value)}
                           className="pl-9"
@@ -766,10 +887,15 @@ export default function QuanLyKhoThuoc() {
                           <tr className="border-b text-left text-gray-500">
                             <th className="py-2 pr-4">Mã</th>
                             <th className="py-2 pr-4">Tên thuốc</th>
+                            <th className="py-2 pr-4">Hoạt chất</th>
+                            <th className="py-2 pr-4">Cách dùng</th>
+                            <th className="py-2 pr-4">Nhóm</th>
                             <th className="py-2 pr-4">ĐVT</th>
                             <th className="py-2 pr-4 text-right">Giá nhập</th>
                             <th className="py-2 pr-4 text-right">Giá bán</th>
-                            <th className="py-2 pr-4 text-center">Tồn tối thiểu</th>
+                            <th className="py-2 pr-4 text-center">Tồn</th>
+                            <th className="py-2 pr-4 text-center">SL MĐ</th>
+                            <th className="py-2 pr-4 text-center">Thủ thuật</th>
                             <th className="py-2 pr-4 text-center">KD</th>
                             <th className="py-2 text-right">Thao tác</th>
                           </tr>
@@ -777,27 +903,32 @@ export default function QuanLyKhoThuoc() {
                         <tbody>
                           {filteredCatalog.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="py-8 text-center text-gray-400">
+                              <td colSpan={13} className="py-8 text-center text-gray-400">
                                 Không có thuốc phù hợp bộ lọc
                               </td>
                             </tr>
                           ) : (
                             pagedCatalog.map((item) => (
                               <tr key={item.id} className={`border-b last:border-0 ${item.ngung_kinh_doanh ? 'bg-gray-50 opacity-60' : ''}`}>
-                                <td className="py-2 pr-4 text-gray-500">{item.mathuoc || '-'}</td>
+                                <td className="py-2 pr-4 text-gray-500 font-mono">{item.mathuoc || '-'}</td>
                                 <td className="py-2 pr-4 font-medium">
                                   {item.tenthuoc}
                                   {item.ngung_kinh_doanh && (
                                     <span className="ml-2 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">Ngừng kinh doanh</span>
                                   )}
                                 </td>
+                                <td className="py-2 pr-4 text-gray-600">{item.hoatchat || '-'}</td>
+                                <td className="py-2 pr-4 text-gray-600">{item.cachdung || '-'}</td>
+                                <td className="py-2 pr-4 text-gray-600">{item.nhomthuoc || '-'}</td>
                                 <td className="py-2 pr-4">{item.donvitinh || '-'}</td>
                                 <td className="py-2 pr-4 text-right">{formatMoney(item.gianhap || 0)}</td>
                                 <td className="py-2 pr-4 text-right">{formatMoney(item.giaban || 0)}</td>
-                                <td className="py-2 pr-4 text-center">{item.muc_ton_can_co ?? 10}</td>
+                                <td className="py-2 pr-4 text-center">{item.tonkho ?? 0}</td>
+                                <td className="py-2 pr-4 text-center">{item.soluongmacdinh ?? 1}</td>
+                                <td className="py-2 pr-4 text-center">{item.la_thu_thuat ? 'Có' : 'Không'}</td>
                                 <td className="py-2 pr-4 text-center">
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${item.ngung_kinh_doanh ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
-                                    {item.ngung_kinh_doanh ? 'Ngừng kinh doanh' : 'Đang kinh doanh'}
+                                    {item.ngung_kinh_doanh ? 'Ngừng KD' : 'Đang KD'}
                                   </span>
                                 </td>
                                 <td className="py-2 text-right">
@@ -870,30 +1001,11 @@ export default function QuanLyKhoThuoc() {
           if (!open) resetCatalogForm();
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingCatalog ? 'Sửa thuốc' : 'Thêm thuốc mới'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Mã thuốc</Label>
-                <Input
-                  value={catalogForm.mathuoc}
-                  onChange={(e) => setCatalogForm({ ...catalogForm, mathuoc: e.target.value })}
-                  placeholder="VD: TH001"
-                />
-              </div>
-              <div>
-                <Label>Đơn vị tính <span className="text-red-500">*</span></Label>
-                <Input
-                  value={catalogForm.donvitinh}
-                  onChange={(e) => setCatalogForm({ ...catalogForm, donvitinh: e.target.value })}
-                  placeholder="VD: viên, hộp"
-                />
-              </div>
-            </div>
-
             <div>
               <Label>Tên thuốc <span className="text-red-500">*</span></Label>
               <Input
@@ -903,17 +1015,68 @@ export default function QuanLyKhoThuoc() {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Giá nhập</Label>
+                <Label>Mã thuốc</Label>
                 <Input
-                  type="number"
-                  min="0"
-                  value={catalogForm.gianhap}
-                  onChange={(e) => setCatalogForm({ ...catalogForm, gianhap: e.target.value })}
-                  placeholder="0"
+                  value={catalogForm.mathuoc}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, mathuoc: e.target.value })}
+                  placeholder="Để trống sẽ tự tạo"
                 />
               </div>
+              <div>
+                <Label>Đơn vị tính <span className="text-red-500">*</span></Label>
+                <Input
+                  value={catalogForm.donvitinh}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, donvitinh: e.target.value })}
+                  placeholder="VD: viên, hộp, chai"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Hoạt chất</Label>
+              <Input
+                value={catalogForm.hoatchat}
+                onChange={(e) => setCatalogForm({ ...catalogForm, hoatchat: e.target.value })}
+                placeholder="VD: Paracetamol"
+              />
+            </div>
+
+            <div>
+              <Label>Cách dùng</Label>
+              <Input
+                value={catalogForm.cachdung}
+                onChange={(e) => setCatalogForm({ ...catalogForm, cachdung: e.target.value })}
+                placeholder="VD: Uống sau ăn"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Nhóm thuốc</Label>
+                <Input
+                  value={catalogForm.nhomthuoc}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, nhomthuoc: e.target.value })}
+                  placeholder="VD: Kháng sinh, giảm đau"
+                />
+              </div>
+              <div>
+                <Label>Nhà cung cấp</Label>
+                <select
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={catalogForm.nha_cung_cap_id}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, nha_cung_cap_id: e.target.value })}
+                >
+                  <option value="">-- Chọn NCC --</option>
+                  {nhaCungCaps.map((ncc) => (
+                    <option key={ncc.id} value={ncc.id}>{ncc.ten}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Giá bán</Label>
                 <Input
@@ -925,7 +1088,30 @@ export default function QuanLyKhoThuoc() {
                 />
               </div>
               <div>
-                <Label>Tồn tối thiểu</Label>
+                <Label>Giá nhập</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={catalogForm.gianhap}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, gianhap: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Số lượng mặc định (kê đơn)</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={catalogForm.soluongmacdinh}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, soluongmacdinh: e.target.value })}
+                  placeholder="1"
+                />
+              </div>
+              <div>
+                <Label>Tồn tối thiểu (cảnh báo)</Label>
                 <Input
                   type="number"
                   min="0"
@@ -936,14 +1122,41 @@ export default function QuanLyKhoThuoc() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={catalogForm.ngung_kinh_doanh}
-                onChange={(e) => setCatalogForm({ ...catalogForm, ngung_kinh_doanh: e.target.checked })}
-              />
-              Đánh dấu ngừng kinh doanh
-            </label>
+            {editingCatalog && (
+              <div>
+                <Label>Tồn kho hiện tại</Label>
+                <Input
+                  type="number"
+                  value={editingCatalog.tonkho ?? 0}
+                  disabled
+                  className="bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Không sửa tay. Muốn tăng/giảm tồn: dùng Nhập kho hoặc Hủy thuốc.
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-6 pt-1">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={catalogForm.la_thu_thuat}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, la_thu_thuat: e.target.checked })}
+                  className="w-4 h-4 border-gray-300 rounded"
+                />
+                Là thủ thuật
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={catalogForm.ngung_kinh_doanh}
+                  onChange={(e) => setCatalogForm({ ...catalogForm, ngung_kinh_doanh: e.target.checked })}
+                  className="w-4 h-4 border-gray-300 rounded accent-red-600"
+                />
+                <span className="text-red-600">Ngừng kinh doanh</span>
+              </label>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowCatalogDialog(false); resetCatalogForm(); }}>Hủy</Button>
@@ -970,8 +1183,11 @@ export default function QuanLyKhoThuoc() {
               <Input type="number" min="1" value={nhapForm.so_luong} onChange={e => setNhapForm({ ...nhapForm, so_luong: e.target.value })} placeholder="VD: 100" />
             </div>
             <div>
-              <Label>Đơn giá (VNĐ)</Label>
+              <Label>Đơn giá nhập / giá mua (VNĐ)</Label>
               <Input type="number" min="0" value={nhapForm.don_gia} onChange={e => setNhapForm({ ...nhapForm, don_gia: e.target.value })} placeholder="VD: 5000" />
+              <p className="text-xs text-gray-500 mt-1">
+                Đây là giá mua lần nhập này (cập nhật giá vốn bình quân). Giá bán sửa ở Danh mục thuốc hoặc tab Giá.
+              </p>
             </div>
             <div>
               <Label>Nhà cung cấp</Label>

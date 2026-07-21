@@ -54,6 +54,11 @@ services/face-agent/.venv/
 services/face-agent/dist/
 services/face-agent/**/__pycache__/
 services/face-agent/**/*.pyc
+services/face-agent/cai-dat-log.txt
+
+# Never ship face-agent zip as anonymous public download
+/public/downloads/OptigoFaceAgent.zip
+/private/
 
 # local face recognition service (copied separately, not for repo)
 Nhan-dien/

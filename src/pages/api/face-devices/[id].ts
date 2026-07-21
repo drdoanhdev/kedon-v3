@@ -49,7 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Tạo / xoay kiosk token để mở màn hình chào bệnh nhân
   if (req.method === 'POST' && req.query.action === 'kiosk-token') {
-    const { generateKioskToken } = await import('../../../lib/faceKiosk');
+    const { generateKioskToken, hashKioskToken } = await import('../../../lib/faceKiosk');
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from('face_devices')
       .select('id, status, settings, device_label')
@@ -65,19 +65,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const settings = (existing.settings as Record<string, unknown>) || {};
-    const rotate = Boolean(req.body?.rotate);
-    const current =
-      typeof settings.kiosk_token === 'string' && settings.kiosk_token.startsWith('fk_')
-        ? settings.kiosk_token
-        : null;
-    const kioskToken = rotate || !current ? generateKioskToken() : current;
+    const kioskToken = generateKioskToken();
+    const tokenHash = hashKioskToken(kioskToken);
+    const { kiosk_token: _legacy, ...restSettings } = settings;
 
     const { error: updateError } = await supabaseAdmin
       .from('face_devices')
       .update({
         settings: {
-          ...settings,
-          kiosk_token: kioskToken,
+          ...restSettings,
+          kiosk_token_hash: tokenHash,
           kiosk_token_rotated_at: new Date().toISOString(),
         },
         updated_at: new Date().toISOString(),
@@ -95,9 +92,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         device_id: id,
         device_label: existing.device_label,
         kiosk_token: kioskToken,
-        kiosk_path: `/kiosk-nhan-dien/${id}?token=${encodeURIComponent(kioskToken)}`,
+        // Hash fragment — không gửi token lên server qua Referer/query log
+        kiosk_path: `/kiosk-nhan-dien/${id}#token=${encodeURIComponent(kioskToken)}`,
       },
-      message: rotate || !current ? 'Đã tạo kiosk token mới' : 'Đã lấy kiosk token hiện có',
+      message: 'Đã tạo kiosk token mới',
     });
   }
 

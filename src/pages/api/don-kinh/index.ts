@@ -185,9 +185,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const lensCost = (req.body as any).gianhap_trong ?? 0;
   const frameCost = (req.body as any).gianhap_gong ?? 0;
 
-      // Nhóm giá gọng: khi bán theo nhóm giá thay vì gọng cụ thể
-      const nhom_gia_gong_id = (req.body as any).nhom_gia_gong_id ? parseInt((req.body as any).nhom_gia_gong_id) : null;
-
       // === Resolve FK IDs from text names ===
       const useFk = await checkFkColumns();
       const fkIds = useFk ? await resolveForeignKeys(supabase, tenantId, branchId, {
@@ -226,26 +223,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             pd_mt: pd_mt || '',
             tenant_id: tenantId,
             ...(branchId ? { branch_id: branchId } : {}),
+            gia_von_gong: frameCost,
       };
       if (useFk) {
         insertPayload.hang_trong_mp_id = fkIds.hang_trong_mp_id;
         insertPayload.hang_trong_mt_id = fkIds.hang_trong_mt_id;
         insertPayload.gong_kinh_id = fkIds.gong_kinh_id;
-      }
-
-      // Nhóm giá gọng: bán theo nhóm giá
-      if (nhom_gia_gong_id) {
-        insertPayload.nhom_gia_gong_id = nhom_gia_gong_id;
-        // Snapshot giá vốn gọng từ gia_nhap_trung_binh của nhóm
-        const { data: nhomGia } = await supabase
-          .from('nhom_gia_gong')
-          .select('gia_nhap_trung_binh')
-          .eq('id', nhom_gia_gong_id)
-          .eq('tenant_id', tenantId)
-          .single();
-        insertPayload.gia_von_gong = nhomGia?.gia_nhap_trung_binh ?? frameCost;
-      } else {
-        insertPayload.gia_von_gong = frameCost;
       }
 
       const insertDonKinh = (payload: Record<string, unknown>) =>
@@ -293,7 +276,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             hang_trong_mp_id: fkIds.hang_trong_mp_id ?? undefined,
             hang_trong_mt_id: fkIds.hang_trong_mt_id ?? undefined,
             gong_kinh_id: fkIds.gong_kinh_id ?? undefined,
-            nhom_gia_gong_id: nhom_gia_gong_id ?? undefined,
           });
           inventoryWarnings.push(...invResult.warnings);
 
@@ -368,8 +350,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const lensCost = (req.body as any).gianhap_trong ?? 0;
   const frameCost = (req.body as any).gianhap_gong ?? 0;
 
-      const nhom_gia_gong_id_put = (req.body as any).nhom_gia_gong_id ? parseInt((req.body as any).nhom_gia_gong_id) : null;
-
       // === Fetch old DonKinh to compare & reverse inventory ===
       let oldDonQuery = supabase
         .from('DonKinh')
@@ -423,20 +403,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         updatePayload.gong_kinh_id = fkIds.gong_kinh_id;
       }
 
-      // Nhóm giá gọng cho PUT
-      if (nhom_gia_gong_id_put) {
-        updatePayload.nhom_gia_gong_id = nhom_gia_gong_id_put;
-        const { data: nhomGia } = await supabase
-          .from('nhom_gia_gong')
-          .select('gia_nhap_trung_binh')
-          .eq('id', nhom_gia_gong_id_put)
-          .eq('tenant_id', tenantId)
-          .single();
-        updatePayload.gia_von_gong = nhomGia?.gia_nhap_trung_binh ?? frameCost;
-      } else {
-        updatePayload.nhom_gia_gong_id = null;
-        updatePayload.gia_von_gong = frameCost;
-      }
+      updatePayload.gia_von_gong = frameCost;
 
       let updateQuery = supabase
         .from('DonKinh')
@@ -476,7 +443,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               hang_trong_mp_id: fkIds.hang_trong_mp_id ?? undefined,
               hang_trong_mt_id: fkIds.hang_trong_mt_id ?? undefined,
               gong_kinh_id: fkIds.gong_kinh_id ?? undefined,
-              nhom_gia_gong_id: nhom_gia_gong_id_put ?? undefined,
             });
             inventoryWarnings.push(...invResult.warnings);
 
@@ -742,30 +708,7 @@ async function reverseInventory(
     console.log(`🔄 Hoàn kho ${frameExports.length} gọng cho đơn #${donKinhId}`);
   }
 
-  // 3. Reverse nhóm giá gọng sales (bán theo nhóm giá không có gong_kinh_id cụ thể).
-  // Trước đây bị bỏ sót: sửa/xóa đơn có bán theo nhóm giá không hoàn được kho.
-  const { data: nhomGiaMovements } = await db
-    .from('stock_movement')
-    .select('id, stock_ref_id, so_luong')
-    .eq('tenant_id', tenantId)
-    .eq('loai_hang', 'nhom_gia_gong')
-    .eq('loai_giao_dich', 'xuat_ban')
-    .eq('ref_type', 'don_kinh')
-    .eq('ref_id', donKinhId);
-
-  if (nhomGiaMovements && nhomGiaMovements.length > 0) {
-    for (const mv of nhomGiaMovements) {
-      await db.rpc('adjust_nhom_gia_stock', {
-        p_nhom_id: mv.stock_ref_id,
-        p_delta: -mv.so_luong, // so_luong đã lưu dạng âm khi xuất → đảo dấu để hoàn kho
-        p_ref_type: 'don_kinh_reversal',
-        p_ref_id: donKinhId,
-      });
-    }
-    console.log(`🔄 Hoàn kho ${nhomGiaMovements.length} nhóm giá gọng cho đơn #${donKinhId}`);
-  }
-
-  // 4. Delete pending lens orders for this donkinh
+  // 3. Delete pending lens orders for this donkinh
   await db.from('lens_order').delete().eq('tenant_id', tenantId).eq('don_kinh_id', donKinhId).in('trang_thai', ['cho_dat']);
 }
 
@@ -950,7 +893,6 @@ async function processLensInventory(
     hang_trong_mp_id?: number;
     hang_trong_mt_id?: number;
     gong_kinh_id?: number;
-    nhom_gia_gong_id?: number;
   }
 ): Promise<{ warnings: string[]; giaVonTrong?: number; giaVonGong?: number }> {
   const warnings: string[] = [];
@@ -985,28 +927,7 @@ async function processLensInventory(
   let giaVonGong: number | undefined;
 
   // === Frame export ===
-  if (fields.nhom_gia_gong_id) {
-    // Bán theo nhóm giá → trừ tồn nhóm, không cần gọng cụ thể
-    const { data: nhomGia } = await db
-      .from('nhom_gia_gong')
-      .select('id, ten_nhom, so_luong_ton, gia_nhap_trung_binh')
-      .eq('id', fields.nhom_gia_gong_id)
-      .eq('tenant_id', tenantId)
-      .single();
-
-    if (nhomGia) {
-      const tonTruoc = nhomGia.so_luong_ton || 0;
-      if (tonTruoc <= 0) {
-        warnings.push(`⚠️ Nhóm giá "${nhomGia.ten_nhom}" đã HẾT KHO (tồn: ${tonTruoc}). Vẫn xuất, tồn sẽ âm.`);
-      } else if (tonTruoc <= 2) {
-        warnings.push(`⚠️ Nhóm giá "${nhomGia.ten_nhom}" SẮP HẾT (tồn: ${tonTruoc})`);
-      }
-      giaVonGong = nhomGia.gia_nhap_trung_binh || 0;
-      await db.rpc('adjust_nhom_gia_stock', { p_nhom_id: nhomGia.id, p_delta: -1, p_ref_type: 'don_kinh', p_ref_id: donKinhId });
-    } else {
-      warnings.push(`⚠️ Không tìm thấy nhóm giá gọng id=${fields.nhom_gia_gong_id}`);
-    }
-  } else if (fields.ten_gong || fields.gong_kinh_id) {
+  if (fields.ten_gong || fields.gong_kinh_id) {
     // Ưu tiên dùng gong_kinh_id (FK) thay vì tìm bằng tên để tránh trùng/sai
     let gong: { id: number; ton_kho: number; gia_nhap?: number } | null = null;
     let gongErr: any = null;

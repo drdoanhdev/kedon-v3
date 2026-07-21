@@ -19,34 +19,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { search, filter, show_inactive } = req.query;
+    const searchText = typeof search === 'string' ? search.trim().toLowerCase() : '';
+    const showInactive = show_inactive === '1' || show_inactive === 'true';
 
-    let query = supabase
+    // Lấy theo tenant, lọc branch/thủ thuật/ngừng KD trên server JS
+    // (tránh chuỗi .or() PostgREST bị ghi đè / lỗi parse UUID)
+    const { data, error } = await supabase
       .from('Thuoc')
-      .select('id, mathuoc, tenthuoc, donvitinh, giaban, gianhap, tonkho, muc_ton_can_co, ngung_kinh_doanh')
+      .select('id, mathuoc, tenthuoc, donvitinh, hoatchat, cachdung, giaban, gianhap, tonkho, muc_ton_can_co, ngung_kinh_doanh, la_thu_thuat, soluongmacdinh, nhomthuoc, nha_cung_cap_id, branch_id')
       .eq('tenant_id', tenantId)
       .order('tenthuoc', { ascending: true });
 
-    if (branchId) {
-      query = query.eq('branch_id', branchId);
-    }
-
-    // Lọc chỉ thuốc, không lấy thủ thuật
-    query = query.or('la_thu_thuat.is.null,la_thu_thuat.eq.false');
-
-    // Mặc định ẩn thuốc ngừng kinh doanh
-    if (!show_inactive || show_inactive !== '1') {
-      query = query.or('ngung_kinh_doanh.is.null,ngung_kinh_doanh.eq.false');
-    }
-
-    if (search) {
-      query = query.or(`tenthuoc.ilike.%${search}%,mathuoc.ilike.%${search}%,hoatchat.ilike.%${search}%`);
-    }
-
-    const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
 
-    // Tính trạng thái tồn kho
-    const items = (data || []).map((item: any) => {
+    let rows = Array.isArray(data) ? data : [];
+
+    // Chi nhánh hiện tại + danh mục shared (branch_id null)
+    if (branchId) {
+      rows = rows.filter((item: any) => !item.branch_id || item.branch_id === branchId);
+    }
+
+    // Chỉ thuốc, không lấy thủ thuật (trừ khi tìm kiếm mở rộng sau này)
+    rows = rows.filter((item: any) => !item.la_thu_thuat);
+
+    if (!showInactive) {
+      rows = rows.filter((item: any) => !item.ngung_kinh_doanh);
+    }
+
+    if (searchText) {
+      rows = rows.filter((item: any) => {
+        const hay = `${item.tenthuoc || ''} ${item.mathuoc || ''} ${item.hoatchat || ''} ${item.cachdung || ''}`.toLowerCase();
+        return hay.includes(searchText);
+      });
+    }
+
+    const items = rows.map((item: any) => {
       const tonkho = item.tonkho ?? 0;
       const mucMin = item.muc_ton_can_co ?? 10;
       let trang_thai = 'DU';
@@ -55,7 +62,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return { ...item, trang_thai };
     });
 
-    // Lọc theo trạng thái nếu có
     const filtered = filter && filter !== 'all'
       ? items.filter((i: any) => i.trang_thai === filter)
       : items;

@@ -1,4 +1,4 @@
-// API: Kiểm kê kho (thuốc / gọng kính / nhóm giá gọng)
+// API: Kiểm kê kho (thuốc / gọng kính)
 // Thay cho việc sửa tay ton_dau_ky/tonkho — ghi 1 giao dịch 'kiem_ke' minh bạch,
 // có thể đối soát qua bảng stock_movement. Tròng kính dùng riêng ở
 // PUT /api/inventory/lens-stock (body: { stocktake: true, ... }).
@@ -25,14 +25,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const { loai_hang, stock_ref_id, ton_thuc_te, ghi_chu } = req.body as {
-      loai_hang: 'thuoc' | 'gong' | 'nhom_gia_gong';
+      loai_hang: 'thuoc' | 'gong';
       stock_ref_id: number;
       ton_thuc_te: number;
       ghi_chu?: string;
     };
 
-    if (!['thuoc', 'gong', 'nhom_gia_gong'].includes(loai_hang)) {
-      return res.status(400).json({ error: 'loai_hang phải là thuoc, gong hoặc nhom_gia_gong' });
+    if (!['thuoc', 'gong'].includes(loai_hang)) {
+      return res.status(400).json({ error: 'loai_hang phải là thuoc hoặc gong' });
     }
 
     const featureKey = loai_hang === 'thuoc' ? 'inventory_drug' : 'inventory_lens';
@@ -47,11 +47,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const tableByLoai: Record<string, { table: string; select: string }> = {
       thuoc: { table: 'Thuoc', select: 'id, branch_id' },
       gong: { table: 'GongKinh', select: 'id, branch_id' },
-      nhom_gia_gong: { table: 'nhom_gia_gong', select: 'id' },
     };
     const cfg = tableByLoai[loai_hang];
     let checkQuery = supabase.from(cfg.table).select(cfg.select).eq('id', stockRefId).eq('tenant_id', tenantId);
-    if (branchId && loai_hang !== 'nhom_gia_gong') checkQuery = checkQuery.eq('branch_id', branchId);
+    if (branchId) checkQuery = checkQuery.eq('branch_id', branchId);
     const { data: record } = await checkQuery.single();
     if (!record) return res.status(404).json({ error: 'Không tìm thấy bản ghi kho' });
 

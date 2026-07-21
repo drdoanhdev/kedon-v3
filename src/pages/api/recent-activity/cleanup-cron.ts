@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '../../../lib/tenantApi';
+import { timingSafeEqualString } from '../../../lib/timingSafeEqual';
 
 function parseBearerToken(req: NextApiRequest): string {
   const authHeader = (req.headers['authorization'] as string) || '';
@@ -31,12 +32,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const bearer = parseBearerToken(req);
   const headerSecret = (req.headers['x-cron-secret'] as string) || '';
-  const querySecret = (req.query.secret as string) || '';
 
   const authorized =
-    (cronSecret && bearer && bearer === cronSecret) ||
-    (cleanupSecret && headerSecret && headerSecret === cleanupSecret) ||
-    (cleanupSecret && querySecret && querySecret === cleanupSecret);
+    (cronSecret && bearer && timingSafeEqualString(bearer, cronSecret)) ||
+    (cleanupSecret && headerSecret && timingSafeEqualString(headerSecret, cleanupSecret));
 
   if (!authorized) {
     return res.status(401).json({ message: 'Unauthorized' });
