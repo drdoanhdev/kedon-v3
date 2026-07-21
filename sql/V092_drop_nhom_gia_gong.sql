@@ -1,5 +1,5 @@
 -- V092: Drop tính năng nhóm giá gọng (chưa dùng production)
--- Gỡ bảng/cột/RPC/constraint liên quan nhom_gia_gong.
+-- Gỡ bảng/cột/RPC/constraint liên quan nhom_gia_gong. gỡ bỏ những thứ không dùng đến
 
 BEGIN;
 
@@ -180,3 +180,4 @@ END;
 $$;
 
 COMMIT;
+
