@@ -3,8 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Menu, X, Home, Users, FileText, Glasses, Frame, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, MessageCircle, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, Send, CheckSquare, Loader2, CheckCheck } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Menu, X, Home, Users, FileText, Glasses, Frame, List, BarChart, LogOut, UserSearch, Building2, Settings, Warehouse, Pill, ChevronDown, Shield, CalendarDays, Bell, CreditCard, Printer, Lock, ArrowRightLeft, Search, BarChart3, GitBranch, CheckSquare, Loader2, CheckCheck, Sparkles, Headset, Send } from 'lucide-react';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import type { FeatureKey } from '../lib/featureConfig';
@@ -18,12 +17,28 @@ type QuickThongBao = {
   created_at: string;
 };
 
-type QuickTinNhan = {
+type QuickNhacViec = {
   id: number;
-  noi_dung: string;
-  da_doc: boolean;
+  tieu_de: string;
+  mo_ta: string | null;
+  do_uu_tien: string;
+  trang_thai: string;
+  han_chot: string | null;
   created_at: string;
-  sender_name?: string;
+};
+
+const OPEN_TASK_STATUSES = new Set(['chua_lam', 'dang_lam']);
+
+const UU_TIEN_LABEL: Record<string, { label: string; className: string }> = {
+  urgent: { label: 'Khẩn', className: 'bg-red-50 text-red-700' },
+  high: { label: 'Cao', className: 'bg-orange-50 text-orange-700' },
+  normal: { label: 'TB', className: 'bg-gray-100 text-gray-600' },
+  low: { label: 'Thấp', className: 'bg-slate-50 text-slate-500' },
+};
+
+const TRANG_THAI_LABEL: Record<string, string> = {
+  chua_lam: 'Chưa làm',
+  dang_lam: 'Đang làm',
 };
 
 function formatRelativeTime(dateStr: string): string {
@@ -40,6 +55,21 @@ function formatRelativeTime(dateStr: string): string {
   return d.toLocaleDateString('vi-VN');
 }
 
+function formatHanChot(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(d);
+  due.setHours(0, 0, 0, 0);
+  const diffDay = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (diffDay < 0) return `Quá hạn ${Math.abs(diffDay)} ngày`;
+  if (diffDay === 0) return 'Hạn hôm nay';
+  if (diffDay === 1) return 'Hạn ngày mai';
+  return `Hạn ${d.toLocaleDateString('vi-VN')}`;
+}
+
 export default function Header() {
   const { user, signOut, tenants, currentTenant, currentTenantId, switchTenant, currentRole, userRole } = useAuth();
   const { branches, currentBranchId, currentBranch, switchBranch, isMultiBranch } = useBranch();
@@ -47,18 +77,18 @@ export default function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAvatarOpen, setIsAvatarOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isMsgOpen, setIsMsgOpen] = useState(false);
+  const [isTaskOpen, setIsTaskOpen] = useState(false);
   const [quickNotifs, setQuickNotifs] = useState<QuickThongBao[]>([]);
-  const [quickMsgs, setQuickMsgs] = useState<QuickTinNhan[]>([]);
+  const [quickTasks, setQuickTasks] = useState<QuickNhacViec[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
-  const [msgLoading, setMsgLoading] = useState(false);
-  const [quickReplyMsg, setQuickReplyMsg] = useState('');
-  const [msgSending, setMsgSending] = useState(false);
+  const [taskLoading, setTaskLoading] = useState(false);
   const avatarRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
-  const msgRef = useRef<HTMLDivElement>(null);
+  const taskRef = useRef<HTMLDivElement>(null);
   const { counts } = useNotificationPolling();
   const { canAccessFeature } = useFeatureGate();
+  const isOwner = currentRole === 'owner';
+  const bellBadge = counts.thongBao + counts.tinNhanPlatform;
 
   // Main navigation items (always visible in nav bar)
   const mainMenuItems: { href: string; label: string; icon: any; feature?: FeatureKey }[] = [
@@ -79,7 +109,6 @@ export default function Header() {
     { href: '/bao-cao-super', label: 'Báo cáo Pro', icon: BarChart, feature: 'advanced_reports' },
     { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
     { href: '/quan-ly-ghi-chu-khach-hang', label: 'Việc cần làm KH', icon: CalendarDays, feature: 'crm' },
-    { href: '/nhac-viec', label: 'Nhac viec noi bo', icon: CheckSquare },
     { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
     { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
     { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },
@@ -110,21 +139,6 @@ export default function Header() {
     }
   };
 
-  const fetchQuickMessages = async () => {
-    setMsgLoading(true);
-    try {
-      const res = await fetchWithAuth('/api/tin-nhan?limit=8');
-      if (!res.ok) throw new Error('Không tải được tin nhắn');
-      const json = await res.json();
-      const data = Array.isArray(json.data) ? json.data : [];
-      setQuickMsgs(data.slice(-8).reverse());
-    } catch {
-      setQuickMsgs([]);
-    } finally {
-      setMsgLoading(false);
-    }
-  };
-
   const markAllNotificationsRead = async () => {
     await fetchWithAuth('/api/thong-bao', {
       method: 'PATCH',
@@ -133,31 +147,21 @@ export default function Header() {
     setQuickNotifs(prev => prev.map(n => ({ ...n, da_doc: true })));
   };
 
-  const markAllMessagesRead = async () => {
-    await fetchWithAuth('/api/tin-nhan', {
-      method: 'PATCH',
-      body: JSON.stringify({ mark_all_read: true }),
-    });
-    setQuickMsgs(prev => prev.map(m => ({ ...m, da_doc: true })));
-  };
-
-  const sendQuickMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickReplyMsg.trim()) return;
-    setMsgSending(true);
+  const fetchQuickTasks = async () => {
+    setTaskLoading(true);
     try {
-      const res = await fetchWithAuth('/api/tin-nhan', {
-        method: 'POST',
-        body: JSON.stringify({ noi_dung: quickReplyMsg.trim() }),
-      });
-      if (!res.ok) throw new Error();
-      setQuickReplyMsg('');
-      toast.success('Đã gửi');
-      await fetchQuickMessages();
+      const res = await fetchWithAuth('/api/nhac-viec?assigned_to_me=true');
+      if (!res.ok) throw new Error('Không tải được nhắc việc');
+      const json = await res.json();
+      const list: QuickNhacViec[] = Array.isArray(json.data) ? json.data : [];
+      const open = list
+        .filter(t => OPEN_TASK_STATUSES.has(String(t.trang_thai)))
+        .slice(0, 8);
+      setQuickTasks(open);
     } catch {
-      toast.error('Lỗi gửi tin nhắn');
+      setQuickTasks([]);
     } finally {
-      setMsgSending(false);
+      setTaskLoading(false);
     }
   };
 
@@ -170,8 +174,8 @@ export default function Header() {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setIsNotifOpen(false);
       }
-      if (msgRef.current && !msgRef.current.contains(e.target as Node)) {
-        setIsMsgOpen(false);
+      if (taskRef.current && !taskRef.current.contains(e.target as Node)) {
+        setIsTaskOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -181,7 +185,7 @@ export default function Header() {
   useEffect(() => {
     setIsAvatarOpen(false);
     setIsNotifOpen(false);
-    setIsMsgOpen(false);
+    setIsTaskOpen(false);
   }, [router.pathname]);
 
   const userInitial = (user?.email?.[0] || 'U').toUpperCase();
@@ -230,7 +234,7 @@ export default function Header() {
             </button>
           </div>
 
-          {/* Notification & Message icons */}
+          {/* Notification & Nhắc việc icons */}
           <div className="flex items-center gap-1">
             <div className="relative" ref={notifRef}>
               <button
@@ -240,14 +244,14 @@ export default function Header() {
                 onClick={async () => {
                   const next = !isNotifOpen;
                   setIsNotifOpen(next);
-                  setIsMsgOpen(false);
+                  setIsTaskOpen(false);
                   if (next) await fetchQuickNotifications();
                 }}
               >
                 <Bell className="w-4.5 h-4.5" />
-                {counts.thongBao > 0 && (
+                {bellBadge > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                    {counts.thongBao > 9 ? '9+' : counts.thongBao}
+                    {bellBadge > 9 ? '9+' : bellBadge}
                   </span>
                 )}
               </button>
@@ -256,7 +260,7 @@ export default function Header() {
                 <div className="absolute right-0 top-full mt-2 w-[360px] bg-white rounded-xl border border-gray-100 shadow-xl z-50 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                     <p className="font-semibold text-sm text-gray-800">Thông báo mới</p>
-                    <button onClick={markAllNotificationsRead} className="text-xs text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
+                    <button type="button" onClick={markAllNotificationsRead} className="text-xs text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
                       <CheckCheck className="w-3.5 h-3.5" />
                       Đọc tất cả
                     </button>
@@ -279,77 +283,98 @@ export default function Header() {
                       </Link>
                     ))}
                   </div>
-                  <Link href="/thong-bao" onClick={() => setIsNotifOpen(false)} className="block text-center text-sm font-medium text-blue-700 hover:bg-blue-50 py-2.5">Xem tất cả</Link>
+                  {isOwner && counts.tinNhanPlatform > 0 && (
+                    <Link
+                      href="/thong-bao?tab=support"
+                      onClick={() => setIsNotifOpen(false)}
+                      className="flex items-center justify-center gap-1.5 border-t border-gray-100 text-sm font-medium text-purple-700 hover:bg-purple-50 py-2.5"
+                    >
+                      <Headset className="w-3.5 h-3.5" />
+                      Hỗ trợ nền tảng ({counts.tinNhanPlatform > 9 ? '9+' : counts.tinNhanPlatform})
+                    </Link>
+                  )}
+                  <Link href="/thong-bao" onClick={() => setIsNotifOpen(false)} className="block text-center text-sm font-medium text-blue-700 hover:bg-blue-50 py-2.5 border-t border-gray-50">Xem tất cả</Link>
                 </div>
               )}
             </div>
 
-            <div className="relative" ref={msgRef}>
+            <div className="relative" ref={taskRef}>
               <button
                 type="button"
-                className={`relative p-2 rounded-lg transition-colors ${isMsgOpen || isActivePage('/tin-nhan') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
-                title="Tin nhắn"
+                className={`relative p-2 rounded-lg transition-colors ${isTaskOpen || isActivePage('/nhac-viec') ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100 hover:text-blue-600'}`}
+                title="Nhắc việc nội bộ"
                 onClick={async () => {
-                  const next = !isMsgOpen;
-                  setIsMsgOpen(next);
+                  const next = !isTaskOpen;
+                  setIsTaskOpen(next);
                   setIsNotifOpen(false);
-                  if (next) await fetchQuickMessages();
+                  if (next) await fetchQuickTasks();
                 }}
               >
-                <MessageCircle className="w-4.5 h-4.5" />
-                {(counts.tinNhan + counts.tinNhanPlatform) > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">
-                    {(counts.tinNhan + counts.tinNhanPlatform) > 9 ? '9+' : (counts.tinNhan + counts.tinNhanPlatform)}
+                <CheckSquare className="w-4.5 h-4.5" />
+                {counts.nhacViec > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center px-1 bg-amber-500 text-white text-[10px] font-bold rounded-full">
+                    {counts.nhacViec > 9 ? '9+' : counts.nhacViec}
                   </span>
                 )}
               </button>
 
-              {isMsgOpen && (
+              {isTaskOpen && (
                 <div className="absolute right-0 top-full mt-2 w-[360px] bg-white rounded-xl border border-gray-100 shadow-xl z-50 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                    <p className="font-semibold text-sm text-gray-800">Tin nhắn gần đây</p>
-                    <button onClick={markAllMessagesRead} className="text-xs text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
-                      <CheckCheck className="w-3.5 h-3.5" />
-                      Đọc tất cả
-                    </button>
+                    <p className="font-semibold text-sm text-gray-800">Việc cần làm</p>
+                    {counts.nhacViec > 0 && (
+                      <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-medium">
+                        {counts.nhacViec} việc
+                      </span>
+                    )}
                   </div>
                   <div className="max-h-[360px] overflow-y-auto">
-                    {msgLoading && (
+                    {taskLoading && (
                       <div className="py-8 flex justify-center text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /></div>
                     )}
-                    {!msgLoading && quickMsgs.length === 0 && (
-                      <div className="px-4 py-8 text-center text-sm text-gray-400">Chưa có tin nhắn</div>
+                    {!taskLoading && quickTasks.length === 0 && (
+                      <div className="px-4 py-8 text-center text-sm text-gray-400">Không có việc đang mở</div>
                     )}
-                    {!msgLoading && quickMsgs.map(item => (
-                      <Link key={item.id} href="/tin-nhan" onClick={() => setIsMsgOpen(false)} className={`block px-4 py-3 border-b border-gray-50 hover:bg-gray-50 ${item.da_doc ? '' : 'bg-blue-50/40'}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`text-sm ${item.da_doc ? 'text-gray-700' : 'text-gray-900 font-semibold'}`}>{item.sender_name || 'Nội bộ phòng khám'}</p>
-                          {!item.da_doc && <span className="mt-1 w-2 h-2 rounded-full bg-blue-500" />}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.noi_dung}</p>
-                        <p className="text-[11px] text-gray-400 mt-1">{formatRelativeTime(item.created_at)} trước</p>
-                      </Link>
-                    ))}
+                    {!taskLoading && quickTasks.map(item => {
+                      const uuTien = UU_TIEN_LABEL[item.do_uu_tien] || UU_TIEN_LABEL.normal;
+                      const hanLabel = formatHanChot(item.han_chot);
+                      const isOverdue = Boolean(hanLabel?.startsWith('Quá hạn') || hanLabel === 'Hạn hôm nay');
+                      return (
+                        <Link
+                          key={item.id}
+                          href="/nhac-viec"
+                          onClick={() => setIsTaskOpen(false)}
+                          className="block px-4 py-3 border-b border-gray-50 hover:bg-gray-50"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm text-gray-900 font-semibold line-clamp-1">{item.tieu_de}</p>
+                            <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${uuTien.className}`}>
+                              {uuTien.label}
+                            </span>
+                          </div>
+                          {item.mo_ta && (
+                            <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.mo_ta}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-400">
+                            <span>{TRANG_THAI_LABEL[item.trang_thai] || item.trang_thai}</span>
+                            {hanLabel && (
+                              <>
+                                <span>·</span>
+                                <span className={isOverdue ? 'text-red-600 font-medium' : ''}>{hanLabel}</span>
+                              </>
+                            )}
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
-                  <form onSubmit={sendQuickMessage} className="px-4 py-3 border-t border-gray-100 flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Trả lời..."
-                      value={quickReplyMsg}
-                      onChange={e => setQuickReplyMsg(e.target.value)}
-                      maxLength={500}
-                      className="flex-1 text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      disabled={msgSending}
-                    />
-                    <button
-                      type="submit"
-                      disabled={msgSending || !quickReplyMsg.trim()}
-                      className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors flex items-center gap-1"
-                    >
-                      {msgSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    </button>
-                  </form>
-                  <Link href="/tin-nhan" onClick={() => setIsMsgOpen(false)} className="block text-center text-sm text-gray-500 hover:text-blue-700 hover:bg-blue-50 py-2 text-[13px]">Mở màn hình đầy đủ</Link>
+                  <Link
+                    href="/nhac-viec"
+                    onClick={() => setIsTaskOpen(false)}
+                    className="block text-center text-sm font-medium text-blue-700 hover:bg-blue-50 py-2.5 border-t border-gray-50"
+                  >
+                    Mở xem đầy đủ
+                  </Link>
                 </div>
               )}
             </div>
@@ -369,10 +394,10 @@ export default function Header() {
             </button>
 
             {isAvatarOpen && (
-              <div className="absolute right-0 top-full mt-1 w-64 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-100 z-50 py-1 overflow-hidden">
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-100 z-50 flex flex-col max-h-[calc(100vh-4.5rem)] overflow-hidden">
                 {/* Tenant selector (multi-tenant only) */}
                 {tenants.length > 1 && (
-                  <div className="px-4 py-3 border-b border-gray-100 bg-blue-50/40">
+                  <div className="flex-shrink-0 px-4 py-3 border-b border-gray-100 bg-blue-50/40">
                     <div className="flex items-center space-x-2 mb-1">
                       <Building2 className="w-4 h-4 text-blue-600" />
                       <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Chuyển phòng khám</span>
@@ -391,7 +416,7 @@ export default function Header() {
 
                 {/* Branch selector (enterprise multi-branch) */}
                 {isMultiBranch && branches.length > 0 && (
-                  <div className="px-4 py-3 border-b border-gray-100 bg-amber-50/40">
+                  <div className="flex-shrink-0 px-4 py-3 border-b border-gray-100 bg-amber-50/40">
                     <div className="flex items-center space-x-2 mb-1">
                       <GitBranch className="w-4 h-4 text-amber-600" />
                       <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Chi nhánh</span>
@@ -412,112 +437,125 @@ export default function Header() {
                 )}
 
                 {/* User email */}
-                <div className="px-4 py-2 border-b border-gray-100">
+                <div className="flex-shrink-0 px-4 py-2 border-b border-gray-100">
                   <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Đăng nhập</p>
                   <p className="text-sm font-medium text-gray-700 truncate">{user?.email || 'Guest'}</p>
                 </div>
 
-                {/* Menu items in dropdown */}
-                {avatarMenuItems.map(({ href, label, icon: Icon, feature }) => {
-                  const locked = feature ? !canAccessFeature(feature) : false;
-                  return (
+                {/* Scrollable menu items */}
+                <div className="overflow-y-auto overscroll-contain py-1 min-h-0 flex-1">
+                  {avatarMenuItems.map(({ href, label, icon: Icon, feature }) => {
+                    const locked = feature ? !canAccessFeature(feature) : false;
+                    return (
+                      <Link
+                        key={href}
+                        href={locked ? '/billing' : href}
+                        onClick={() => setIsAvatarOpen(false)}
+                        className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                          locked
+                            ? 'text-gray-300 cursor-default'
+                            : isActivePage(href) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                        }`}
+                        title={locked ? `Nâng cấp gói để sử dụng ${label}` : undefined}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="flex-1">{label}</span>
+                        {locked && <Lock className="w-3 h-3 text-gray-300" />}
+                      </Link>
+                    );
+                  })}
+
+                  <Link
+                    href="/tinh-nang"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/tinh-nang') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Tính năng phần mềm</span>
+                  </Link>
+
+                  {/* Gói dịch vụ */}
+                  <Link
+                    href="/billing"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/billing') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Gói dịch vụ</span>
+                  </Link>
+
+                  {/* Cấu hình in */}
+                  <Link
+                    href="/cau-hinh-in"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/cau-hinh-in') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Cấu hình in</span>
+                  </Link>
+
+                  <Link
+                    href="/tem-kinh"
+                    onClick={() => setIsAvatarOpen(false)}
+                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                      isActivePage('/tem-kinh') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>In tem kính</span>
+                  </Link>
+
+                  {/* Nhắn tin tự động (Zalo OA) */}
+                  {(currentRole === 'owner' || currentRole === 'admin') && (
                     <Link
-                      key={href}
-                      href={locked ? '/billing' : href}
+                      href="/cai-dat-nhan-tin"
                       onClick={() => setIsAvatarOpen(false)}
                       className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                        locked
-                          ? 'text-gray-300 cursor-default'
-                          : isActivePage(href) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                        isActivePage('/cai-dat-nhan-tin') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
                       }`}
-                      title={locked ? `Nâng cấp gói để sử dụng ${label}` : undefined}
                     >
-                      <Icon className="w-4 h-4" />
-                      <span className="flex-1">{label}</span>
-                      {locked && <Lock className="w-3 h-3 text-gray-300" />}
+                      <Send className="w-4 h-4" />
+                      <span>Nhắn tin tự động</span>
                     </Link>
-                  );
-                })}
+                  )}
 
-                {/* Gói dịch vụ */}
-                <Link
-                  href="/billing"
-                  onClick={() => setIsAvatarOpen(false)}
-                  className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                    isActivePage('/billing') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4" />
-                  <span>Gói dịch vụ</span>
-                </Link>
+                  {/* Settings - only for owner/admin */}
+                  {(currentRole === 'owner' || currentRole === 'admin') && (
+                    <Link
+                      href="/quan-ly-phong-kham"
+                      onClick={() => setIsAvatarOpen(false)}
+                      className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                        isActivePage('/quan-ly-phong-kham') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
+                      }`}
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>Cài đặt phòng khám</span>
+                    </Link>
+                  )}
 
-                {/* Cấu hình in */}
-                <Link
-                  href="/cau-hinh-in"
-                  onClick={() => setIsAvatarOpen(false)}
-                  className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                    isActivePage('/cau-hinh-in') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Cấu hình in</span>
-                </Link>
+                  {/* Platform Admin - only for superadmin */}
+                  {userRole === 'superadmin' && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setIsAvatarOpen(false)}
+                      className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
+                        isActivePage('/admin') ? 'bg-red-50 text-red-700 font-medium' : 'hover:bg-red-50 text-red-600'
+                      }`}
+                    >
+                      <Shield className="w-4 h-4" />
+                      <span>Quản trị nền tảng</span>
+                    </Link>
+                  )}
+                </div>
 
-                <Link
-                  href="/tem-kinh"
-                  onClick={() => setIsAvatarOpen(false)}
-                  className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                    isActivePage('/tem-kinh') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
-                  }`}
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>In tem kính</span>
-                </Link>
-
-                {/* Nhắn tin tự động (Zalo OA) */}
-                {(currentRole === 'owner' || currentRole === 'admin') && (
-                  <Link
-                    href="/cai-dat-nhan-tin"
-                    onClick={() => setIsAvatarOpen(false)}
-                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                      isActivePage('/cai-dat-nhan-tin') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
-                    }`}
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>Nhắn tin tự động</span>
-                  </Link>
-                )}
-
-                {/* Settings - only for owner/admin */}
-                {(currentRole === 'owner' || currentRole === 'admin') && (
-                  <Link
-                    href="/quan-ly-phong-kham"
-                    onClick={() => setIsAvatarOpen(false)}
-                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                      isActivePage('/quan-ly-phong-kham') ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'
-                    }`}
-                  >
-                    <Settings className="w-4 h-4" />
-                    <span>Cài đặt phòng khám</span>
-                  </Link>
-                )}
-
-                {/* Platform Admin - only for superadmin */}
-                {userRole === 'superadmin' && (
-                  <Link
-                    href="/admin"
-                    onClick={() => setIsAvatarOpen(false)}
-                    className={`flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
-                      isActivePage('/admin') ? 'bg-red-50 text-red-700 font-medium' : 'hover:bg-red-50 text-red-600'
-                    }`}
-                  >
-                    <Shield className="w-4 h-4" />
-                    <span>Quản trị nền tảng</span>
-                  </Link>
-                )}
-
-                {/* Logout */}
-                <div className="border-t border-gray-100 mt-1">
+                {/* Logout — luôn hiện ở đáy dropdown */}
+                <div className="flex-shrink-0 border-t border-gray-100">
                   <button
                     onClick={async () => {
                       setIsAvatarOpen(false);
@@ -593,6 +631,17 @@ export default function Header() {
                   </select>
                 </div>
               )}
+
+              <div className="px-3 py-1">
+                <Link
+                  href="/tinh-nang"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors text-sm text-gray-600"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Tính năng phần mềm</span>
+                </Link>
+              </div>
 
               <div className="px-3 py-1">
                 <Link

@@ -7,6 +7,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Phone, MessageSquare, Check, X, Trash2, CalendarDays, Clock, RefreshCw, Copy, Pencil, Plus, Settings, AlertTriangle } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -541,28 +542,24 @@ export default function LichHen() {
       <FeatureGate feature="appointments">
       <div className="min-h-screen bg-[#d8d9dd]">
         <div className="mx-auto min-h-screen w-full bg-[#d8d9dd] pb-28 lg:hidden">
-          <div className="bg-[#1f74cc] px-4 pb-5 pt-5 lg:px-6 lg:pb-6 lg:pt-6">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h1 className="text-[23px] font-semibold leading-none text-white lg:text-2xl">Lịch hẹn</h1>
-              <div className="flex items-center gap-2">
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#ffd954]" />
-                  Chờ {stats.cho}
-                </div>
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#60f0b2]" />
-                  Đến {stats.da_den}
-                </div>
+          <div className="border-b border-[#cfd2d8] bg-white px-3 py-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-800">
+                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                Chờ {stats.cho}
+              </div>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[12px] font-semibold text-emerald-800">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Đến {stats.da_den}
               </div>
             </div>
-
-            <div className="grid grid-cols-4 gap-1 rounded-2xl bg-[#1d67b4] p-1.5">
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
               {([['hom_nay', 'Hôm nay'], ['7_ngay_toi', '7 ngày'], ['1_thang_toi', '1 tháng'], ['khoang_ngay', 'Khoảng']] as const).map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setTab(key)}
-                  className={`rounded-xl py-2 text-[13px] font-semibold leading-none transition-colors ${tab === key ? 'bg-white text-[#1f74cc]' : 'text-white/70'}`}
+                  className={`rounded-lg py-2 text-[13px] font-semibold leading-none transition-colors ${tab === key ? 'bg-[#1565C0] text-white' : 'text-slate-600'}`}
                 >
                   {label}
                 </button>
@@ -825,56 +822,45 @@ export default function LichHen() {
 
         <div className="hidden lg:block">
         <div className="max-w-6xl mx-auto p-3 md:p-4 pb-24 md:pb-6 space-y-3 md:space-y-4">
-          {/* Page summary + actions */}
-          <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white via-blue-50 to-cyan-50 shadow-sm">
-            <div className="pointer-events-none absolute -top-16 -right-10 h-36 w-36 rounded-full bg-blue-200/40 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-14 left-10 h-32 w-32 rounded-full bg-cyan-200/35 blur-3xl" />
-            <CardContent className="relative p-3 md:p-4 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5 text-blue-700" />
-                    <h1 className="text-lg md:text-xl font-bold text-slate-800 leading-tight">Lịch hẹn khám</h1>
-                  </div>
-                  <p className="mt-1 text-xs md:text-sm text-slate-600">
-                    {currentRangeLabel} • {filteredData.length}/{data.length} lịch hẹn
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                      Chờ {stats.cho}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-green-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-green-700">
-                      Đã đến {stats.da_den}
-                    </span>
-                    {(stats.qua_han > 0 || pendingOverdueCount > 0) && (
-                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-                        Cần xử lý {stats.qua_han + pendingOverdueCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
+          <PageHeader
+            title="Lịch hẹn"
+            subtitle={`${currentRangeLabel} • ${filteredData.length}/${data.length} lịch hẹn`}
+            meta={
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+                  Chờ {stats.cho}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">
+                  Đã đến {stats.da_den}
+                </span>
+                {(stats.qua_han > 0 || pendingOverdueCount > 0) && (
+                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                    Cần xử lý {stats.qua_han + pendingOverdueCount}
+                  </span>
+                )}
+              </div>
+            }
+            actions={
+              <>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={fetchData}
                   disabled={loading}
-                  className="h-9 px-2.5 md:px-3 shrink-0 border-blue-200 bg-white/90 hover:bg-white"
+                  className="h-9"
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline ml-1">Tải lại</span>
+                  <span className="ml-1">Tải lại</span>
                 </Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2">
-                <Button className="h-10 md:h-9 bg-slate-900 hover:bg-slate-800" onClick={() => setOpenAdd(true)}>
+                <Button className="h-9 bg-slate-900 hover:bg-slate-800" onClick={() => setOpenAdd(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Thêm hẹn
                 </Button>
-                <Button variant="outline" className="h-10 md:h-9 border-slate-300 bg-white/90 hover:bg-white" onClick={() => setOpenTemplateManager(true)}>
+                <Button variant="outline" className="h-9" onClick={() => setOpenTemplateManager(true)}>
                   <Settings className="w-4 h-4 mr-1" /> Mẫu tin
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </>
+            }
+          />
 
           {/* Status quick filters */}
           <div className="overflow-x-auto pb-1">

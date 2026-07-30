@@ -58,6 +58,7 @@ interface PatientNote {
   id: number;
   content: string;
   note_type: 'important' | 'normal';
+  created_at?: string;
 }
 
 interface HangTrong {
@@ -845,7 +846,7 @@ export default function KeDonKinh() {
         toast.success('Đã thêm ghi chú');
       }
       // Refresh notes in header
-      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0`);
       setPatientNotes(res.data?.data || []);
       await fetchAllNotes();
       setEditingNoteId(null);
@@ -863,7 +864,7 @@ export default function KeDonKinh() {
     try {
       await axios.delete(`/api/benh-nhan/notes?id=${id}`);
       toast.success('Đã xóa ghi chú');
-      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0`);
       setPatientNotes(res.data?.data || []);
       await fetchAllNotes();
       if (editingNoteId === id) {
@@ -1161,7 +1162,7 @@ export default function KeDonKinh() {
 
         const [res, alertsRes] = await Promise.all([
           axios.get(`/api/benh-nhan?benhnhanid=${benhnhanid}&_t=${timestamp}`, { headers: cacheHeaders }),
-          axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1&_t=${timestamp}`, { headers: cacheHeaders }).catch(() => ({ data: { data: [] } })),
+          axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0&_t=${timestamp}`, { headers: cacheHeaders }).catch(() => ({ data: { data: [] } })),
         ]);
         let benhNhanData: BenhNhan | undefined;
         if (res.data && res.data.data) {

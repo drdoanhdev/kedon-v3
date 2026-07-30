@@ -4,6 +4,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { HeartHandshake, Phone, RefreshCw } from 'lucide-react';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
@@ -383,20 +384,20 @@ export default function ChamSocKhachHangPage() {
       <FeatureGate feature="crm">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 px-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-gray-800">Chăm sóc khách hàng</h1>
-              <p className="text-xs text-gray-500">Ưu tiên gọi theo thứ tự Cấp A → Cấp B → Cấp C ({titleSummary})</p>
-            </div>
-            <button
-              type="button"
-              onClick={fetchData}
-              className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-              title="Làm mới"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+          <PageHeader
+            title="Chăm sóc KH"
+            subtitle={`Ưu tiên gọi theo thứ tự Cấp A → B → C (${titleSummary})`}
+            actions={
+              <button
+                type="button"
+                onClick={fetchData}
+                className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                title="Làm mới"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            }
+          />
 
           {isOwnerOrAdmin && (
             <div className="bg-white rounded-xl shadow-sm p-3 space-y-3">

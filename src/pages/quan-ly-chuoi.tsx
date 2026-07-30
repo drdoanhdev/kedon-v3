@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import toast from 'react-hot-toast';
 import {
@@ -367,15 +368,10 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
     <div className={embedded ? 'space-y-6' : 'max-w-6xl mx-auto px-4 py-6'}>
       {/* Header */}
       {!embedded && (
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Building2 className="w-7 h-7 text-blue-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Quản lý chuỗi cửa hàng</h1>
-              <p className="text-sm text-gray-500">{currentTenant?.name}</p>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          title="Quản lý chuỗi"
+          subtitle={currentTenant?.name}
+        />
       )}
 
           {/* Branch Tab */}

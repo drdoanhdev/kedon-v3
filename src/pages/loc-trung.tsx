@@ -18,6 +18,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import Link from "next/link";
 
 interface BenhNhan {
@@ -462,22 +463,15 @@ export default function LocTrungPage() {
     <ProtectedRoute>
       <div className="p-4 max-w-7xl mx-auto">
         
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <AlertTriangle className="w-6 h-6 text-orange-500" />
-                Lọc Bệnh Nhân Trùng
-              </h1>
-              <p className="text-gray-600 text-sm mt-1">
-                Tìm và gộp các bệnh nhân bị trùng lặp trong hệ thống
-              </p>
-            </div>
+        <PageHeader
+          title="Lọc trùng"
+          subtitle="Tìm và gộp các bệnh nhân bị trùng lặp trong hệ thống"
+          actions={
             <Link href="/benh-nhan">
-              <Button variant="outline">← Quay lại Quản lý BN</Button>
+              <Button variant="outline">← Bệnh nhân</Button>
             </Link>
-          </div>
+          }
+        />
 
           {/* Thống kê */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -600,7 +594,6 @@ export default function LocTrungPage() {
               </Button>
             )}
           </div>
-        </div>
 
         {/* Danh sách nhóm trùng */}
         <div className="space-y-3">

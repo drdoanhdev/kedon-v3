@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { FaceRecognitionSection } from '../components/FaceRecognitionSection';
 import { FacePendingFacesPanel } from '../components/FacePendingFacesPanel';
 import { FaceEnrollCamera } from '../components/FaceEnrollCamera';
@@ -11,7 +11,6 @@ import { PatientSearchInput, type PatientSearchHit } from '../components/Patient
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft,
   Camera,
   Settings,
   Users,
@@ -94,44 +93,31 @@ export default function QuanLyNhanDienPage() {
     <ProtectedRoute>
       <FeatureGate feature="face_recognition" permission="manage_clinic">
         <div className="min-h-screen bg-gray-50">
-          <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-            <div className="max-w-6xl mx-auto px-4 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <Link
-                    href="/quan-ly-phong-kham"
-                    className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-2"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Quản lý phòng khám
-                  </Link>
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <Camera className="w-7 h-7 text-blue-600" />
-                    Nhận diện khuôn mặt
-                  </h1>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Khách quen tự vào chờ khám · Lễ tân xử lý khách lạ
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
+          <div className="max-w-6xl mx-auto px-4 py-4 md:py-6">
+            <PageHeader
+              title="Nhận diện khuôn mặt"
+              subtitle="Khách quen tự vào chờ khám · Lễ tân xử lý khách lạ"
+              actions={
+                <>
                   {agentOnline === true ? (
                     <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full">
-                      <Wifi className="w-3.5 h-3.5" /> Agent camera online
+                      <Wifi className="w-3.5 h-3.5" /> Agent online
                     </span>
                   ) : agentOnline === false ? (
                     <span className="inline-flex items-center gap-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                      <WifiOff className="w-3.5 h-3.5" /> Chưa thấy agent — chạy chay-agent.bat
+                      <WifiOff className="w-3.5 h-3.5" /> Chưa thấy agent
                     </span>
                   ) : null}
                   {pendingCount > 0 && (
                     <span className="text-xs bg-orange-100 text-orange-800 px-2.5 py-1 rounded-full font-medium">
-                      {pendingCount} khuôn mặt chờ
+                      {pendingCount} chờ
                     </span>
                   )}
-                </div>
-              </div>
+                </>
+              }
+            />
 
-              <div className="flex gap-1 mt-4 border-b border-gray-100 -mb-px overflow-x-auto">
+            <div className="flex gap-1 mb-4 border-b border-gray-200 overflow-x-auto">
                 <TabButton active={tab === 'pending'} onClick={() => setTab('pending')}>
                   <span className="inline-flex items-center gap-1.5">
                     <Users className="w-4 h-4" />
@@ -155,11 +141,8 @@ export default function QuanLyNhanDienPage() {
                     Cài đặt agent
                   </span>
                 </TabButton>
-              </div>
             </div>
-          </div>
 
-          <div className="max-w-6xl mx-auto px-4 py-6">
             {tab === 'pending' && <FacePendingFacesPanel />}
 
             {tab === 'camera' && (

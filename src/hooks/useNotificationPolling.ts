@@ -4,8 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface UnreadCounts {
   thongBao: number;
-  tinNhan: number;
   tinNhanPlatform: number;
+  nhacViec: number;
+  /** Bell badge = thongBao + tinNhanPlatform */
   total: number;
 }
 
@@ -16,13 +17,15 @@ interface PollSnapshot {
 
 const EMPTY_COUNTS: UnreadCounts = {
   thongBao: 0,
-  tinNhan: 0,
   tinNhanPlatform: 0,
+  nhacViec: 0,
   total: 0,
 };
 
-const POLL_INTERVAL_FOCUS = 60_000; // 60s khi tab đang focus
-const POLL_INTERVAL_BLUR = 300_000; // 5 phút khi tab không focus
+const OPEN_TASK_STATUSES = new Set(['chua_lam', 'dang_lam']);
+
+const POLL_INTERVAL_FOCUS = 60_000;
+const POLL_INTERVAL_BLUR = 300_000;
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const MIN_FETCH_GAP_MS = 8_000;
 
@@ -51,8 +54,8 @@ function emitSnapshot() {
 function countsEqual(a: UnreadCounts, b: UnreadCounts) {
   return (
     a.thongBao === b.thongBao
-    && a.tinNhan === b.tinNhan
     && a.tinNhanPlatform === b.tinNhanPlatform
+    && a.nhacViec === b.nhacViec
     && a.total === b.total
   );
 }
@@ -102,34 +105,35 @@ async function fetchCounts(force = false) {
   inFlightRequest = (async () => {
     try {
       updateLoading(true);
-      const [tbRes, tnRes, tpRes] = await Promise.all([
+      const [tbRes, tpRes, nvRes] = await Promise.all([
         fetchWithAuth('/api/thong-bao?unread_only=true&limit=1'),
-        fetchWithAuth('/api/tin-nhan?limit=1'),
         fetchWithAuth('/api/tin-nhan-platform?limit=1'),
+        fetchWithAuth('/api/nhac-viec?assigned_to_me=true'),
       ]);
 
       let thongBao = 0;
-      let tinNhan = 0;
       let tinNhanPlatform = 0;
+      let nhacViec = 0;
 
       if (tbRes.ok) {
         const tbData = await tbRes.json();
         thongBao = tbData.unreadCount || 0;
       }
-      if (tnRes.ok) {
-        const tnData = await tnRes.json();
-        tinNhan = tnData.unreadCount || 0;
-      }
       if (tpRes.ok) {
         const tpData = await tpRes.json();
         tinNhanPlatform = tpData.unreadCount || 0;
       }
+      if (nvRes.ok) {
+        const nvData = await nvRes.json();
+        const list = Array.isArray(nvData.data) ? nvData.data : [];
+        nhacViec = list.filter((t: { trang_thai?: string }) => OPEN_TASK_STATUSES.has(String(t.trang_thai))).length;
+      }
 
       updateCounts({
         thongBao,
-        tinNhan,
         tinNhanPlatform,
-        total: thongBao + tinNhan + tinNhanPlatform,
+        nhacViec,
+        total: thongBao + tinNhanPlatform,
       });
     } catch {
       // Silent fail — sẽ retry lần sau
@@ -263,12 +267,10 @@ function stopPolling() {
 }
 
 /**
- * Hook polling thông minh cho thông báo + tin nhắn.
+ * Hook polling cho thông báo, hỗ trợ nền tảng, nhắc việc.
  * - Focus tab: poll 60s
  * - Blur tab: poll 5 phút
  * - Idle > 10 phút: dừng poll
- * - Tự restart khi user quay lại
- * - Dùng singleton để tránh nhân đôi request khi nhiều component cùng mount hook
  */
 export function useNotificationPolling() {
   const { user, currentTenantId } = useAuth();
@@ -300,7 +302,6 @@ export function useNotificationPolling() {
     setAuthScope(user?.id || null, currentTenantId || null);
   }, [user?.id, currentTenantId]);
 
-  // Refresh thủ công (dùng khi vừa đọc xong)
   const refresh = useCallback(() => {
     lastActivityAt = Date.now();
     void fetchCounts(true);

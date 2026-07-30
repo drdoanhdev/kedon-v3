@@ -3,10 +3,10 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import Header from '../components/Header';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
-import { Send, Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle, Power } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle, Power } from 'lucide-react';
 
 interface Channel {
   id: number;
@@ -67,12 +67,9 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function CaiDatNhanTinPage() {
   return (
-    <>
-      <Header />
-      <FeatureGate feature="messaging_automation" permission="manage_messaging">
-        <Content />
-      </FeatureGate>
-    </>
+    <FeatureGate feature="messaging_automation" permission="manage_messaging">
+      <Content />
+    </FeatureGate>
   );
 }
 
@@ -202,24 +199,19 @@ function Content() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Send className="w-6 h-6 text-blue-600" />
-            Nhắn tin tự động
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Kết nối Zalo OA và cấu hình quy trình tự động nhắn xác nhận / nhắc lịch hẹn / theo dõi sau khám.
-          </p>
-        </div>
-        <button
-          onClick={reload}
-          className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Làm mới
-        </button>
-      </div>
+      <PageHeader
+        title="Nhắn tin tự động"
+        subtitle="Kết nối Zalo OA và cấu hình quy trình nhắn tự động"
+        actions={
+          <button
+            onClick={reload}
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Làm mới
+          </button>
+        }
+      />
 
       {hasQuickContext && (
         <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">

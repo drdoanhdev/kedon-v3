@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import toast from 'react-hot-toast';
 import {
@@ -131,14 +132,10 @@ export default function TraCuuKhachHang() {
     <ProtectedRoute>
       <FeatureGate feature="multi_branch">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
-            <Search className="w-7 h-7 text-blue-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Tra cứu khách hàng</h1>
-              <p className="text-sm text-gray-500">Tìm kiếm và quản lý khách hàng tại tất cả chi nhánh</p>
-            </div>
-          </div>
+          <PageHeader
+            title="Tra cứu khách hàng"
+            subtitle="Tìm kiếm và quản lý khách hàng tại tất cả chi nhánh"
+          />
 
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="flex gap-3 mb-6 flex-wrap">

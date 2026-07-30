@@ -1196,8 +1196,8 @@ export default function TemKinhPage() {
       <FeatureGate feature="print_config">
         <main className={styles.page}>
           <section className={styles.leftPanel}>
-            <h1>Tem Designer kéo-thả</h1>
-            <p>Kéo thả phần tử giống mẫu của bạn, sau đó bấm xem trước để thấy dữ liệu thực tế trên tem.</p>
+            <h2 className="text-lg font-semibold">Thiết kế tem</h2>
+            <p className="text-sm text-gray-600">Kéo thả phần tử, sau đó xem trước để thấy dữ liệu thực tế trên tem.</p>
 
             <div className={styles.block}>
               <h2>Dữ liệu in nhanh</h2>

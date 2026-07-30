@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { getAuthHeaders } from '../lib/fetchWithAuth';
 import toast from 'react-hot-toast';
@@ -239,12 +240,10 @@ export default function BillingPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-5xl mx-auto py-8 px-4">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Quản lý gói dịch vụ</h1>
-            <p className="text-gray-600 mt-1">
-              {currentTenant?.name || 'Phòng khám của bạn'}
-            </p>
-          </div>
+          <PageHeader
+            title="Gói dịch vụ"
+            subtitle={currentTenant?.name || 'Phòng khám của bạn'}
+          />
 
           {/* SePay hidden checkout form */}
           {sepayCheckout && (

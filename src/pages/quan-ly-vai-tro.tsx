@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import ProtectedRoute from '../components/ProtectedRoute'
+import PageHeader from '../components/PageHeader'
 import { useAuth } from '../contexts/AuthContext'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { fetchWithAuth } from '../lib/fetchWithAuth'
@@ -131,19 +132,27 @@ function QuanLyVaiTroInner({ embedded = false }: { embedded?: boolean } = {}) {
   return (
     <div className={embedded ? '' : 'min-h-screen bg-gray-50 p-6'}>
       <div className={embedded ? '' : 'max-w-6xl mx-auto'}>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Quản lý vai trò</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Tùy chỉnh quyền cho từng vai trò trong phòng khám. Tick/bỏ tick các quyền theo nhu cầu.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {!embedded && (
-              <Link href="/quan-ly-nguoi-dung" className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100">
-                ← Quản lý người dùng
-              </Link>
-            )}
+        {!embedded && (
+          <PageHeader
+            title="Vai trò"
+            subtitle="Tùy chỉnh quyền cho từng vai trò trong phòng khám"
+            actions={
+              <div className="flex gap-2">
+                <Link href="/quan-ly-nguoi-dung" className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100">
+                  ← Người dùng
+                </Link>
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                >
+                  + Vai trò mới
+                </button>
+              </div>
+            }
+          />
+        )}
+        {embedded && (
+          <div className="flex items-center justify-end mb-6">
             <button
               onClick={() => setShowCreate(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
@@ -151,7 +160,7 @@ function QuanLyVaiTroInner({ embedded = false }: { embedded?: boolean } = {}) {
               + Vai trò mới
             </button>
           </div>
-        </div>
+        )}
 
         {loading ? (
           <div className="bg-white rounded-lg p-8 text-center text-gray-500">Đang tải…</div>

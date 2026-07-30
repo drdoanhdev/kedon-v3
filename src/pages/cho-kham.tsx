@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import apiClient from '../lib/apiClient';
@@ -392,41 +393,38 @@ export default function ChoKhamPage() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-        {/* Top header bar */}
-        <div className="bg-white border-b px-4 py-3">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold text-gray-900">Chờ khám</h1>
-              <span className="text-xs text-gray-400">
-                {lastRefreshTime && (
-                  <>
-                    Cập nhật {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
-                    {' '}· <span className={countdown <= 5 ? 'text-orange-500 font-medium' : ''}>{countdown}s</span>
-                  </>
-                )}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleManualRefresh}
-                disabled={refreshing}
-                size="sm"
-                variant="outline"
-              >
-                <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-                Làm mới
-              </Button>
-              <Link href="/benh-nhan">
-                <Button size="sm" variant="outline">
-                  <Users className="w-4 h-4 mr-1.5" />
-                  Bệnh nhân
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-
         <div className="max-w-7xl mx-auto p-4 space-y-4">
+          <PageHeader
+            title="Chờ khám"
+            subtitle="Sắp xếp bệnh nhân theo lượt"
+            meta={
+              lastRefreshTime ? (
+                <span className="text-xs font-normal text-gray-400">
+                  Cập nhật {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
+                  {' '}· <span className={countdown <= 5 ? 'text-orange-500 font-medium' : ''}>{countdown}s</span>
+                </span>
+              ) : null
+            }
+            actions={
+              <>
+                <Button
+                  onClick={handleManualRefresh}
+                  disabled={refreshing}
+                  size="sm"
+                  variant="outline"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+                  Làm mới
+                </Button>
+                <Link href="/benh-nhan">
+                  <Button size="sm" variant="outline">
+                    <Users className="w-4 h-4 mr-1.5" />
+                    Bệnh nhân
+                  </Button>
+                </Link>
+              </>
+            }
+          />
           {/* Stat cards */}
           <div className="grid grid-cols-3 gap-3">
             <Card className="cursor-default">

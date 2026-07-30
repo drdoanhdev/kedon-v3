@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { isOwnerRole } from '../lib/tenantRoles';
-import Link from 'next/link';
 
 export default function HuongDan() {
   const { currentRole } = useAuth();
@@ -75,42 +75,41 @@ export default function HuongDan() {
     <ProtectedRoute>
       <div className="max-w-4xl mx-auto px-4 py-6">
 
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="text-blue-600 hover:text-blue-800 text-sm">
-              ← Trang chủ
-            </Link>
-            <h1 className="text-xl font-bold text-gray-800">📖 {title}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            {canEdit && !isEditing && (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                ✏️ Chỉnh sửa
-              </button>
-            )}
-            {canEdit && isEditing && (
+        <PageHeader
+          title={title}
+          subtitle="Tài liệu và hướng dẫn sử dụng"
+          actions={
+            canEdit ? (
               <>
-                <button
-                  onClick={() => { setIsEditing(false); fetchNote(); }}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? 'Đang lưu...' : '💾 Lưu (Ctrl+S)'}
-                </button>
+                {!isEditing && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Chỉnh sửa
+                  </button>
+                )}
+                {isEditing && (
+                  <>
+                    <button
+                      onClick={() => { setIsEditing(false); fetchNote(); }}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                      {saving ? 'Đang lưu...' : 'Lưu'}
+                    </button>
+                  </>
+                )}
               </>
-            )}
-          </div>
-        </div>
+            ) : null
+          }
+        />
 
         {/* Thông tin cập nhật */}
         {lastUpdated && (

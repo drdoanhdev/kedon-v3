@@ -41,6 +41,7 @@ import {
   Lock,
   History,
   ChevronRight as ChevronRightIcon,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useBranch } from '../contexts/BranchContext';
@@ -798,13 +799,13 @@ export default function MobileBottomNav() {
       { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },
       { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
       { href: '/quan-ly-ghi-chu-khach-hang', label: 'Việc cần làm KH', icon: CalendarDays, feature: 'crm' },
-      { href: '/nhac-viec', label: 'Nhắc việc nội bộ', icon: CheckSquare },
       { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
       { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
       { href: '/cau-hinh-in', label: 'Cấu hình in', icon: Printer },
       { href: '/tem-kinh', label: 'In tem kính', icon: Printer, feature: 'print_config' },
       { href: '/cai-dat-nhan-tin', label: 'Nhắn tin tự động', icon: Send, visible: isOwnerAdmin },
       { href: '/quan-ly-phong-kham', label: 'Phòng khám', icon: Settings, visible: isOwnerAdmin },
+      { href: '/tinh-nang', label: 'Tính năng phần mềm', icon: Sparkles },
       { href: '/billing', label: 'Gói dịch vụ', icon: CreditCard },
       { href: '/admin', label: 'Quản trị nền tảng', icon: Shield, visible: userRole === 'superadmin' },
     ];
@@ -825,7 +826,7 @@ export default function MobileBottomNav() {
   const userInitial = (user?.email?.[0] || 'U').toUpperCase();
   const userName = user?.email?.split('@')[0] || 'Guest';
   const totalNotif =
-    (counts?.thongBao || 0) + (counts?.tinNhan || 0) + (counts?.tinNhanPlatform || 0);
+    (counts?.thongBao || 0) + (counts?.tinNhanPlatform || 0);
 
   const triggerAction = (p: PatientResult, action: DefaultAction, origin: 'search' | 'activity' = 'activity') => {
     if (origin === 'search') {
@@ -1598,7 +1599,7 @@ export default function MobileBottomNav() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-              {/* Quick: thông báo + tin nhắn */}
+              {/* Quick: thông báo + nhắc việc */}
               <div className="grid grid-cols-2 gap-2">
                 <Link
                   href="/thong-bao"
@@ -1607,30 +1608,30 @@ export default function MobileBottomNav() {
                 >
                   <div className="relative">
                     <Bell className="w-5 h-5 text-amber-600" />
-                    {counts.thongBao > 0 && (
+                    {(counts.thongBao + counts.tinNhanPlatform) > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                        {counts.thongBao > 9 ? '9+' : counts.thongBao}
+                        {(counts.thongBao + counts.tinNhanPlatform) > 9
+                          ? '9+'
+                          : counts.thongBao + counts.tinNhanPlatform}
                       </span>
                     )}
                   </div>
                   <span className="text-sm font-medium text-amber-900">Thông báo</span>
                 </Link>
                 <Link
-                  href="/tin-nhan"
+                  href="/nhac-viec"
                   onClick={() => setShowMore(false)}
                   className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50 border border-blue-100 active:scale-[0.98] transition-transform"
                 >
                   <div className="relative">
-                    <MessageCircle className="w-5 h-5 text-blue-600" />
-                    {counts.tinNhan + counts.tinNhanPlatform > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center">
-                        {counts.tinNhan + counts.tinNhanPlatform > 9
-                          ? '9+'
-                          : counts.tinNhan + counts.tinNhanPlatform}
+                    <CheckSquare className="w-5 h-5 text-blue-600" />
+                    {counts.nhacViec > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                        {counts.nhacViec > 9 ? '9+' : counts.nhacViec}
                       </span>
                     )}
                   </div>
-                  <span className="text-sm font-medium text-blue-900">Tin nhắn</span>
+                  <span className="text-sm font-medium text-blue-900">Nhắc việc</span>
                 </Link>
               </div>
 

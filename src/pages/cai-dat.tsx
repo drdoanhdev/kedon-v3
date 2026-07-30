@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import ProtectedRoute from '../components/ProtectedRoute'
+import PageHeader from '../components/PageHeader'
 import { supabase } from '../contexts/AuthContext'
 import toast from 'react-hot-toast'
-import Link from 'next/link'
 
 export default function CaiDat() {
-  const { user, signOut } = useAuth()
+  const { user } = useAuth()
   const [loading, setLoading] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -47,30 +47,8 @@ export default function CaiDat() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-        
-        <header className="bg-white shadow">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
-              <div className="flex items-center">
-                <Link href="/" className="text-blue-600 hover:text-blue-800 mr-4">
-                  ← Về trang chủ
-                </Link>
-                <h1 className="text-xl font-semibold">Cài đặt tài khoản</h1>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span>Chào {user?.email}</span>
-                <button
-                  onClick={signOut}
-                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                >
-                  Đăng xuất
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-4xl mx-auto py-8 px-4">
+        <main className="max-w-4xl mx-auto py-6 px-4 md:py-8">
+          <PageHeader title="Cài đặt" subtitle="Tuỳ chỉnh tài khoản và mật khẩu" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
             <div className="bg-white rounded-lg shadow p-6">

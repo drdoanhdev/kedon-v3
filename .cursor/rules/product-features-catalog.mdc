@@ -1,0 +1,34 @@
+---
+description: Bắt buộc cập nhật catalog tính năng khi thêm/sửa/gỡ module user-facing
+alwaysApply: true
+---
+
+# Product features catalog
+
+Trang nội bộ `/tinh-nang` render từ **một nguồn sự thật**:
+
+`src/lib/productFeaturesCatalog.ts` → `PRODUCT_FEATURE_GROUPS`
+
+## Khi nào phải cập nhật
+
+Bắt buộc sửa catalog khi bạn:
+
+- Thêm trang / module / menu / feature gate user-facing mới
+- Thêm `FeatureKey` mới trong `src/lib/featureConfig.ts`
+- Đổi tên hiển thị UI của tính năng đã có
+- Gỡ hoặc thay route chính của tính năng
+- Bổ sung chi tiết quan trọng mà người dùng cần biết trên trang giới thiệu
+
+Không bỏ qua với lý do “chỉ backend” nếu người dùng vẫn thấy hoặc dùng được tính năng đó.
+
+## Cách cập nhật
+
+1. Thêm hoặc sửa item trong đúng nhóm (`ProductFeatureGroup`), hoặc tạo nhóm mới nếu domain mới.
+2. Điền đủ: `id`, `name`, `summary`, `details[]`, `href` (nếu có), `featureKey` / `minPlan` / `note` khi phù hợp.
+3. Không hardcode danh sách tính năng trong `src/pages/tinh-nang.tsx` — trang chỉ render từ catalog.
+4. Nếu thêm `FeatureKey`, ưu tiên map `featureKey` để badge gói lấy từ `getMinPlanForFeature`.
+
+## Không làm
+
+- Không để trang `/tinh-nang` và catalog lệch nhau.
+- Không scan toàn bộ `src/pages` để “tự động” liệt kê (dễ nhiễu backup/redirect); luôn cập nhật catalog có chủ đích.

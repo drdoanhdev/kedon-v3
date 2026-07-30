@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { getAuthHeaders } from '../lib/fetchWithAuth';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -2784,16 +2785,15 @@ export default function AdminPage() {
   return (
     <ProtectedRoute>
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5 sm:mb-6">
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Quản trị nền tảng</h1>
-            <p className="text-sm text-gray-500 break-all">Đăng nhập: {user?.email}</p>
-          </div>
-          <span className="self-start sm:self-auto px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold uppercase">
-            Superadmin
-          </span>
-        </div>
+        <PageHeader
+          title="Quản trị nền tảng"
+          subtitle={user?.email ? `Đăng nhập: ${user.email}` : undefined}
+          meta={
+            <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold uppercase">
+              Superadmin
+            </span>
+          }
+        />
 
         {/* Tabs */}
         <div className="-mx-3 px-3 sm:mx-0 sm:px-0 mb-5 sm:mb-6">

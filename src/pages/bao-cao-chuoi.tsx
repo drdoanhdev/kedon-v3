@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import {
   BarChart3, Building2, TrendingUp, TrendingDown, Users, FileText, Glasses,
@@ -151,32 +152,28 @@ export default function BaoCaoChuoi() {
     <ProtectedRoute>
       <FeatureGate feature="chain_reports" permission="view_reports">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <BarChart3 className="w-7 h-7 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Báo cáo chuỗi</h1>
-                <p className="text-sm text-gray-500">So sánh hiệu quả giữa các chi nhánh</p>
+          <PageHeader
+            title="Báo cáo chuỗi"
+            subtitle="So sánh hiệu quả giữa các chi nhánh"
+            actions={
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar className="w-4 h-4 text-gray-400 hidden sm:block" />
+                <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                  className="border rounded-lg px-3 py-1.5 text-sm" />
+                <span className="text-gray-400">→</span>
+                <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+                  className="border rounded-lg px-3 py-1.5 text-sm" />
+                <button
+                  onClick={loadReports}
+                  disabled={loading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  Cập nhật
+                </button>
               </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Calendar className="w-4 h-4 text-gray-400" />
-              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-                className="border rounded-lg px-3 py-1.5 text-sm" />
-              <span className="text-gray-400">→</span>
-              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-                className="border rounded-lg px-3 py-1.5 text-sm" />
-              <button
-                onClick={loadReports}
-                disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                Cập nhật
-              </button>
-            </div>
-          </div>
+            }
+          />
 
           {loading ? (
             <div className="text-center py-10 text-gray-400">Đang tải báo cáo...</div>

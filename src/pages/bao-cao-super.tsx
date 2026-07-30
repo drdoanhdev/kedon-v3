@@ -9,6 +9,7 @@ import { toast } from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import Link from 'next/link';
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -248,16 +249,13 @@ export default function BaoCaoSuperPage() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30">
         <div className="p-3 lg:p-6 max-w-[1400px] mx-auto">
 
-          {/* ── HEADER ── */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <div>
-              <h1 className="text-xl lg:text-2xl font-bold text-gray-900">📊 Báo Cáo Tổng Hợp</h1>
-              <p className="text-xs text-gray-500 mt-0.5">Phân tích đa chiều: Tài chính · Bệnh nhân · Tồn kho · Hiệu suất</p>
-            </div>
-            <div className="flex items-center gap-2">
+          <PageHeader
+            title="Báo cáo Pro"
+            subtitle="Phân tích đa chiều: Tài chính · Bệnh nhân · Tồn kho · Hiệu suất"
+            actions={
               <Link href="/bao-cao" className="text-xs text-blue-600 hover:underline">← Báo cáo cũ</Link>
-            </div>
-          </div>
+            }
+          />
 
           {/* ── DATE PICKER ── */}
           <Card className="mb-4 border-0 shadow-sm">

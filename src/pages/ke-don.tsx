@@ -92,6 +92,7 @@ interface PatientNote {
   id: number;
   content: string;
   note_type: 'important' | 'normal';
+  created_at?: string;
 }
 
 interface BackgroundDonThuocFailedTask {
@@ -677,7 +678,7 @@ export default function KeDon() {
         await axios.post('/api/benh-nhan/notes', { benhnhanid: parseInt(benhnhanid), content: noteFormContent.trim(), note_type: noteFormType });
         toast.success('Đã thêm ghi chú');
       }
-      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0`);
       setPatientNotes(res.data?.data || []);
       await fetchAllNotes();
       setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal');
@@ -690,7 +691,7 @@ export default function KeDon() {
     try {
       await axios.delete(`/api/benh-nhan/notes?id=${id}`);
       toast.success('Đã xóa');
-      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1`);
+      const res = await axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0`);
       setPatientNotes(res.data?.data || []);
       await fetchAllNotes();
       if (editingNoteId === id) { setEditingNoteId(null); setNoteFormContent(''); setNoteFormType('normal'); }
@@ -838,7 +839,7 @@ export default function KeDon() {
             ? axios.get(`/api/benh-nhan?benhnhanid=${benhnhanid}&_t=${timestamp}&_r=${random}`, { headers: cacheHeaders }).catch((err: unknown) => ({ error: err, data: { data: null } }))
             : Promise.resolve({ data: { data: null } }),
           benhnhanid
-            ? axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&importantOnly=1&_t=${timestamp}&_r=${random}`, { headers: cacheHeaders }).catch((err: unknown) => ({ error: err, data: { data: [] } }))
+            ? axios.get(`/api/benh-nhan/notes?benhnhanid=${benhnhanid}&includeDeleted=0&_t=${timestamp}&_r=${random}`, { headers: cacheHeaders }).catch((err: unknown) => ({ error: err, data: { data: [] } }))
             : Promise.resolve({ data: { data: [] } }),
         ];
 
@@ -1586,22 +1587,20 @@ export default function KeDon() {
             onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
             mobileHeaderRatio={mobileHeaderRatio}
             familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
+            footerAction={
+              showFaceEnroll && benhNhan && patientIdNumber ? (
+                <button
+                  type="button"
+                  className="h-6 px-2.5 flex-1 min-w-0 rounded-full border border-white/35 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 whitespace-nowrap active:bg-white/20"
+                  onClick={() => setFaceEnrollOpen(true)}
+                >
+                  <Camera className="w-3 h-3 flex-shrink-0 opacity-80" />
+                  <span className="truncate">Đăng ký khuôn mặt</span>
+                </button>
+              ) : undefined
+            }
             renderBackgroundUploadNotice={renderBackgroundUploadNotice}
           />
-
-          {showFaceEnroll && benhNhan && patientIdNumber && (
-            <div className="px-3 pb-2 flex-shrink-0">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full text-xs"
-                onClick={() => setFaceEnrollOpen(true)}
-              >
-                <Camera className="w-3.5 h-3.5 mr-1" /> Đăng ký khuôn mặt
-              </Button>
-            </div>
-          )}
 
           {/* Swipeable viewport (4 panels: Đơn thuốc | Đơn cũ | Diễn tiến | Ảnh) */}
           <div
@@ -2500,21 +2499,20 @@ export default function KeDon() {
         switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
         switchPageLabel="Đơn kính"
         familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
+        footerAction={
+          showFaceEnroll && benhNhan && patientIdNumber ? (
+            <button
+              type="button"
+              className="h-8 px-3 flex-1 min-w-0 rounded-full border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center justify-center gap-1 whitespace-nowrap hover:bg-blue-50 active:bg-blue-100 transition-colors"
+              onClick={() => setFaceEnrollOpen(true)}
+            >
+              <Camera className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">Đăng ký khuôn mặt</span>
+            </button>
+          ) : undefined
+        }
         renderBackgroundUploadNotice={renderBackgroundUploadNotice}
       />
-
-      {showFaceEnroll && benhNhan && patientIdNumber && (
-        <div className="flex justify-end -mt-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setFaceEnrollOpen(true)}
-          >
-            <Camera className="w-4 h-4 mr-1" /> Đăng ký khuôn mặt
-          </Button>
-        </div>
-      )}
 
       {/* Diagnosis & Date Row */}
       <div className="grid grid-cols-3 gap-3">

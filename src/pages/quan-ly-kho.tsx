@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -1272,49 +1273,45 @@ export default function QuanLyKho() {
       <FeatureGate feature="lens_catalog">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-4 sm:py-6 px-3 sm:px-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6 bg-white rounded-xl border px-3 sm:px-4 py-3">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-                {canInventory ? 'Quản lý kho tròng' : 'Danh mục tròng'}
-              </h1>
-              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">
-                {canInventory ? 'Danh mục tròng và tồn kho tròng kính' : 'Quản lý danh mục tròng dùng khi kê đơn'}
-              </p>
-              {canInventory && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="text-[11px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">Hết: {topStats.het}</span>
-                  <span className="text-[11px] rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5">Sắp hết: {topStats.sapHet}</span>
-                  <span className="text-[11px] rounded-full bg-orange-100 text-orange-700 px-2 py-0.5">Chờ đặt: {topStats.pending}</span>
-                  <span className="text-[11px] rounded-full bg-blue-100 text-blue-700 px-2 py-0.5">Đã đặt: {topStats.ordered}</span>
-                  <span className="text-[11px] rounded-full bg-cyan-100 text-cyan-700 px-2 py-0.5">Cần nhập: {topStats.needImport}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {canInventory && (
-                <Button variant="outline" size="sm" onClick={() => { setLensCatalogPage(1); setActiveTab('lens_catalog'); }}>
-                  Danh mục tròng
+          <PageHeader
+            title={canInventory ? 'Kho tròng' : 'Danh mục tròng'}
+            subtitle={canInventory ? 'Danh mục tròng và tồn kho tròng kính' : 'Quản lý danh mục tròng dùng khi kê đơn'}
+            actions={
+              <>
+                {canInventory && (
+                  <Button variant="outline" size="sm" onClick={() => { setLensCatalogPage(1); setActiveTab('lens_catalog'); }}>
+                    Danh mục tròng
+                  </Button>
+                )}
+                <Button
+                  onClick={() => {
+                    fetchLensCatalog();
+                    fetchHangTrongs();
+                    fetchNhaCungCaps();
+                    if (canInventory) {
+                      fetchAlerts();
+                      fetchLensStocks();
+                      fetchLensOrders();
+                      fetchLensNhapHistory();
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
                 </Button>
-              )}
-              <Button
-                onClick={() => {
-                  fetchLensCatalog();
-                  fetchHangTrongs();
-                  fetchNhaCungCaps();
-                  if (canInventory) {
-                    fetchAlerts();
-                    fetchLensStocks();
-                    fetchLensOrders();
-                    fetchLensNhapHistory();
-                  }
-                }}
-                variant="outline"
-                size="sm"
-              >
-                <RefreshCw className="w-4 h-4 mr-1" /><span className="hidden sm:inline">Làm mới</span>
-              </Button>
+              </>
+            }
+          />
+          {canInventory && (
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              <span className="text-[11px] rounded-full bg-red-100 text-red-700 px-2 py-0.5">Hết: {topStats.het}</span>
+              <span className="text-[11px] rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5">Sắp hết: {topStats.sapHet}</span>
+              <span className="text-[11px] rounded-full bg-orange-100 text-orange-700 px-2 py-0.5">Chờ đặt: {topStats.pending}</span>
+              <span className="text-[11px] rounded-full bg-blue-100 text-blue-700 px-2 py-0.5">Đã đặt: {topStats.ordered}</span>
+              <span className="text-[11px] rounded-full bg-cyan-100 text-cyan-700 px-2 py-0.5">Cần nhập: {topStats.needImport}</span>
             </div>
-          </div>
+          )}
 
           {/* Tabs */}
           <div className="flex gap-1 mb-4 sm:mb-6 bg-white rounded-xl p-1 shadow-sm border overflow-x-auto">

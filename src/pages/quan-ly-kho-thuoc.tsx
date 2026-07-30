@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -495,40 +496,38 @@ export default function QuanLyKhoThuoc() {
       <FeatureGate feature="drug_catalog">
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-7xl mx-auto py-6 px-4">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {canInventory ? 'Quản lý kho thuốc' : 'Danh mục thuốc'}
-              </h1>
-              <p className="text-gray-500 text-sm mt-1">
-                {canInventory
-                  ? 'Danh mục thuốc, xuất nhập tồn và đề xuất giá'
-                  : 'Quản lý danh mục thuốc dùng khi kê đơn'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {canInventory && (
-                <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
-                  Danh mục thuốc
+          <PageHeader
+            title={canInventory ? 'Kho thuốc' : 'Danh mục thuốc'}
+            subtitle={
+              canInventory
+                ? 'Danh mục thuốc, xuất nhập tồn và đề xuất giá'
+                : 'Quản lý danh mục thuốc dùng khi kê đơn'
+            }
+            actions={
+              <>
+                {canInventory && (
+                  <Button variant="outline" size="sm" onClick={() => { setCatalogPage(1); setActiveTab('catalog'); }}>
+                    Danh mục thuốc
+                  </Button>
+                )}
+                <Button
+                  onClick={() => {
+                    fetchCatalog();
+                    fetchNhaCungCaps();
+                    if (canInventory) {
+                      fetchStock();
+                      fetchNhapHistory();
+                      fetchHuyHistory();
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
                 </Button>
-              )}
-              <Button
-                onClick={() => {
-                  fetchCatalog();
-                  fetchNhaCungCaps();
-                  if (canInventory) {
-                    fetchStock();
-                    fetchNhapHistory();
-                    fetchHuyHistory();
-                  }
-                }}
-                variant="outline"
-                size="sm"
-              >
-                <RefreshCw className="w-4 h-4 mr-1" /> Làm mới
-              </Button>
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* Tabs */}
           <div className="flex gap-1 mb-6 bg-white rounded-lg p-1 shadow-sm border overflow-x-auto">

@@ -19,6 +19,7 @@ export interface PatientHeaderNote {
   id: number;
   content: string;
   note_type: 'important' | 'normal';
+  created_at?: string;
 }
 
 export interface PatientHeaderExtraLink {
@@ -39,6 +40,8 @@ interface BaseProps {
   familySummaryText?: string;
   /** Interactive family UI (chip). Takes precedence over familySummaryText when set. */
   familySection?: React.ReactNode;
+  /** Optional action at the bottom of the patient card (e.g. face enroll). */
+  footerAction?: React.ReactNode;
   renderBackgroundUploadNotice?: () => React.ReactNode;
 }
 
@@ -63,6 +66,20 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * clamp01(t);
 }
 
+/** Important first, then newest. Returns up to `limit` notes for the card preview. */
+function pickDisplayNotes(notes: PatientHeaderNote[], limit = 2): PatientHeaderNote[] {
+  return [...notes]
+    .sort((a, b) => {
+      const aImp = a.note_type === 'important' ? 0 : 1;
+      const bImp = b.note_type === 'important' ? 0 : 1;
+      if (aImp !== bImp) return aImp - bImp;
+      const aTime = a.created_at ? Date.parse(a.created_at) : a.id;
+      const bTime = b.created_at ? Date.parse(b.created_at) : b.id;
+      return bTime - aTime;
+    })
+    .slice(0, limit);
+}
+
 // ─── Mobile Header ────────────────────────────────────────────────────────────
 
 export function PatientMobileHeader({
@@ -78,6 +95,7 @@ export function PatientMobileHeader({
   onManageNotes,
   familySummaryText,
   familySection,
+  footerAction,
   renderBackgroundUploadNotice,
   mobileHeaderRatio = 0,
   className,
@@ -85,6 +103,17 @@ export function PatientMobileHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const r = clamp01(mobileHeaderRatio);
+
+  // Page-switch actions (Đơn kính / Đơn thuốc / Tiên lượng KSCT…)
+  // Live in the expandable secondary block — not beside the name —
+  // and remain reachable from the ⋮ menu when the header is collapsed.
+  const pageLinks: PatientHeaderExtraLink[] = [
+    { href: switchPageLink, label: switchPageLabel },
+    ...extraLinks,
+  ].filter((link) => Boolean(link.href && link.label));
+
+  const hasBottomActions = pageLinks.length > 0 || Boolean(footerAction);
+  const displayNotes = pickDisplayNotes(patientNotes, 2);
 
   // ── Tính chiều cao thực tế của secondary rows từ nội dung ──────
   // Để maxHeight bắt đầu đúng bằng chiều cao thực → co ngay từ pixel đầu tiên.
@@ -95,11 +124,12 @@ export function PatientMobileHeader({
     h += 18;   // row year+phone (luôn hiển thị)
     if (benhNhan.diachi)    h += 2 + 18; // mt-0.5 + address
     if (familySection || familySummaryText) h += 2 + 18; // mt-0.5 + family
-    const noteCount = Math.min(2, patientNotes.length);
-    if (noteCount > 0) {
-      h += 4; // mt-1 trước block notes
-      h += noteCount * 19 + Math.max(0, noteCount - 1) * 2;
-    }
+    // Notes: always show at least one row (content or "Chưa có ghi chú")
+    const noteCount = Math.max(1, displayNotes.length);
+    h += 4; // mt-1 trước block notes
+    h += noteCount * 19 + Math.max(0, noteCount - 1) * 2;
+    // Bottom action chips (face enroll + page switches) — one balanced row
+    if (hasBottomActions) h += 6 + 26; // mt-1.5 + chip row
     return h + 6; // margin dưới + safety
   })();
 
@@ -184,76 +214,68 @@ export function PatientMobileHeader({
           style={{ paddingTop: `${pt}px`, paddingBottom: `${pb}px` }}
         >
           {/* ── ROW 1: Avatar + Name + Combined info + 3-dot menu ── */}
+          {/* Page-switch pills stay out of this row so the name keeps full width. */}
           <div className="flex items-center">
 
-            {/* Avatar — shrinks and fades */}
-            <div
-              className="rounded-full bg-white/20 border border-white/30 flex-shrink-0 overflow-hidden flex items-center justify-center font-bold text-white"
-              style={{
-                width:  `${avatarSize}px`,
-                height: `${avatarSize}px`,
-                opacity: avatarOpacity,
-                marginRight: `${avatarGap}px`,
-                fontSize: `${Math.max(6, Math.round(avatarSize * 0.42))}px`,
-              }}
+            {/* Avatar + name — tap opens edit patient */}
+            <button
+              type="button"
+              className="flex items-center flex-1 min-w-0 overflow-hidden text-left active:opacity-80"
+              onClick={onEditPatient}
             >
-              {avatarSize > 5
-                ? (benhNhan.ten || '?').trim().charAt(0).toUpperCase()
-                : null}
-            </div>
-
-            {/* Name + combined info */}
-            <div className="flex-1 min-w-0 overflow-hidden">
-              <div className="flex items-baseline overflow-hidden" style={{ gap: combinedOpacity > 0 ? '5px' : '0px' }}>
-                {/* Name */}
-                <span className="font-extrabold text-white tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis"
-                  style={{
-                    fontSize: `${nameFontSize}px`,
-                    /* shrink name to make room for combined info */
-                    flex: combinedOpacity > 0.15 ? '0 1 auto' : '0 0 auto',
-                    maxWidth: combinedOpacity > 0.15 ? '58%' : '100%',
-                  }}
-                >
-                  {benhNhan.ten}
-                </span>
-                {benhNhan.mabenhnhan && combinedOpacity === 0 && (
-                  <span className="text-white/55 text-[10px] font-medium ml-1.5 flex-shrink-0">
-                    {benhNhan.mabenhnhan}
-                  </span>
-                )}
-
-                {/* Combined: year • address — fades in beside name when compact */}
-                {combinedOpacity > 0 && (
-                  <span
-                    className="text-white/60 whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0"
-                    style={{ fontSize: '10.5px', opacity: combinedOpacity }}
-                  >
-                    {benhNhan.mabenhnhan ? `${benhNhan.mabenhnhan} • ` : ''}
-                    {benhNhan.gioitinh ? `${benhNhan.gioitinh} • ` : ''}
-                    {benhNhan.namsinh}
-                    {benhNhan.diachi ? ` • ${benhNhan.diachi}` : ''}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <Link
-              href={switchPageLink}
-              className="h-7 px-2.5 ml-1 rounded-full border border-white/40 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center whitespace-nowrap hover:bg-white/20 active:bg-white/25 flex-shrink-0"
-            >
-              {switchPageLabel}
-            </Link>
-            {extraLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="h-7 px-2.5 rounded-full border border-white/40 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center whitespace-nowrap hover:bg-white/20 active:bg-white/25 flex-shrink-0"
+              {/* Avatar — shrinks and fades */}
+              <div
+                className="rounded-full bg-white/20 border border-white/30 flex-shrink-0 overflow-hidden flex items-center justify-center font-bold text-white"
+                style={{
+                  width:  `${avatarSize}px`,
+                  height: `${avatarSize}px`,
+                  opacity: avatarOpacity,
+                  marginRight: `${avatarGap}px`,
+                  fontSize: `${Math.max(6, Math.round(avatarSize * 0.42))}px`,
+                }}
               >
-                {link.label}
-              </Link>
-            ))}
+                {avatarSize > 5
+                  ? (benhNhan.ten || '?').trim().charAt(0).toUpperCase()
+                  : null}
+              </div>
 
-            {/* 3-dot menu */}
+              {/* Name + combined info */}
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="flex items-baseline overflow-hidden" style={{ gap: combinedOpacity > 0 ? '5px' : '0px' }}>
+                  {/* Name */}
+                  <span className="font-extrabold text-white tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis"
+                    style={{
+                      fontSize: `${nameFontSize}px`,
+                      /* shrink name to make room for combined info */
+                      flex: combinedOpacity > 0.15 ? '0 1 auto' : '0 0 auto',
+                      maxWidth: combinedOpacity > 0.15 ? '58%' : '100%',
+                    }}
+                  >
+                    {benhNhan.ten}
+                  </span>
+                  {benhNhan.mabenhnhan && combinedOpacity === 0 && (
+                    <span className="text-white/55 text-[10px] font-medium ml-1.5 flex-shrink-0">
+                      {benhNhan.mabenhnhan}
+                    </span>
+                  )}
+
+                  {/* Combined: year • address — fades in beside name when compact */}
+                  {combinedOpacity > 0 && (
+                    <span
+                      className="text-white/60 whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0"
+                      style={{ fontSize: '10.5px', opacity: combinedOpacity }}
+                    >
+                      {benhNhan.mabenhnhan ? `${benhNhan.mabenhnhan} • ` : ''}
+                      {benhNhan.gioitinh ? `${benhNhan.gioitinh} • ` : ''}
+                      {benhNhan.namsinh}
+                      {benhNhan.diachi ? ` • ${benhNhan.diachi}` : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </button>
+
+            {/* 3-dot menu — keeps compact header clean; page links live here when collapsed */}
             <div ref={menuRef} className="relative flex-shrink-0">
               <button
                 type="button"
@@ -287,7 +309,7 @@ export function PatientMobileHeader({
                       Ghi chú
                     </button>
                   )}
-                  {extraLinks.map((link) => (
+                  {pageLinks.map((link) => (
                     <Link
                       key={link.href}
                       href={link.href}
@@ -306,7 +328,7 @@ export function PatientMobileHeader({
           {/*
             overflow:hidden + maxHeight → content clipped from the bottom upward.
             Tab bar always sits at the bottom of the sticky header.
-            As maxHeight shrinks, last rows (notes → address → phone → year) disappear first,
+            As maxHeight shrinks, last rows (notes → chips → address → phone → year) disappear first,
             creating the illusion that the tab bar rises to cover them.
             NO CSS transition here — scroll drives this directly.
           */}
@@ -317,14 +339,13 @@ export function PatientMobileHeader({
               overflow:  'hidden',
             }}
           >
-            {/* Row 2: Code + Year + Phone */}
-            <div
-              className="flex items-center gap-2 mt-1 text-white/85"
+            {/* Row 2: Year + Phone — tap opens edit patient */}
+            <button
+              type="button"
+              className="flex items-center gap-2 mt-1 text-white/85 w-full text-left active:opacity-80"
               style={{ fontSize: '12px' }}
+              onClick={onEditPatient}
             >
-              {benhNhan.mabenhnhan && (
-                <span className="font-medium text-white/70 flex-shrink-0">{benhNhan.mabenhnhan}</span>
-              )}
               <Calendar
                 className="text-white/60 flex-shrink-0"
                 style={{ width: '13px', height: '13px' }}
@@ -343,23 +364,25 @@ export function PatientMobileHeader({
                   <span className="truncate">{benhNhan.dienthoai}</span>
                 </>
               )}
-            </div>
+            </button>
 
-            {/* Row 3: Address */}
+            {/* Row 3: Address — tap opens edit patient */}
             {benhNhan.diachi && (
-              <div
-                className="flex items-center gap-2 mt-0.5 text-white/85"
+              <button
+                type="button"
+                className="flex items-center gap-2 mt-0.5 text-white/85 w-full text-left active:opacity-80"
                 style={{ fontSize: '12px' }}
+                onClick={onEditPatient}
               >
                 <MapPin
                   className="text-white/60 flex-shrink-0"
                   style={{ width: '13px', height: '13px' }}
                 />
                 <span className="truncate">{benhNhan.diachi}</span>
-              </div>
+              </button>
             )}
 
-            {/* Row 4: Family */}
+            {/* Row 4: Family — chip opens family sheet */}
             {familySection ?? (familySummaryText ? (
               <div
                 className="flex items-center gap-2 mt-0.5 text-white/85"
@@ -373,11 +396,16 @@ export function PatientMobileHeader({
               </div>
             ) : null)}
 
-            {/* Row 5: Notes — no "Ghi chú:" prefix, amber if important */}
-            {patientNotes.length > 0 && (
-              <div className="mt-1 space-y-0.5">
-                {patientNotes.slice(0, 2).map((note) => (
-                  <div key={note.id} className="flex items-start gap-1.5">
+            {/* Row 5: Notes — important first, then newest; empty → "Chưa có ghi chú" */}
+            <div className="mt-1 space-y-0.5">
+              {displayNotes.length > 0 ? (
+                displayNotes.map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    className="w-full text-left flex items-start gap-1.5 active:opacity-80"
+                    onClick={onManageNotes}
+                  >
                     <AlertTriangle
                       className="flex-shrink-0"
                       style={{
@@ -400,7 +428,49 @@ export function PatientMobileHeader({
                     >
                       {note.content}
                     </p>
-                  </div>
+                  </button>
+                ))
+              ) : (
+                <button
+                  type="button"
+                  className="w-full text-left flex items-start gap-1.5 active:opacity-80"
+                  onClick={onManageNotes}
+                >
+                  <AlertTriangle
+                    className="flex-shrink-0"
+                    style={{
+                      width: '11px',
+                      height: '11px',
+                      marginTop: '2px',
+                      color: 'rgba(255,255,255,0.4)',
+                    }}
+                  />
+                  <p
+                    style={{
+                      fontSize: '11px',
+                      lineHeight: '1.35',
+                      color: 'rgba(255,255,255,0.55)',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    Chưa có ghi chú
+                  </p>
+                </button>
+              )}
+            </div>
+
+            {/* Row 6: Bottom actions — one balanced chip row (face enroll + page switches) */}
+            {hasBottomActions && (
+              <div className="mt-1.5 flex items-stretch gap-1.5">
+                {footerAction}
+                {pageLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="h-6 px-2.5 flex-1 min-w-0 rounded-full border border-white/35 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center justify-center whitespace-nowrap active:bg-white/20"
+                  >
+                    <span className="truncate">{link.label}</span>
+                  </Link>
                 ))}
               </div>
             )}
@@ -428,11 +498,20 @@ export function PatientDesktopCard({
   onManageNotes,
   familySummaryText,
   familySection,
+  footerAction,
   renderBackgroundUploadNotice,
   className,
 }: PatientDesktopCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const pageLinks: PatientHeaderExtraLink[] = [
+    { href: switchPageLink, label: switchPageLabel },
+    ...extraLinks,
+  ].filter((link) => Boolean(link.href && link.label));
+
+  const hasBottomActions = pageLinks.length > 0 || Boolean(footerAction);
+  const displayNotes = pickDisplayNotes(patientNotes, 2);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -494,10 +573,10 @@ export function PatientDesktopCard({
                 </div>
               ) : null)}
 
-              {/* Notes inline inside card — clickable to open notes dialog */}
-              {patientNotes.length > 0 && (
-                <div className="mt-1 space-y-0.5">
-                  {patientNotes.map((note) => (
+              {/* Notes — important first, then newest; empty → "Chưa có ghi chú" */}
+              <div className="mt-1 space-y-0.5">
+                {displayNotes.length > 0 ? (
+                  displayNotes.map((note) => (
                     <button
                       key={note.id}
                       type="button"
@@ -519,71 +598,78 @@ export function PatientDesktopCard({
                         {note.content}
                       </p>
                     </button>
+                  ))
+                ) : (
+                  <button
+                    type="button"
+                    className="w-full text-left flex items-start gap-1.5 rounded px-1 py-0.5 -mx-1 hover:bg-gray-50 transition-colors"
+                    onClick={onManageNotes}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-300" />
+                    <p className="text-xs text-gray-400 italic leading-tight">Chưa có ghi chú</p>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 3-dot menu — top-right only; page actions sit in the bottom chip row */}
+            <div ref={menuRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                aria-label="Menu"
+                className="h-8 w-8 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[196px] z-50 overflow-hidden">
+                  <button
+                    type="button"
+                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => { setMenuOpen(false); onEditPatient(); }}
+                  >
+                    Sửa thông tin
+                  </button>
+                  {onManageNotes && (
+                    <button
+                      type="button"
+                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
+                      onClick={() => { setMenuOpen(false); onManageNotes(); }}
+                    >
+                      Ghi chú
+                    </button>
+                  )}
+                  {pageLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="block w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
                   ))}
                 </div>
               )}
             </div>
+          </div>
 
-            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-              <Link
-                href={switchPageLink}
-                className="h-8 px-3 rounded-full border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center whitespace-nowrap hover:bg-blue-50 active:bg-blue-100 transition-colors"
-              >
-                {switchPageLabel}
-              </Link>
-              {extraLinks.map((link) => (
+          {/* Bottom actions — one balanced chip row */}
+          {hasBottomActions && (
+            <div className="mt-2 flex items-stretch gap-2">
+              {footerAction}
+              {pageLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="h-8 px-3 rounded-full border border-pink-200 text-pink-700 text-xs font-semibold inline-flex items-center whitespace-nowrap hover:bg-pink-50 active:bg-pink-100 transition-colors"
+                  className="h-8 px-3 flex-1 min-w-0 rounded-full border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center justify-center whitespace-nowrap hover:bg-blue-50 active:bg-blue-100 transition-colors"
                 >
-                  {link.label}
+                  <span className="truncate">{link.label}</span>
                 </Link>
               ))}
-
-              {/* 3-dot menu */}
-              <div ref={menuRef} className="relative flex-shrink-0">
-                <button
-                  type="button"
-                  aria-label="Menu"
-                  className="h-8 w-8 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
-                  onClick={() => setMenuOpen((v) => !v)}
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[196px] z-50 overflow-hidden">
-                    <button
-                      type="button"
-                      className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      onClick={() => { setMenuOpen(false); onEditPatient(); }}
-                    >
-                      Sửa thông tin
-                    </button>
-                    {onManageNotes && (
-                      <button
-                        type="button"
-                        className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
-                        onClick={() => { setMenuOpen(false); onManageNotes(); }}
-                      >
-                        Ghi chú
-                      </button>
-                    )}
-                    {extraLinks.map((link) => (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        className="block w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-50"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        {link.label}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
-          </div>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm p-3 border border-gray-200">

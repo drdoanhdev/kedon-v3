@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -246,13 +247,15 @@ export default function HomePage() {
       <div className="min-h-screen bg-gray-50">
         <main className="max-w-6xl mx-auto py-4 px-4 space-y-4">
 
-          {/* ══════ HEADER ══════ */}
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-gray-800">Hôm nay, {todayFmt}</h1>
-            <button onClick={fetchDashboard} disabled={loading} className="p-2 text-gray-400 hover:text-gray-600 transition-colors" title="Làm mới">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+          <PageHeader
+            title={`Hôm nay, ${todayFmt}`}
+            subtitle="Tổng quan hoạt động hôm nay"
+            actions={
+              <button onClick={fetchDashboard} disabled={loading} className="p-2 text-gray-400 hover:text-gray-600 transition-colors" title="Làm mới">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            }
+          />
 
           <TrialBanner />
 

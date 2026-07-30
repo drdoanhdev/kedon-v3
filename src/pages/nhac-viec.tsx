@@ -11,6 +11,7 @@ import {
   Flag, CheckCircle2, Circle, Loader2, X, RefreshCw,
 } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -518,49 +519,46 @@ export default function NhacViecPage() {
   return (
     <ProtectedRoute>
       <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-gray-900">Nhắc việc nội bộ</h1>
-            {pendingCount > 0 && (
+        <PageHeader
+          title="Nhắc việc nội bộ"
+          subtitle="Lịch việc và công việc trong ngày"
+          meta={
+            pendingCount > 0 ? (
               <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">
                 {pendingCount}
               </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Refresh */}
-            <button onClick={fetchItems} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500" title="Tải lại">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-
-            {/* View toggle */}
-            <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
-              <button
-                onClick={() => handleViewMode('list')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                title="Dạng danh sách"
-              >
-                <LayoutList className="w-4 h-4" />
-                <span className="hidden sm:inline">Danh sách</span>
+            ) : null
+          }
+          actions={
+            <>
+              <button onClick={fetchItems} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500" title="Tải lại">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
-              <button
-                onClick={() => handleViewMode('kanban')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'kanban' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                title="Kanban board"
-              >
-                <LayoutDashboard className="w-4 h-4" />
-                <span className="hidden sm:inline">Kanban</span>
-              </button>
-            </div>
-
-            <Button onClick={() => { setEditingItem(null); setDialogOpen(true); }}>
-              <Plus className="w-4 h-4 mr-1" />
-              Thêm việc
-            </Button>
-          </div>
-        </div>
+              <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
+                <button
+                  onClick={() => handleViewMode('list')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  title="Dạng danh sách"
+                >
+                  <LayoutList className="w-4 h-4" />
+                  <span className="hidden sm:inline">Danh sách</span>
+                </button>
+                <button
+                  onClick={() => handleViewMode('kanban')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'kanban' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  title="Kanban board"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span className="hidden sm:inline">Kanban</span>
+                </button>
+              </div>
+              <Button onClick={() => { setEditingItem(null); setDialogOpen(true); }}>
+                <Plus className="w-4 h-4 mr-1" />
+                Thêm việc
+              </Button>
+            </>
+          }
+        />
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 mb-4">

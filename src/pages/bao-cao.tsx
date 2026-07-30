@@ -9,6 +9,7 @@ import { toast } from 'react-hot-toast';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { AxiosError } from 'axios';
 import * as XLSX from 'xlsx';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
@@ -449,10 +450,7 @@ export default function BaoCaoPage() {
       <div className="min-h-screen bg-gray-50">
         <div className="p-4 lg:p-6">
 
-          {/* Header */}
-          <div className="mb-4">
-            <h1 className="text-xl lg:text-2xl font-semibold">Báo Cáo Doanh Thu và Lãi</h1>
-          </div>
+          <PageHeader title="Báo cáo" subtitle="Số liệu kinh doanh và vận hành" />
 
           {/* Mobile Controls */}
           <div className="block md:hidden space-y-4 mb-6 p-3 bg-white rounded-lg shadow">

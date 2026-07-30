@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -196,14 +197,16 @@ export default function DonThuocMauPage() {
   return (
     <ProtectedRoute>
       <div className="p-4 space-y-4">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Quản lý đơn thuốc mẫu</h1>
-          <Dialog open={showForm} onOpenChange={setShowForm}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { resetForm(); setShowForm(true); }}>
-                Tạo đơn thuốc mẫu
-              </Button>
-            </DialogTrigger>
+        <PageHeader
+          title="Đơn thuốc mẫu"
+          subtitle="Mẫu kê đơn dùng nhanh"
+          actions={
+            <Button onClick={() => { resetForm(); setShowForm(true); }}>
+              Tạo đơn thuốc mẫu
+            </Button>
+          }
+        />
+        <Dialog open={showForm} onOpenChange={setShowForm}>
             <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
@@ -372,7 +375,6 @@ export default function DonThuocMauPage() {
               </form>
             </DialogContent>
           </Dialog>
-        </div>
 
         <Card>
           <CardHeader>

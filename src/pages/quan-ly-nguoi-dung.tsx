@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import ProtectedRoute from '../components/ProtectedRoute'
+import PageHeader from '../components/PageHeader'
 import toast from 'react-hot-toast'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import Link from 'next/link'
@@ -16,7 +17,8 @@ interface UserWithRole {
 
 export default function QuanLyNguoiDung() {
   const { confirm } = useConfirm()
-  const { userRole, signOut } = useAuth()
+  const { userRole } = useAuth()
+
   const [users, setUsers] = useState<UserWithRole[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedRole, setSelectedRole] = useState<'admin' | 'doctor' | 'staff' | null>(null)
@@ -191,33 +193,8 @@ export default function QuanLyNguoiDung() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
-
-        {/* Header */}
-        <header className="bg-white shadow">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
-              <div className="flex items-center">
-                <Link href="/" className="text-blue-600 hover:text-blue-800 mr-4">
-                  ← Về trang chủ
-                </Link>
-                <h1 className="text-xl font-semibold">👥 Quản lý người dùng</h1>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
-                  Admin
-                </span>
-                <button
-                  onClick={signOut}
-                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                >
-                  Đăng xuất
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-7xl mx-auto py-8 px-4">
+        <main className="max-w-7xl mx-auto py-6 px-4 md:py-8">
+          <PageHeader title="Người dùng" subtitle="Phân quyền và tài khoản" />
           {/* Buttons */}
           <div className="flex gap-2 mb-6">
             <button

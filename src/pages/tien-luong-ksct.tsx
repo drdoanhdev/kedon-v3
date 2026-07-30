@@ -17,6 +17,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import { ArrowLeft, AlertTriangle, BookOpen, Glasses } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import {
   worseSerFromDon,
   TX_COMBINE_OPTIONS,
@@ -324,25 +325,21 @@ export default function TienLuongKsctPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-slate-50 text-slate-700">
         <div className="max-w-[1280px] mx-auto px-4 sm:px-5 py-5 pb-16">
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h1 className="m-0 text-[19px] font-extrabold tracking-wide uppercase bg-gradient-to-r from-blue-600 via-pink-500 to-pink-400 bg-clip-text text-transparent">
-                Tiên lượng &amp; Phác đồ KSCT
-              </h1>
-              <p className="mt-1 text-xs text-slate-500 font-medium">
-                Mô phỏng tiến triển cận thị, trục nhãn cầu và so sánh phác đồ điều trị.
-              </p>
-            </div>
-            {benhnhanid && (
-              <Link
-                href={`/ke-don-kinh?bn=${benhnhanid}`}
-                className="h-9 px-3 rounded-full border border-slate-200 bg-white text-slate-600 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-slate-50 flex-shrink-0"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                Kê đơn kính
-              </Link>
-            )}
-          </div>
+          <PageHeader
+            title="Tiên lượng KSCT"
+            subtitle="Mô phỏng tiến triển cận thị, trục nhãn cầu và so sánh phác đồ điều trị"
+            actions={
+              benhnhanid ? (
+                <Link
+                  href={`/ke-don-kinh?bn=${benhnhanid}`}
+                  className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-slate-50"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Kê đơn kính
+                </Link>
+              ) : null
+            }
+          />
 
           {loading && (
             <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-500">

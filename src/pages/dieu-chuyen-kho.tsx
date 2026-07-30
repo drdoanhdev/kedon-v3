@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import PageHeader from '../components/PageHeader';
 import { fetchWithAuth } from '../lib/fetchWithAuth';
 import toast from 'react-hot-toast';
 import {
@@ -316,23 +317,19 @@ export default function DieuChuyenKho() {
     <ProtectedRoute>
       <FeatureGate feature="branch_transfer" permission="manage_inventory">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <ArrowRightLeft className="w-7 h-7 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Điều chuyển kho</h1>
-                <p className="text-sm text-gray-500">Chuyển kính, thuốc, vật tư giữa các chi nhánh</p>
-              </div>
-            </div>
-            <button
-              onClick={() => { resetForm(); setShowForm(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Tạo phiếu chuyển kho
-            </button>
-          </div>
+          <PageHeader
+            title="Điều chuyển kho"
+            subtitle="Chuyển hàng giữa chi nhánh"
+            actions={
+              <button
+                onClick={() => { resetForm(); setShowForm(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Tạo phiếu chuyển kho
+              </button>
+            }
+          />
 
           {/* Quick stats */}
           {pendingCount > 0 && (

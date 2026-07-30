@@ -8,7 +8,7 @@ import { Textarea } from '../components/ui/textarea';
 import toast from 'react-hot-toast';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
-import { Printer } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 interface PrintConfig {
   ten_cua_hang: string;
@@ -142,15 +142,9 @@ function CauHinhInInner({ embedded = false }: { embedded?: boolean } = {}) {
         className={embedded ? 'space-y-6' : 'max-w-2xl mx-auto p-4 sm:p-6 space-y-6'}
         style={embedded ? undefined : { minHeight: 'calc(100vh - 72px)' }}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-            <Printer className="w-5 h-5 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">Cấu hình in</h1>
-            <p className="text-xs text-gray-500">Cài đặt thông tin hiển thị trên phiếu in đơn kính và đơn thuốc</p>
-          </div>
-        </div>
+        {!embedded ? (
+          <PageHeader title="Cấu hình in" subtitle="Thiết lập máy in và mẫu in" />
+        ) : null}
 
         {/* Thông tin cửa hàng */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">

@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
+import PageHeader from '../components/PageHeader';
 import { Badge } from '../components/ui/badge';
 import { FeatureGate } from '../components/FeatureGate';
 import toast from 'react-hot-toast';
@@ -618,12 +619,15 @@ export default function QuanLyPhongKham() {
     </div>
   ) : (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Quản lý Phòng khám</h1>
-        <Badge className={ROLE_COLORS[currentRole || 'staff']}>
-          {ROLE_LABELS[currentRole || 'staff']}
-        </Badge>
-      </div>
+      <PageHeader
+        title="Phòng khám"
+        subtitle="Cài đặt thông tin phòng khám"
+        meta={
+          <Badge className={ROLE_COLORS[currentRole || 'staff']}>
+            {ROLE_LABELS[currentRole || 'staff']}
+          </Badge>
+        }
+      />
 
       <div className="flex flex-col md:flex-row gap-6">
         {sidebar}

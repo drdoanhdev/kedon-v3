@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { Pencil, Trash2, Search, AlertTriangle, User, RotateCcw } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { FeatureGate } from '../components/FeatureGate';
+import AppPageHeader from '../components/PageHeader';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -159,7 +160,11 @@ export default function QuanLyGhiChuKhachHangPage() {
     <ProtectedRoute>
       <FeatureGate feature="crm">
         <div className="min-h-screen bg-[#f8fafc] pb-10">
-          <PageHeader
+          <AppPageHeader
+            title="Việc cần làm KH"
+            subtitle="Theo dõi công việc chăm sóc"
+          />
+          <NotesStatsBar
             stats={{ total: notes.filter(n => !n.deleted_at).length, important: importantCount, today: 0 }}
           />
           <div className="max-w-6xl mx-auto px-2 md:px-6">
@@ -209,14 +214,10 @@ export default function QuanLyGhiChuKhachHangPage() {
 
 // --- COMPONENTS ---
 
-function PageHeader({ stats }: { stats: { total: number; important: number; today: number } }) {
+function NotesStatsBar({ stats }: { stats: { total: number; important: number; today: number } }) {
   return (
     <div className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-2 px-2 md:px-6 py-6">
-        <div>
-          <h1 className="text-3xl font-bold text-[#0f172a] tracking-tight">Quản lý ghi chú khách hàng</h1>
-          <p className="text-sm text-[#64748b] mt-1">Theo dõi lưu ý, cảnh báo & chăm sóc bệnh nhân</p>
-        </div>
+      <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center md:justify-end gap-2 px-2 md:px-6 py-4">
         <div className="flex gap-3">
           <StatsCard label="Tổng ghi chú" value={stats.total} />
           <StatsCard label="Quan trọng" value={stats.important} color="red" />
