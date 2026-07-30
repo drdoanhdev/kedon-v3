@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 import ProtectedRoute from '../components/ProtectedRoute';
 import PageHeader from '../components/PageHeader';
