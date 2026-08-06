@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { QUERY_MAX_ROWS, QUERY_PAGE_SIZE, RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
 
 function toFiniteNumber(val: unknown, fallback = 0): number {
   const n = Number(val);
@@ -13,10 +15,9 @@ function toDateMs(val: unknown): number {
 }
 
 async function fetchAllRows(table: string, select: string, tenantId: string, branchId?: string | null): Promise<any[]> {
-  const PAGE_SIZE = 1000;
   let all: any[] = [];
   let from = 0;
-  while (true) {
+  while (all.length < QUERY_MAX_ROWS) {
     let query = supabase
       .from(table)
       .select(select)
@@ -24,11 +25,15 @@ async function fetchAllRows(table: string, select: string, tenantId: string, bra
     if (branchId) {
       query = query.eq('branch_id', branchId);
     }
-    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await query.range(from, from + QUERY_PAGE_SIZE - 1);
     if (error || !data || data.length === 0) break;
     all = all.concat(data);
-    if (data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+    if (data.length < QUERY_PAGE_SIZE) break;
+    from += QUERY_PAGE_SIZE;
+    if (all.length >= QUERY_MAX_ROWS) {
+      console.warn(`[dashboard] ${table} truncated at ${QUERY_MAX_ROWS} rows`);
+      break;
+    }
   }
   return all;
 }
@@ -38,6 +43,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const { limit, windowMs } = RATE_LIMITS.dashboard;
+  if (!enforceRateLimit(
+    res,
+    tenantUserRateLimitKey(ctx.tenantId, ctx.userId, 'dashboard'),
+    limit,
+    windowMs
+  )) return;
+
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
   if (!branchAccess) return;
   const { tenantId } = ctx;

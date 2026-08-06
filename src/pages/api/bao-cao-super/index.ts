@@ -1,11 +1,21 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { requirePermission } from '../../../lib/permissions';
+import { RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
+  const startedAt = Date.now();
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const { limit, windowMs } = RATE_LIMITS.reportSuper;
+  if (!enforceRateLimit(
+    res,
+    tenantUserRateLimitKey(ctx.tenantId, ctx.userId, 'bao-cao-super'),
+    limit,
+    windowMs
+  )) return;
   if (!(await requireFeature(ctx, res, 'advanced_reports', 'view_reports'))) return;
   if (!(await requirePermission(ctx, res, 'view_revenue'))) return;
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
@@ -404,6 +414,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .sort((a, b) => a.hour - b.hour);
 
     // ===================== RESPONSE =====================
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > 5000) {
+      console.warn(`[bao-cao-super] slow query tenant=${ctx.tenantId} durationMs=${elapsedMs}`);
+    }
     res.status(200).json({
       data: {
         // Module 1: Financial

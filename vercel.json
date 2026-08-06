@@ -1,16 +1,30 @@
 {
-	"crons": [
-		{
-			"path": "/api/cho-kham/cleanup-cron",
-			"schedule": "10 3 * * *"
-		},
-		{
-			"path": "/api/cho-kham/archive-cron",
-			"schedule": "0 3 * * *"
-		},
-		{
-			"path": "/api/recent-activity/cleanup-cron",
-			"schedule": "20 3 * * *"
-		}
-	]
+  "crons": [
+    {
+      "path": "/api/cho-kham/cleanup-cron",
+      "schedule": "10 3 * * *"
+    },
+    {
+      "path": "/api/cho-kham/archive-cron",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/recent-activity/cleanup-cron",
+      "schedule": "20 3 * * *"
+    }
+  ],
+  "functions": {
+    "src/pages/api/bao-cao/index.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/bao-cao-super/index.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/face-embeddings/from-image.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/admin/tenants/purge.ts": {
+      "maxDuration": 300
+    }
+  }
 }

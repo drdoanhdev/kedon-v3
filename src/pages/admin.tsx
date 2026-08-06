@@ -2498,8 +2498,28 @@ function PlansTab() {
 }
 
 // ========== Tin nhắn Platform ==========
+interface InboxItem {
+  tenant_id: string;
+  tenant_name: string;
+  tenant_code: string | null;
+  unread_count: number;
+  last_message_at: string;
+}
+
+interface TenantPickerItem {
+  tenant_id: string;
+  tenant_name: string;
+  tenant_code: string | null;
+  status: string;
+  has_thread: boolean;
+}
+
 function MessagesTab() {
-  const [inbox, setInbox] = useState<any[]>([]);
+  const { confirm } = useConfirm();
+  const [viewMode, setViewMode] = useState<'inbox' | 'compose'>('inbox');
+  const [composeMode, setComposeMode] = useState<'single' | 'bulk'>('single');
+
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<any[]>([]);
@@ -2507,6 +2527,16 @@ function MessagesTab() {
   const [newMsg, setNewMsg] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Compose state
+  const [tenantList, setTenantList] = useState<TenantPickerItem[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [tenantSearch, setTenantSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended' | 'inactive'>('active');
+  const [selectedSingleTenant, setSelectedSingleTenant] = useState<string | null>(null);
+  const [selectedBulkTenants, setSelectedBulkTenants] = useState<Set<string>>(new Set());
+  const [composeMsg, setComposeMsg] = useState('');
+  const [composeSending, setComposeSending] = useState(false);
 
   const fetchInbox = useCallback(async () => {
     try {
@@ -2519,33 +2549,51 @@ function MessagesTab() {
     finally { setLoading(false); }
   }, []);
 
+  const fetchTenants = useCallback(async () => {
+    setTenantsLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const params = new URLSearchParams();
+      if (tenantSearch.trim()) params.set('search', tenantSearch.trim());
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      const res = await fetch(`/api/tin-nhan-platform?mode=tenants&${params}`, { headers });
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setTenantList(json.data || []);
+    } catch { toast.error('Lỗi tải danh sách phòng khám'); }
+    finally { setTenantsLoading(false); }
+  }, [tenantSearch, statusFilter]);
+
   useEffect(() => { fetchInbox(); }, [fetchInbox]);
+
+  useEffect(() => {
+    if (viewMode === 'compose') fetchTenants();
+  }, [viewMode, fetchTenants]);
 
   // Poll inbox every 30s
   useEffect(() => {
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchInbox();
+      if (document.visibilityState === 'visible' && viewMode === 'inbox' && !selectedTenant) {
+        fetchInbox();
+      }
     }, 30_000);
     return () => clearInterval(timer);
-  }, [fetchInbox]);
+  }, [fetchInbox, viewMode, selectedTenant]);
 
   const openThread = useCallback(async (tenantId: string) => {
     setSelectedTenant(tenantId);
     setThreadLoading(true);
     try {
       const headers = await getAuthHeaders();
-      // Fetch messages
       const res = await fetch(`/api/tin-nhan-platform?mode=thread&tenant_id=${tenantId}&limit=50`, { headers });
       if (!res.ok) throw new Error();
       const json = await res.json();
       setThreadMessages(json.data || []);
-      // Mark as read
       await fetch('/api/tin-nhan-platform?mode=admin_read', {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenant_id: tenantId }),
       });
-      // Update inbox count
       setInbox(prev => prev.map(t => t.tenant_id === tenantId ? { ...t, unread_count: 0 } : t));
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 100);
     } catch { toast.error('Lỗi tải tin nhắn'); }
@@ -2594,14 +2642,97 @@ function MessagesTab() {
     finally { setSending(false); }
   };
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Đang tải...</div>;
+  const sendSingleCompose = async () => {
+    if (!selectedSingleTenant || !composeMsg.trim() || composeSending) return;
+    const tenantId = selectedSingleTenant;
+    setComposeSending(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/tin-nhan-platform?mode=reply', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: tenantId, noi_dung: composeMsg }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Đã gửi tin nhắn');
+      setComposeMsg('');
+      setSelectedSingleTenant(null);
+      setViewMode('inbox');
+      await fetchInbox();
+      openThread(tenantId);
+    } catch { toast.error('Lỗi gửi tin nhắn'); }
+    finally { setComposeSending(false); }
+  };
 
-  // Thread view (đang xem tin nhắn với 1 tenant)
+  const sendBulkCompose = async (allActive: boolean) => {
+    if (!composeMsg.trim() || composeSending) return;
+    const count = allActive ? null : selectedBulkTenants.size;
+    if (!allActive && count === 0) {
+      toast.error('Chọn ít nhất một phòng khám');
+      return;
+    }
+
+    const ok = await confirm({
+      message: allActive
+        ? 'Gửi tin nhắn đến tất cả phòng khám đang hoạt động trên hệ thống?'
+        : `Gửi tin nhắn đến ${count} phòng khám đã chọn?`,
+    });
+    if (!ok) return;
+
+    setComposeSending(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/tin-nhan-platform?mode=broadcast', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          allActive
+            ? { all_active: true, noi_dung: composeMsg }
+            : { tenant_ids: [...selectedBulkTenants], noi_dung: composeMsg }
+        ),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Lỗi gửi');
+      }
+      const json = await res.json();
+      toast.success(`Đã gửi tin nhắn đến ${json.sent} phòng khám`);
+      setComposeMsg('');
+      setSelectedBulkTenants(new Set());
+      fetchInbox();
+      setViewMode('inbox');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Lỗi gửi tin đồng loạt');
+    } finally {
+      setComposeSending(false);
+    }
+  };
+
+  const toggleBulkTenant = (tenantId: string) => {
+    setSelectedBulkTenants(prev => {
+      const next = new Set(prev);
+      if (next.has(tenantId)) next.delete(tenantId);
+      else next.add(tenantId);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelectedBulkTenants(new Set(tenantList.map(t => t.tenant_id)));
+  };
+
+  const clearBulkSelection = () => setSelectedBulkTenants(new Set());
+
+  if (loading && viewMode === 'inbox' && !selectedTenant) {
+    return <div className="text-center py-12 text-gray-400">Đang tải...</div>;
+  }
+
+  // Thread view
   if (selectedTenant) {
-    const tenantInfo = inbox.find(t => t.tenant_id === selectedTenant);
+    const tenantInfo = inbox.find(t => t.tenant_id === selectedTenant)
+      || tenantList.find(t => t.tenant_id === selectedTenant);
     return (
       <div className="flex flex-col h-[calc(100dvh-220px)] sm:h-[calc(100vh-240px)] min-h-[420px]">
-        {/* Thread header */}
         <div className="flex items-start sm:items-center gap-3 mb-3 flex-shrink-0">
           <button
             onClick={() => { setSelectedTenant(null); fetchInbox(); }}
@@ -2619,12 +2750,14 @@ function MessagesTab() {
           </div>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto bg-gray-50 rounded-xl border p-3 sm:p-4 space-y-3">
           {threadLoading ? (
             <div className="text-center py-12 text-gray-400">Đang tải...</div>
           ) : threadMessages.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">Chưa có tin nhắn</div>
+            <div className="text-center py-12 text-gray-400">
+              <p>Chưa có tin nhắn</p>
+              <p className="text-xs text-gray-300 mt-1">Gửi tin nhắn đầu tiên cho phòng khám này</p>
+            </div>
           ) : (
             threadMessages.map(msg => {
               const isSuper = msg.sender_role === 'superadmin';
@@ -2654,11 +2787,10 @@ function MessagesTab() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Reply input */}
         <div className="flex-shrink-0 mt-3">
           <div className="flex items-end gap-2">
             <textarea
-              placeholder="Trả lời phòng khám..."
+              placeholder="Nhắn tin cho phòng khám..."
               value={newMsg}
               onChange={e => setNewMsg(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
@@ -2686,11 +2818,215 @@ function MessagesTab() {
     );
   }
 
-  // Inbox view (danh sách tenant)
+  // Compose view
+  if (viewMode === 'compose') {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('inbox')}
+              className="px-3 py-1.5 text-sm rounded-lg text-gray-500 hover:text-gray-700"
+            >
+              ← Hộp thư đến
+            </button>
+            <button
+              type="button"
+              onClick={() => setComposeMode('single')}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
+                composeMode === 'single' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              Một phòng khám
+            </button>
+            <button
+              type="button"
+              onClick={() => setComposeMode('bulk')}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
+                composeMode === 'bulk' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              Nhiều phòng khám
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-800">
+          {composeMode === 'single'
+            ? 'Chủ động nhắn tin cho một phòng khám — không cần chờ họ nhắn trước.'
+            : 'Gửi cùng một tin nhắn đến nhiều phòng khám cùng lúc.'}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="text"
+            placeholder="Tìm theo tên hoặc mã PK..."
+            value={tenantSearch}
+            onChange={e => setTenantSearch(e.target.value)}
+            className="flex-1 min-w-[200px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+          />
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          >
+            <option value="all">Tất cả trạng thái</option>
+            <option value="active">Đang hoạt động</option>
+            <option value="suspended">Tạm ngưng</option>
+            <option value="inactive">Ngừng hoạt động</option>
+          </select>
+          <button
+            type="button"
+            onClick={fetchTenants}
+            className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg"
+          >
+            Tìm
+          </button>
+        </div>
+
+        {composeMode === 'single' ? (
+          <div className="border rounded-xl overflow-hidden max-h-64 overflow-y-auto">
+            {tenantsLoading ? (
+              <div className="text-center py-8 text-gray-400">Đang tải...</div>
+            ) : tenantList.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Không tìm thấy phòng khám</div>
+            ) : (
+              tenantList.map(t => (
+                <button
+                  key={t.tenant_id}
+                  type="button"
+                  onClick={() => setSelectedSingleTenant(t.tenant_id)}
+                  className={`w-full text-left px-4 py-3 border-b last:border-b-0 transition ${
+                    selectedSingleTenant === t.tenant_id
+                      ? 'bg-purple-50 border-l-4 border-l-purple-500'
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-900">{t.tenant_name}</span>
+                    {t.tenant_code && (
+                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{t.tenant_code}</span>
+                    )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      t.status === 'active' ? 'bg-green-50 text-green-700'
+                        : t.status === 'suspended' ? 'bg-yellow-50 text-yellow-700'
+                          : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {t.status}
+                    </span>
+                    {!t.has_thread && (
+                      <span className="text-[10px] text-purple-500">Chưa có hội thoại</span>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        ) : (
+          <div>
+            <div className="flex flex-wrap gap-2 mb-2">
+              <button type="button" onClick={selectAllVisible} className="text-xs text-blue-600 hover:underline">
+                Chọn tất cả ({tenantList.length})
+              </button>
+              <button type="button" onClick={clearBulkSelection} className="text-xs text-gray-500 hover:underline">
+                Bỏ chọn
+              </button>
+              <span className="text-xs text-gray-400 ml-auto">
+                Đã chọn: {selectedBulkTenants.size}
+              </span>
+            </div>
+            <div className="border rounded-xl overflow-hidden max-h-64 overflow-y-auto">
+              {tenantsLoading ? (
+                <div className="text-center py-8 text-gray-400">Đang tải...</div>
+              ) : tenantList.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">Không tìm thấy phòng khám</div>
+              ) : (
+                tenantList.map(t => (
+                  <label
+                    key={t.tenant_id}
+                    className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedBulkTenants.has(t.tenant_id)}
+                      onChange={() => toggleBulkTenant(t.tenant_id)}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-gray-900">{t.tenant_name}</span>
+                        {t.tenant_code && (
+                          <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{t.tenant_code}</span>
+                        )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          t.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {t.status}
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Nội dung tin nhắn</label>
+          <textarea
+            value={composeMsg}
+            onChange={e => setComposeMsg(e.target.value)}
+            placeholder="Nhập nội dung tin nhắn..."
+            rows={4}
+            maxLength={2000}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
+          />
+          <p className="text-[10px] text-gray-400 mt-1 text-right">{composeMsg.length}/2000</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {composeMode === 'single' ? (
+            <button
+              type="button"
+              onClick={sendSingleCompose}
+              disabled={!selectedSingleTenant || !composeMsg.trim() || composeSending}
+              className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm"
+            >
+              {composeSending ? 'Đang gửi...' : 'Gửi tin nhắn'}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => sendBulkCompose(false)}
+                disabled={selectedBulkTenants.size === 0 || !composeMsg.trim() || composeSending}
+                className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm"
+              >
+                {composeSending ? 'Đang gửi...' : `Gửi đến ${selectedBulkTenants.size} PK đã chọn`}
+              </button>
+              <button
+                type="button"
+                onClick={() => sendBulkCompose(true)}
+                disabled={!composeMsg.trim() || composeSending}
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm"
+              >
+                Gửi tất cả PK đang hoạt động
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Inbox view
   const totalUnread = inbox.reduce((s, t) => s + t.unread_count, 0);
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-base sm:text-lg font-semibold text-gray-800">
           Tin nhắn từ phòng khám
           {totalUnread > 0 && (
@@ -2699,14 +3035,30 @@ function MessagesTab() {
             </span>
           )}
         </h2>
-        <button onClick={() => { setLoading(true); fetchInbox(); }} className="text-sm text-blue-600 hover:underline">
-          Làm mới
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode('compose')}
+            className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium"
+          >
+            + Gửi tin mới
+          </button>
+          <button onClick={() => { setLoading(true); fetchInbox(); }} className="text-sm text-blue-600 hover:underline">
+            Làm mới
+          </button>
+        </div>
       </div>
 
       {inbox.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <p>Chưa có phòng khám nào gửi tin nhắn</p>
+          <button
+            type="button"
+            onClick={() => setViewMode('compose')}
+            className="mt-3 text-sm text-purple-600 hover:underline"
+          >
+            Gửi tin nhắn chủ động cho phòng khám →
+          </button>
         </div>
       ) : (
         <div className="space-y-2">

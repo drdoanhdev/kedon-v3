@@ -6,7 +6,7 @@
  * giới hạn áp dụng theo từng instance. Đủ để chặn brute-force cơ bản và
  * đồng bộ với cách các cache in-memory khác trong tenantApi.ts.
  */
-import type { NextApiRequest } from 'next';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 interface WindowState {
   count: number;
@@ -78,4 +78,34 @@ export function getRateLimitIp(req: NextApiRequest): string {
     req.socket.remoteAddress ||
     'unknown';
   return candidate.replace(/^::ffff:/, '').trim();
+}
+
+/** Khóa rate limit theo tenant + user. */
+export function tenantUserRateLimitKey(tenantId: string, userId: string, scope: string): string {
+  return `${scope}:${tenantId}:${userId}`;
+}
+
+/** Khóa rate limit theo tenant + IP (endpoint nhạy cảm theo IP). */
+export function tenantIpRateLimitKey(tenantId: string, ip: string, scope: string): string {
+  return `${scope}:${tenantId}:${ip}`;
+}
+
+/**
+ * Kiểm tra rate limit và gửi 429 nếu vượt ngưỡng.
+ * @returns true nếu được phép tiếp tục; false nếu đã gửi response 429.
+ */
+export function enforceRateLimit(
+  res: NextApiResponse,
+  key: string,
+  limit: number,
+  windowMs: number,
+  message = 'Quá nhiều yêu cầu. Vui lòng thử lại sau.'
+): boolean {
+  const rl = rateLimit(key, limit, windowMs);
+  if (!rl.allowed) {
+    res.setHeader('Retry-After', String(rl.retryAfterSec));
+    res.status(429).json({ error: message, message, retryAfterSec: rl.retryAfterSec });
+    return false;
+  }
+  return true;
 }

@@ -11,6 +11,7 @@
     "lint": "next lint",
     "clean": "rimraf .next && rimraf node_modules/.cache",
     "pack:face-agent": "powershell -ExecutionPolicy Bypass -File services/face-agent/scripts/build-optigo-face-agent.ps1",
+    "pack:print-agent": "powershell -ExecutionPolicy Bypass -File services/print-agent/scripts/pack-optigo-print-agent.ps1",
     "test": "vitest run",
     "test:watch": "vitest"
   },

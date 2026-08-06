@@ -29,6 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     return await handleMediaUploadPut(req, res, {
       tenantId: ctx.tenantId,
+      userId: ctx.userId,
       branchId: null,
       table: 'gong_kinh_media',
       maxFileBytes: resolveMaxFileBytes(),

@@ -318,7 +318,8 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
         summary: 'Thiết kế và in tem từ danh mục gọng.',
         details: [
           'Designer tem trên trình duyệt',
-          'In tem theo mẫu cấu hình',
+          'In trực tiếp chất lượng cao qua Optigo Print Agent (cài 1 lần trên máy cửa hàng)',
+          'In qua trình duyệt làm phương án dự phòng',
         ],
         href: '/tem-kinh',
         featureKey: 'print_config',

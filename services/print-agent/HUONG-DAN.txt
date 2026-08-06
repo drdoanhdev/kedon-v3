@@ -1,0 +1,29 @@
+OPTIGO PRINT AGENT — HƯỚNG DẪN CỬA HÀNG
+========================================
+
+Mục đích: in tem kính trực tiếp (chất lượng cao) khi dùng web app.optigo.vn.
+
+CÀI ĐẶT (1 lần)
+---------------
+1. Giải nén file zip ra một thư mục dễ nhớ (ví dụ: Desktop\OptigoPrintAgent).
+2. Double-click file:  1-Chay-agent.bat
+3. Để cửa sổ đen mở — không tắt khi đang in tem.
+4. (Tuỳ chọn) Double-click:  2-Cai-tu-dong-khoi-dong.bat
+   → mỗi lần bật máy Windows sẽ tự mở agent.
+
+DÙNG HÀNG NGÀY
+--------------
+1. Mở agent (nếu chưa chạy): double-click 1-Chay-agent.bat
+2. Vào Chrome/Edge: https://app.optigo.vn/tem-kinh
+3. Trạng thái hiện "Đã kết nối" → chọn máy in → In trực tiếp
+
+LƯU Ý
+-----
+- Cần cài driver máy in tem trên Windows trước (máy in hiện trong
+  Cài đặt Windows → Máy in & máy quét).
+- Chỉ dùng Chrome hoặc Edge (không dùng Firefox/Safari cho in trực tiếp).
+- Không cần cài Python / Node — chỉ cần Windows.
+
+GỠ TỰ ĐỘNG KHỞI ĐỘNG
+---------------------
+Xoá shortcut "OptigoPrintAgent" trong thư mục Startup của Windows.

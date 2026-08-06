@@ -2,6 +2,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { requirePermission } from '../../../lib/permissions';
+import { QUERY_MAX_ROWS, RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
 
 type ChiTietItem = {
   id: number;
@@ -48,7 +50,7 @@ const getAllRecords = async <T>(query: any, tableName: string, timestamp: number
   let allData: T[] = [];
   let start = 0;
   let hasMore = true;
-  let maxRecords = 50000; // Giới hạn tối đa để tránh timeout
+  let maxRecords = QUERY_MAX_ROWS;
 
   while (hasMore && allData.length < maxRecords) {
     const { data, error, count } = await query
@@ -88,6 +90,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const { limit, windowMs } = RATE_LIMITS.report;
+  if (!enforceRateLimit(
+    res,
+    tenantUserRateLimitKey(ctx.tenantId, ctx.userId, 'bao-cao'),
+    limit,
+    windowMs
+  )) return;
+
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
   if (!branchAccess) return;
   if (!(await requirePermission(ctx, res, 'view_revenue'))) return;

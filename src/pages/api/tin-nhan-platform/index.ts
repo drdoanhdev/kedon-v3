@@ -8,78 +8,43 @@
  * 
  * Superadmin (không cần tenant context):
  *   GET  ?mode=inbox — danh sách tenant có tin nhắn
+ *   GET  ?mode=tenants — danh sách tất cả phòng khám (cho gửi tin chủ động)
  *   GET  ?mode=thread&tenant_id=xxx — tin nhắn với 1 tenant
- *   POST ?mode=reply — trả lời cho 1 tenant
+ *   POST ?mode=reply — gửi tin cho 1 tenant (trả lời hoặc chủ động nhắn trước)
+ *   POST ?mode=broadcast — gửi tin đồng loạt cho nhiều / tất cả phòng khám
  *   PATCH ?mode=admin_read — đánh dấu đã đọc (admin side)
  */
 import { NextApiRequest, NextApiResponse } from 'next';
-import { supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
-
-// Helpers
-function getBearer(req: NextApiRequest): string | null {
-  const h = req.headers.authorization;
-  if (!h) return null;
-  const parts = (Array.isArray(h) ? h[0] : h).split(' ');
-  return parts.length >= 2 && parts[0].toLowerCase() === 'bearer'
-    ? parts.slice(1).join(' ').trim() || null
-    : null;
-}
+import { requireSuperAdmin } from '../../../lib/adminGuard';
+import { requireTenant, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function authenticateUser(req: NextApiRequest, res: NextApiResponse) {
-  const token = getBearer(req);
-  if (!token) { res.status(401).json({ message: 'Unauthorized' }); return null; }
-  const { data: userData, error } = await supabase.auth.getUser(token);
-  if (error || !userData.user) { res.status(401).json({ message: 'Token không hợp lệ' }); return null; }
-  return userData.user;
-}
-
-async function isSuperAdmin(userId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', userId)
-    .maybeSingle();
-  return data?.role === 'superadmin';
-}
-
-async function getTenantId(req: NextApiRequest, userId: string): Promise<string | null> {
-  // From header
-  const h = req.headers['x-tenant-id'];
-  const val = Array.isArray(h) ? h[0] : h;
-  if (val?.trim() && UUID_RE.test(val.trim())) return val.trim();
-  // From query
-  if (typeof req.query.tenant_id === 'string' && UUID_RE.test(req.query.tenant_id.trim())) {
-    return req.query.tenant_id.trim();
-  }
-  return null;
-}
-
-async function getTenantMemberRole(userId: string, tenantId: string): Promise<string | null> {
-  const { data } = await supabase
-    .from('tenantmembership')
-    .select('role')
-    .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
-    .eq('active', true)
-    .maybeSingle();
-  return data?.role || null;
-}
+const ADMIN_MODES = new Set(['inbox', 'tenants', 'thread', 'reply', 'broadcast', 'admin_read']);
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
-  const user = await authenticateUser(req, res);
-  if (!user) return;
-
-  const userId = user.id;
   const mode = (req.query.mode as string) || '';
-  const isAdmin = await isSuperAdmin(userId);
+  const isAdminMode = ADMIN_MODES.has(mode);
+
+  let userId: string;
+  let tenantId: string | null = null;
+
+  if (isAdminMode) {
+    const admin = await requireSuperAdmin(req, res);
+    if (!admin) return;
+    userId = admin.userId;
+  } else {
+    const ctx = await requireTenant(req, res, { allowedRoles: ['owner'] });
+    if (!ctx) return;
+    userId = ctx.userId;
+    tenantId = ctx.tenantId;
+  }
 
   try {
     // ==================== SUPERADMIN ROUTES ====================
-    if (isAdmin && (mode === 'inbox' || mode === 'thread' || mode === 'reply' || mode === 'admin_read')) {
+    if (isAdminMode) {
 
       // GET ?mode=inbox — danh sách tenant có tin nhắn + đếm chưa đọc
       if (req.method === 'GET' && mode === 'inbox') {
@@ -131,6 +96,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json({ data: inbox, totalUnread });
       }
 
+      // GET ?mode=tenants — danh sách phòng khám cho gửi tin chủ động
+      if (req.method === 'GET' && mode === 'tenants') {
+        const search = ((req.query.search as string) || '').trim().toLowerCase();
+        const statusFilter = (req.query.status as string) || '';
+
+        let query = supabase
+          .from('tenants')
+          .select('id, name, code, status')
+          .order('name', { ascending: true });
+
+        if (statusFilter && ['active', 'suspended', 'inactive'].includes(statusFilter)) {
+          query = query.eq('status', statusFilter);
+        }
+
+        const { data: tenants, error } = await query;
+        if (error) throw error;
+
+        let filtered = tenants || [];
+        if (search) {
+          filtered = filtered.filter(t =>
+            t.name?.toLowerCase().includes(search)
+            || t.code?.toLowerCase().includes(search)
+          );
+        }
+
+        // Đánh dấu phòng khám đã có hội thoại
+        const { data: threadRows } = await supabase
+          .from('tin_nhan_platform')
+          .select('tenant_id')
+          .eq('deleted_by_admin', false);
+
+        const hasThread = new Set((threadRows || []).map(r => r.tenant_id));
+
+        const result = filtered.map(t => ({
+          tenant_id: t.id,
+          tenant_name: t.name,
+          tenant_code: t.code,
+          status: t.status,
+          has_thread: hasThread.has(t.id),
+        }));
+
+        return res.status(200).json({ data: result });
+      }
+
       // GET ?mode=thread&tenant_id=xxx — tin nhắn với 1 tenant
       if (req.method === 'GET' && mode === 'thread') {
         const tenantId = req.query.tenant_id as string;
@@ -174,7 +183,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json({ data: messages });
       }
 
-      // POST ?mode=reply — superadmin trả lời cho 1 tenant
+      // POST ?mode=broadcast — gửi tin đồng loạt
+      if (req.method === 'POST' && mode === 'broadcast') {
+        const { tenant_ids, all_active, noi_dung } = req.body;
+        if (!noi_dung?.trim()) {
+          return res.status(400).json({ message: 'Nội dung là bắt buộc' });
+        }
+        if (noi_dung.trim().length > 2000) {
+          return res.status(400).json({ message: 'Tối đa 2000 ký tự' });
+        }
+
+        let targetIds: string[] = [];
+        if (all_active === true) {
+          const { data: activeTenants, error: tenantErr } = await supabase
+            .from('tenants')
+            .select('id')
+            .eq('status', 'active');
+          if (tenantErr) throw tenantErr;
+          targetIds = (activeTenants || []).map(t => t.id);
+        } else if (Array.isArray(tenant_ids)) {
+          targetIds = [...new Set(
+            tenant_ids
+              .filter((id: unknown) => typeof id === 'string' && UUID_RE.test(id))
+          )];
+        }
+
+        if (targetIds.length === 0) {
+          return res.status(400).json({ message: 'Chưa chọn phòng khám nào' });
+        }
+        if (targetIds.length > 500) {
+          return res.status(400).json({ message: 'Tối đa 500 phòng khám mỗi lần gửi' });
+        }
+
+        const rows = targetIds.map(tid => ({
+          tenant_id: tid,
+          sender_id: userId,
+          sender_role: 'superadmin',
+          noi_dung: noi_dung.trim(),
+          da_doc_admin: true,
+          da_doc_tenant: false,
+        }));
+
+        const { data, error } = await supabase
+          .from('tin_nhan_platform')
+          .insert(rows)
+          .select('id, tenant_id');
+
+        if (error) throw error;
+        return res.status(200).json({ sent: data?.length || 0, tenant_ids: targetIds });
+      }
+
+      // POST ?mode=reply — superadmin gửi tin cho 1 tenant (trả lời hoặc chủ động)
       if (req.method === 'POST' && mode === 'reply') {
         const { tenant_id, noi_dung } = req.body;
         if (!tenant_id || !UUID_RE.test(tenant_id)) {
@@ -220,21 +279,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (error) throw error;
         return res.status(200).json({ message: 'OK' });
       }
+
+      res.setHeader('Allow', ['GET', 'POST', 'PATCH']);
+      return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 
     // ==================== TENANT (PHÒNG KHÁM) ROUTES ====================
-    const tenantId = await getTenantId(req, userId);
-
     if (!tenantId) {
       return res.status(400).json({ message: 'Thiếu x-tenant-id' });
-    }
-    const memberRole = await getTenantMemberRole(userId, tenantId);
-    if (!memberRole) {
-      return res.status(403).json({ message: 'Không có quyền truy cập phòng khám này' });
-    }
-    // Chỉ chủ phòng khám (owner) mới được dùng tính năng nhắn tin hỗ trợ nền tảng
-    if (memberRole !== 'owner') {
-      return res.status(403).json({ message: 'Chỉ chủ phòng khám mới có thể nhắn tin với hỗ trợ nền tảng' });
     }
 
     // GET — lấy tin nhắn platform của tenant

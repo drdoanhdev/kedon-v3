@@ -1,11 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '../../../lib/tenantApi';
 import { generateDeviceToken, hashDeviceToken } from '../../../lib/faceDeviceAuth';
-import { getRateLimitIp, rateLimit, resetRateLimit } from '../../../lib/rateLimit';
-
-// Chống brute-force pairing code (8 ký tự): giới hạn số lần thử theo IP.
-const PAIR_ATTEMPT_LIMIT = 10;
-const PAIR_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+import { RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, getRateLimitIp, resetRateLimit } from '../../../lib/rateLimit';
 
 // Device token cho edge agent: sống lâu nhưng không vô hạn (buộc xoay vòng định kỳ).
 const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
@@ -17,13 +14,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ip = getRateLimitIp(req);
   const rlKey = `face-pair:${ip}`;
-  const rl = rateLimit(rlKey, PAIR_ATTEMPT_LIMIT, PAIR_ATTEMPT_WINDOW_MS);
-  if (!rl.allowed) {
-    res.setHeader('Retry-After', String(rl.retryAfterSec));
-    return res.status(429).json({
-      success: false,
-      error: `Quá nhiều lần thử ghép nối. Vui lòng thử lại sau ${rl.retryAfterSec} giây.`,
-    });
+  const { limit, windowMs } = RATE_LIMITS.facePair;
+  if (!enforceRateLimit(
+    res,
+    rlKey,
+    limit,
+    windowMs,
+    `Quá nhiều lần thử ghép nối. Vui lòng thử lại sau.`
+  )) {
+    return;
   }
 
   const { pairing_code, device_label, agent_version } = req.body || {};

@@ -3,34 +3,20 @@
  * - GET: Danh sách tenant của user hiện tại
  * - POST: Tạo phòng khám mới (user trở thành owner)
  * - PUT: Cập nhật thông tin phòng khám (chỉ owner/admin)
+ *
+ * Không yêu cầu x-tenant-id — xác thực Bearer JWT qua requireAuthenticatedUser.
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { requireAuthenticatedUser } from '../../../lib/adminGuard';
 import { supabaseAdmin, setNoCacheHeaders } from '../../../lib/tenantApi';
-
-function getBearer(req: NextApiRequest): string | null {
-  const h = req.headers.authorization;
-  if (!h) return null;
-  const parts = (Array.isArray(h) ? h[0] : h).split(' ');
-  return parts.length >= 2 && parts[0].toLowerCase() === 'bearer'
-    ? parts.slice(1).join(' ').trim() || null
-    : null;
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
-  // Xác thực user (không cần tenant cho endpoint này)
-  const token = getBearer(req);
-  if (!token) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
+  const auth = await requireAuthenticatedUser(req, res);
+  if (!auth) return;
 
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  if (userError || !userData.user) {
-    return res.status(401).json({ message: 'Token không hợp lệ' });
-  }
-
-  const userId = userData.user.id;
+  const userId = auth.userId;
 
   // GET: Danh sách phòng khám của user
   if (req.method === 'GET') {

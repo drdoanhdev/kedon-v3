@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, resolveBranchAccess, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
 
 type CareStatus = 'chua_lien_he' | 'da_goi' | 'hen_goi_lai' | 'da_chot_lich';
 type PriorityTier = 'A' | 'B' | 'C';
@@ -92,6 +94,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const { limit, windowMs } = RATE_LIMITS.crmCustomers;
+  if (!enforceRateLimit(
+    res,
+    tenantUserRateLimitKey(ctx.tenantId, ctx.userId, 'crm-customers'),
+    limit,
+    windowMs
+  )) return;
   if (!(await requireFeature(ctx, res, 'crm', 'manage_crm'))) return;
   const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
   if (!branchAccess) return;

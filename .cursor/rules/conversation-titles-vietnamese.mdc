@@ -1,0 +1,23 @@
+---
+description: Đặt tên cuộc hội thoại Cursor bằng tiếng Việt
+alwaysApply: true
+---
+
+# Tên cuộc hội thoại bằng tiếng Việt
+
+Khi đặt hoặc đề xuất **tên/tiêu đề cuộc hội thoại** (chat title, session name), luôn dùng **tiếng Việt**.
+
+## Quy tắc
+
+- Tóm tắt ngắn gọn nội dung chính của cuộc trò chuyện (thường 3–8 từ).
+- Dùng tiếng Việt có dấu, câu từ tự nhiên; tránh tiếng Anh trừ khi là tên kỹ thuật không dịch được (API, framework, tên file).
+- Không dùng tiếng Anh cho tiêu đề khi có cách diễn đạt tiếng Việt tương đương.
+
+## Ví dụ
+
+| ❌ Tránh | ✅ Nên dùng |
+|---------|------------|
+| Fix login bug | Sửa lỗi đăng nhập |
+| Add patient gender field | Thêm trường giới tính bệnh nhân |
+| Refactor inventory API | Refactor API quản lý kho |
+| Update admin dashboard | Cập nhật trang quản trị |

@@ -6,10 +6,7 @@ import { createHash, randomBytes } from 'crypto';
 import { supabaseAdmin } from './tenantApi';
 import { planHasFeature } from './featureConfig';
 import { getRateLimitIp, rateLimit, resetRateLimit } from './rateLimit';
-
-// Chống dò device token: giới hạn số lần xác thực thất bại theo IP.
-const AUTH_FAIL_LIMIT = 20;
-const AUTH_FAIL_WINDOW_MS = 5 * 60 * 1000;
+import { RATE_LIMITS } from './apiLimits';
 
 export interface FaceDeviceContext {
   deviceId: string;
@@ -77,7 +74,8 @@ export async function requireFaceDevice(
     return null;
   }
 
-  const preCheck = rateLimit(rlKey, AUTH_FAIL_LIMIT, AUTH_FAIL_WINDOW_MS);
+  const { limit, windowMs } = RATE_LIMITS.faceAuthFail;
+  const preCheck = rateLimit(rlKey, limit, windowMs);
   if (!preCheck.allowed) {
     res.setHeader('Retry-After', String(preCheck.retryAfterSec));
     res.status(429).json({

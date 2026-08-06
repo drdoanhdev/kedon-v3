@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin as supabase } from '../tenantApi';
+import { RATE_LIMITS } from '../apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../rateLimit';
 import { getMediaStorageProviderForRow } from './storage';
 import { assertAllowedImageBuffer } from './magicBytes';
 
@@ -43,6 +45,7 @@ export async function handleMediaUploadPut(
   res: NextApiResponse,
   options: {
     tenantId: string;
+    userId: string;
     branchId: string | null;
     table: 'don_kinh_media' | 'gong_kinh_media' | 'don_thuoc_media';
     maxFileBytes: number;
@@ -51,6 +54,16 @@ export async function handleMediaUploadPut(
   if (req.method !== 'PUT') {
     res.setHeader('Allow', ['PUT']);
     return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  const { limit, windowMs } = RATE_LIMITS.mediaUpload;
+  if (!enforceRateLimit(
+    res,
+    tenantUserRateLimitKey(options.tenantId, options.userId, 'media-upload'),
+    limit,
+    windowMs
+  )) {
+    return;
   }
 
   const mediaId = parsePositiveInt(req.query.id);

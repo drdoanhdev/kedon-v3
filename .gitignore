@@ -52,6 +52,7 @@ next-env.d.ts
 services/face-agent/config.json
 services/face-agent/.venv/
 services/face-agent/dist/
+services/print-agent/dist/
 services/face-agent/**/__pycache__/
 services/face-agent/**/*.pyc
 services/face-agent/cai-dat-log.txt

@@ -21,6 +21,34 @@ function getBearer(req: NextApiRequest): string | null {
 }
 
 /**
+ * Xác thực user đã đăng nhập (Bearer JWT). Không yêu cầu tenant hay superadmin.
+ * Dùng cho API cross-tenant như danh sách phòng khám của user.
+ */
+export async function requireAuthenticatedUser(
+  req: NextApiRequest,
+  res: NextApiResponse
+): Promise<SuperAdminContext | null> {
+  setNoCacheHeaders(res);
+
+  const token = getBearer(req);
+  if (!token) {
+    res.status(401).json({ message: 'Unauthorized: thiếu token xác thực' });
+    return null;
+  }
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  if (userError || !userData.user) {
+    res.status(401).json({ message: 'Unauthorized: token không hợp lệ' });
+    return null;
+  }
+
+  return {
+    userId: userData.user.id,
+    email: userData.user.email ?? null,
+  };
+}
+
+/**
  * Xác thực superadmin. Trả null nếu không hợp lệ (đã gửi response lỗi).
  */
 export async function requireSuperAdmin(

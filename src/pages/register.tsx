@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { TurnstileWidget } from '../components/TurnstileWidget'
 
 export default function Register() {
   const [clinicName, setClinicName] = useState('')
@@ -11,7 +12,13 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const router = useRouter()
+
+  const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim())
+  const handleTurnstileToken = useCallback((token: string | null) => {
+    setTurnstileToken(token)
+  }, [])
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,13 +31,24 @@ export default function Register() {
       toast.error('Mật khẩu phải ít nhất 6 ký tự')
       return
     }
+    if (turnstileRequired && !turnstileToken) {
+      toast.error('Vui lòng hoàn thành xác minh bảo mật')
+      return
+    }
 
     setLoading(true)
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clinicName, fullName, email, password, phone }),
+        body: JSON.stringify({
+          clinicName,
+          fullName,
+          email,
+          password,
+          phone,
+          turnstileToken,
+        }),
       })
 
       const data = await res.json()
@@ -171,9 +189,11 @@ export default function Register() {
             />
           </div>
 
+          <TurnstileWidget onToken={handleTurnstileToken} className="flex justify-center" />
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (turnstileRequired && !turnstileToken)}
             className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl disabled:opacity-50 transition duration-200 shadow-lg shadow-blue-200"
           >
             {loading ? 'Đang tạo tài khoản...' : 'Đăng ký miễn phí'}

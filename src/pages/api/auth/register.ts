@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
-import { getRateLimitIp, rateLimit } from '../../../lib/rateLimit';
+import { RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, getRateLimitIp } from '../../../lib/rateLimit';
+import { verifyTurnstileToken } from '../../../lib/turnstile';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,13 +16,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const ip = getRateLimitIp(req);
-  const rl = rateLimit(`register:${ip}`, 5, 15 * 60 * 1000);
-  if (!rl.allowed) {
-    res.setHeader('Retry-After', String(rl.retryAfterSec));
-    return res.status(429).json({
-      error: 'Quá nhiều lần đăng ký. Vui lòng thử lại sau.',
-      retryAfterSec: rl.retryAfterSec,
-    });
+  const { limit, windowMs } = RATE_LIMITS.register;
+  if (!enforceRateLimit(res, `register:${ip}`, limit, windowMs, 'Quá nhiều lần đăng ký. Vui lòng thử lại sau.')) {
+    return;
+  }
+
+  const turnstile = await verifyTurnstileToken(req.body?.turnstileToken, ip);
+  if (!turnstile.ok) {
+    return res.status(400).json({ error: turnstile.error || 'Xác minh bảo mật thất bại' });
   }
 
   const { clinicName, fullName, email, password, phone } = req.body;

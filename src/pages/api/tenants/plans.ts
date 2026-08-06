@@ -3,6 +3,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin } from '../../../lib/tenantApi';
 
+const PLANS_CACHE_SECONDS = 300;
+
 const FALLBACK_PLANS = [
   { plan_key: 'trial', name: 'Dùng thử', price: 0, period_label: '3 tháng hoặc 1.000 đơn', features: ['Quản lý bệnh nhân', 'Kê đơn thuốc & kính', 'Phòng chờ khám', 'Danh mục thuốc cơ bản', 'Báo cáo cơ bản', '1 người dùng'], is_popular: false, max_users: 1 },
   { plan_key: 'basic', name: 'Cơ bản', price: 99000, period_label: '/tháng', features: ['Tất cả tính năng Dùng thử', 'Đơn thuốc không giới hạn', 'Lịch hẹn khám', 'Cấu hình mẫu in', 'Hỗ trợ qua tin nhắn', '1 người dùng'], is_popular: false, max_users: 1 },
@@ -14,6 +16,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  res.setHeader('Cache-Control', `public, s-maxage=${PLANS_CACHE_SECONDS}, stale-while-revalidate=60`);
 
   try {
     const { data, error } = await supabaseAdmin

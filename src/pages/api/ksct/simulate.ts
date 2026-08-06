@@ -4,7 +4,8 @@
  */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { getRateLimitIp, rateLimit } from '../../../lib/rateLimit';
+import { RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, getRateLimitIp, tenantIpRateLimitKey } from '../../../lib/rateLimit';
 import {
   alPercentile,
   alToPctWeight,
@@ -54,11 +55,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!ctx) return;
 
   const ip = getRateLimitIp(req);
-  const rl = rateLimit(`ksct:${ctx.tenantId}:${ip}`, 60, 60_000);
-  if (!rl.allowed) {
-    res.setHeader('Retry-After', String(rl.retryAfterSec));
-    return res.status(429).json({ error: 'Quá nhiều yêu cầu mô phỏng' });
-  }
+  const { limit, windowMs } = RATE_LIMITS.ksctSimulate;
+  if (!enforceRateLimit(
+    res,
+    tenantIpRateLimitKey(ctx.tenantId, ip, 'ksct'),
+    limit,
+    windowMs,
+    'Quá nhiều yêu cầu mô phỏng'
+  )) return;
 
   const body = req.body || {};
   const sexUi = body.sex === 'girl' ? 'girl' : 'boy';

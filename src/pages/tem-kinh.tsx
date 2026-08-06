@@ -13,10 +13,17 @@ import {
   type TemLabelTemplate,
 } from '../lib/temKinh';
 import { printResolvedTemTemplate } from '../lib/temKinhClientPrint';
+import {
+  checkPrintAgent,
+  listPrintAgentPrinters,
+  printViaPrintAgent,
+} from '../lib/printAgentClient';
 import styles from './tem-kinh-designer.module.css';
 
 const TEMPLATE_STORAGE_KEY = 'tem-kinh:default-template-id';
 const DIRECT_PRINTER_STORAGE_KEY = 'tem-kinh:direct-printer-name';
+
+type PrintAgentUiStatus = 'checking' | 'online' | 'offline';
 
 type TemTemplate = TemLabelTemplate & {
   id?: number | null;
@@ -325,6 +332,8 @@ export default function TemKinhPage() {
   const [printerName, setPrinterName] = useState('');
   const [printerStatus, setPrinterStatus] = useState('');
   const [isDirectPrinting, setIsDirectPrinting] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<PrintAgentUiStatus>('checking');
+  const [downloadingAgent, setDownloadingAgent] = useState(false);
 
   const autoPrintedRef = useRef(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -407,36 +416,109 @@ export default function TemKinhPage() {
     }
   };
 
+  const applyPrinterList = (printerList: string[], defaultPrinter: string) => {
+    setPrinters(printerList);
+
+    const localPrinter =
+      typeof window !== 'undefined' ? (window.localStorage.getItem(DIRECT_PRINTER_STORAGE_KEY) || '').trim() : '';
+
+    const nextPrinter =
+      (localPrinter && printerList.includes(localPrinter) ? localPrinter : '') ||
+      (defaultPrinter && printerList.includes(defaultPrinter) ? defaultPrinter : '') ||
+      printerList[0] ||
+      '';
+
+    setPrinterName(nextPrinter);
+    if (nextPrinter && typeof window !== 'undefined') {
+      window.localStorage.setItem(DIRECT_PRINTER_STORAGE_KEY, nextPrinter);
+    }
+  };
+
   const loadPrinters = async () => {
     try {
-      setPrinterStatus('Đang tải danh sách máy in...');
-      const response = await axios.get('/api/print-tspl');
-      const printerList = Array.isArray(response.data?.printers)
-        ? (response.data.printers as string[]).filter((item) => typeof item === 'string' && item.trim())
-        : [];
+      setPrinterStatus('Đang kiểm tra Print Agent...');
+      setAgentStatus('checking');
 
-      setPrinters(printerList);
-
-      const localPrinter =
-        typeof window !== 'undefined' ? (window.localStorage.getItem(DIRECT_PRINTER_STORAGE_KEY) || '').trim() : '';
-      const defaultPrinter = typeof response.data?.defaultPrinter === 'string' ? response.data.defaultPrinter.trim() : '';
-
-      const nextPrinter =
-        (localPrinter && printerList.includes(localPrinter) ? localPrinter : '') ||
-        (defaultPrinter && printerList.includes(defaultPrinter) ? defaultPrinter : '') ||
-        printerList[0] ||
-        '';
-
-      setPrinterName(nextPrinter);
-      if (nextPrinter && typeof window !== 'undefined') {
-        window.localStorage.setItem(DIRECT_PRINTER_STORAGE_KEY, nextPrinter);
+      const health = await checkPrintAgent();
+      if (health?.ok) {
+        setAgentStatus('online');
+        setPrinterStatus('Đang tải danh sách máy in từ máy này...');
+        const { printers: printerList, defaultPrinter } = await listPrintAgentPrinters();
+        applyPrinterList(printerList, defaultPrinter || '');
+        setPrinterStatus(
+          printerList.length > 0
+            ? `Đã kết nối Print Agent — tìm thấy ${printerList.length} máy in.`
+            : 'Đã kết nối Print Agent nhưng chưa thấy máy in nào trên Windows.'
+        );
+        return;
       }
 
-      setPrinterStatus(printerList.length > 0 ? `Đã tìm thấy ${printerList.length} máy in.` : 'Không tìm thấy máy in nào.');
+      setAgentStatus('offline');
+
+      // Dev local: API Next.js trên cùng máy Windows vẫn dùng được.
+      try {
+        const response = await axios.get('/api/print-tspl');
+        const printerList = Array.isArray(response.data?.printers)
+          ? (response.data.printers as string[]).filter((item) => typeof item === 'string' && item.trim())
+          : [];
+        const defaultPrinter =
+          typeof response.data?.defaultPrinter === 'string' ? response.data.defaultPrinter.trim() : '';
+        applyPrinterList(printerList, defaultPrinter);
+        setPrinterStatus(
+          printerList.length > 0
+            ? `Đã tìm thấy ${printerList.length} máy in (qua server local).`
+            : 'Không tìm thấy máy in nào.'
+        );
+      } catch (serverErr: any) {
+        setPrinters([]);
+        const serverMessage = serverErr?.response?.data?.error || '';
+        setPrinterStatus(
+          serverMessage.includes('Windows')
+            ? 'Chưa chạy Optigo Print Agent. Bấm "Tải Print Agent" → giải nén → mở file 1-Chay-agent.bat.'
+            : serverMessage ||
+                'Chưa chạy Optigo Print Agent. Bấm "Tải Print Agent" → giải nén → mở file 1-Chay-agent.bat.'
+        );
+      }
     } catch (err: any) {
       console.error('loadPrinters error:', err);
-      const message = err?.response?.data?.error || err?.message || 'Không tải được danh sách máy in.';
+      setAgentStatus('offline');
+      const message = err?.message || 'Không tải được danh sách máy in.';
       setPrinterStatus(message);
+    }
+  };
+
+  const handleDownloadPrintAgent = async () => {
+    setDownloadingAgent(true);
+    try {
+      const response = await axios.get('/api/print-agent/download', { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'OptigoPrintAgent.zip';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Đã tải OptigoPrintAgent.zip — giải nén rồi mở 1-Chay-agent.bat');
+    } catch (err: any) {
+      console.error('download print agent error:', err);
+      let message = 'Không tải được Print Agent.';
+      const data = err?.response?.data;
+      if (data instanceof Blob) {
+        try {
+          const text = await data.text();
+          const parsed = JSON.parse(text) as { error?: string };
+          if (parsed?.error) message = parsed.error;
+        } catch {
+          /* ignore */
+        }
+      } else if (typeof data?.error === 'string') {
+        message = data.error;
+      }
+      toast.error(message);
+    } finally {
+      setDownloadingAgent(false);
     }
   };
 
@@ -723,9 +805,8 @@ export default function TemKinhPage() {
     try {
       const bitmap = await buildBitmapPayloadFromTemplate(resolved);
       const copies = clamp(Math.round(resolved.copies || 1), 1, 500);
-
-      const response = await axios.post('/api/print-tspl', {
-        mode: 'bitmap',
+      const printBody = {
+        mode: 'bitmap' as const,
         printerName: printer,
         widthMm: resolved.widthMm,
         heightMm: resolved.heightMm,
@@ -739,15 +820,29 @@ export default function TemKinhPage() {
         widthBytes: bitmap.widthBytes,
         heightDots: bitmap.heightDots,
         bitmapBase64: bitmap.bitmapBase64,
-      });
+      };
 
-      const message = response.data?.message || `Đã gửi lệnh in trực tiếp tới ${printer}`;
+      const health = await checkPrintAgent();
+      let message: string;
+
+      if (health?.ok) {
+        setAgentStatus('online');
+        message = await printViaPrintAgent(printBody);
+      } else {
+        setAgentStatus('offline');
+        const response = await axios.post('/api/print-tspl', printBody);
+        message = response.data?.message || `Đã gửi lệnh in trực tiếp tới ${printer}`;
+      }
+
       setPrinterStatus(message);
       toast.success(message);
       return true;
     } catch (err: any) {
       console.error('printPayloadDirect error:', err);
-      const message = err?.response?.data?.error || err?.message || 'In trực tiếp thất bại.';
+      const message =
+        err?.response?.data?.error ||
+        err?.message ||
+        'In trực tiếp thất bại. Hãy mở Optigo Print Agent (1-Chay-agent.bat).';
       setPrinterStatus(message);
       toast.error(message);
       return false;
@@ -1228,6 +1323,47 @@ export default function TemKinhPage() {
                 </select>
               </label>
 
+              <div
+                className={styles.block}
+                style={{
+                  marginTop: 0,
+                  marginBottom: 12,
+                  padding: '12px 14px',
+                  border: '1px solid #dbeafe',
+                  background: agentStatus === 'online' ? '#f0fdf4' : '#eff6ff',
+                }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                  <strong style={{ fontSize: 14 }}>In trực tiếp (chất lượng cao)</strong>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: agentStatus === 'online' ? '#15803d' : agentStatus === 'checking' ? '#a16207' : '#b91c1c',
+                    }}
+                  >
+                    {agentStatus === 'online'
+                      ? '● Đã kết nối Print Agent'
+                      : agentStatus === 'checking'
+                        ? '● Đang kiểm tra...'
+                        : '○ Chưa chạy Print Agent'}
+                  </span>
+                </div>
+                {agentStatus !== 'online' ? (
+                  <p className={styles.statusText} style={{ marginBottom: 10 }}>
+                    Cửa hàng chỉ cần: <strong>Tải</strong> → giải nén → mở file <strong>1-Chay-agent.bat</strong> (để cửa sổ mở khi in).
+                  </p>
+                ) : null}
+                <div className={styles.grid2}>
+                  <button type="button" onClick={() => void handleDownloadPrintAgent()} disabled={downloadingAgent}>
+                    {downloadingAgent ? 'Đang tải...' : 'Tải Print Agent'}
+                  </button>
+                  <button type="button" onClick={() => void loadPrinters()}>
+                    Nạp lại máy in
+                  </button>
+                </div>
+              </div>
+
               <div className={styles.grid2}>
                 <label>
                   Máy in trực tiếp
@@ -1240,10 +1376,6 @@ export default function TemKinhPage() {
                     ))}
                   </select>
                 </label>
-                <button onClick={() => void loadPrinters()}>Nạp lại máy in</button>
-              </div>
-
-              <div className={styles.grid2}>
                 <button onClick={handleTogglePreviewMode} disabled={loadingPreview || !selectedFrameId}>
                   {loadingPreview
                     ? 'Đang tải...'
@@ -1251,17 +1383,21 @@ export default function TemKinhPage() {
                       ? 'Quay lại chế độ chỉnh sửa'
                       : 'Xem trước dữ liệu thực tế'}
                 </button>
-                <button onClick={() => void handlePrintCurrent()} disabled={loadingPreview || isDirectPrinting || !selectedFrameId}>
-                  {isDirectPrinting ? 'Đang in trực tiếp...' : 'In trực tiếp'}
-                </button>
               </div>
 
               <div className={styles.grid2}>
-                <button onClick={handlePrintCurrentInBrowser} disabled={loadingPreview || isDirectPrinting || !selectedFrameId}>
-                  In qua trình duyệt
+                <button
+                  onClick={() => void handlePrintCurrent()}
+                  disabled={loadingPreview || isDirectPrinting || !selectedFrameId || !printers.length}
+                >
+                  {isDirectPrinting ? 'Đang in trực tiếp...' : 'In trực tiếp'}
                 </button>
-                <div className={styles.statusText}>{printerStatus || 'Mẹo: bấm xem trước để xem dữ liệu thật trước khi in.'}</div>
+                <button onClick={handlePrintCurrentInBrowser} disabled={loadingPreview || isDirectPrinting || !selectedFrameId}>
+                  In qua trình duyệt (dự phòng)
+                </button>
               </div>
+
+              <div className={styles.statusText}>{printerStatus || 'Mẹo: bấm xem trước để xem dữ liệu thật trước khi in.'}</div>
 
               {loadingInitial ? <p className={styles.statusText}>Đang tải dữ liệu...</p> : null}
             </div>

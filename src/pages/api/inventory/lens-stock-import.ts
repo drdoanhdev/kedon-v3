@@ -1,8 +1,10 @@
 // API: Nhập kho tròng kính từ Excel (batch)
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { IMPORT_MAX_ROWS, LARGE_JSON_BODY_LIMIT, RATE_LIMITS } from '../../../lib/apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
 
-export const config = { api: { bodyParser: { sizeLimit: '2mb' } } };
+export const config = { api: { bodyParser: { sizeLimit: LARGE_JSON_BODY_LIMIT } } };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
@@ -11,6 +13,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
+  const { limit, windowMs } = RATE_LIMITS.importExcel;
+  if (!enforceRateLimit(
+    res,
+    tenantUserRateLimitKey(ctx.tenantId, ctx.userId, 'lens-import'),
+    limit,
+    windowMs
+  )) return;
   if (!(await requireFeature(ctx, res, 'inventory_lens', 'manage_inventory'))) return;
   const { tenantId } = ctx;
 
@@ -24,8 +33,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ error: 'Danh sách rows rỗng' });
     }
-    if (rows.length > 500) {
-      return res.status(400).json({ error: 'Tối đa 500 dòng mỗi lần nhập' });
+    if (rows.length > IMPORT_MAX_ROWS) {
+      return res.status(400).json({ error: `Tối đa ${IMPORT_MAX_ROWS} dòng mỗi lần nhập` });
     }
 
     // Lấy danh sách hãng tròng active của tenant

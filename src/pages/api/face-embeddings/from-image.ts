@@ -4,6 +4,14 @@ import { upsertFaceEmbedding, validateFaceEmbedding } from '../../../lib/faceRec
 import { planHasFeature } from '../../../lib/featureConfig';
 import { checkEmbeddingServiceHealth, getEmbeddingServiceUrl } from '../../../lib/faceEmbeddingService';
 import { normalize } from '../../../lib/faceSmartLearning';
+import {
+  FACE_EMBED_BODY_LIMIT,
+  FACE_EMBED_MAX_IMAGES,
+  RATE_LIMITS,
+} from '../../../lib/apiLimits';
+import { enforceRateLimit, getRateLimitIp, tenantIpRateLimitKey } from '../../../lib/rateLimit';
+
+export const config = { api: { bodyParser: { sizeLimit: FACE_EMBED_BODY_LIMIT } } };
 
 async function assertTenantFeature(tenantId: string, res: NextApiResponse): Promise<boolean> {
   const { data: tenantRow } = await supabaseAdmin
@@ -71,6 +79,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
 
+  const ip = getRateLimitIp(req);
+  const { limit, windowMs } = RATE_LIMITS.faceEmbed;
+  if (!enforceRateLimit(
+    res,
+    tenantIpRateLimitKey(ctx.tenantId, ip, 'face-embed'),
+    limit,
+    windowMs
+  )) return;
+
   const { tenantId } = ctx;
   if (!(await assertTenantFeature(tenantId, res))) return;
 
@@ -87,8 +104,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ success: false, error: 'Thiếu patient_id hoặc ảnh' });
   }
 
-  if (images.length > 5) {
-    return res.status(400).json({ success: false, error: 'Tối đa 5 ảnh mỗi lần đăng ký' });
+  if (images.length > FACE_EMBED_MAX_IMAGES) {
+    return res.status(400).json({ success: false, error: `Tối đa ${FACE_EMBED_MAX_IMAGES} ảnh mỗi lần đăng ký` });
   }
 
   try {
