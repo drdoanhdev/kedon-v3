@@ -38,7 +38,7 @@ export async function storePendingFaceSnapshot(
 
   for (const driver of ['r2', 'supabase'] as const) {
     try {
-      const bucket = resolveMediaBucket('don_thuoc');
+      const bucket = resolveMediaBucket('don_thuoc', driver);
       const provider = getMediaStorageProviderForRow(driver, bucket);
       const token = randomUUID().replace(/-/g, '');
       const objectPath = `tenant/${tenantId}/face-pending/${token}.jpg`;
@@ -65,7 +65,7 @@ export async function deletePendingFaceSnapshot(
   const path = stripSnapshotRef(snapshotRef as string);
   for (const driver of ['r2', 'supabase'] as const) {
     try {
-      const bucket = resolveMediaBucket('don_thuoc');
+      const bucket = resolveMediaBucket('don_thuoc', driver);
       const provider = getMediaStorageProviderForRow(driver, bucket);
       await provider.deleteObject(path);
       return;
@@ -92,7 +92,7 @@ export async function readSnapshotJpeg(snapshotRef: string | null | undefined): 
     const path = stripSnapshotRef(snapshotRef);
     for (const driver of ['r2', 'supabase'] as const) {
       try {
-        const bucket = resolveMediaBucket('don_thuoc');
+        const bucket = resolveMediaBucket('don_thuoc', driver);
         const provider = getMediaStorageProviderForRow(driver, bucket);
         const signedUrl = await provider.createSignedReadUrl(path, 120);
         const res = await fetch(signedUrl);
@@ -139,7 +139,7 @@ export async function resolveSnapshotDisplayUrl(
 
   for (const driver of ['r2', 'supabase'] as const) {
     try {
-      const bucket = resolveMediaBucket('don_thuoc');
+      const bucket = resolveMediaBucket('don_thuoc', driver);
       const provider = getMediaStorageProviderForRow(driver, bucket);
       return await provider.createSignedReadUrl(stripSnapshotRef(snapshotRef), 60 * 60);
     } catch {

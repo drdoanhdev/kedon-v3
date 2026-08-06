@@ -346,7 +346,17 @@ async function handlePost(
   }).replace('/don-kinh/', '/gong-kinh/'); // Đổi path prefix
 
   const provider = getMediaStorageProvider('gong_kinh');
-  const uploadTarget = await provider.createSignedUpload(objectPath, mimeType);
+  let uploadTarget;
+  try {
+    uploadTarget = await provider.createSignedUpload(objectPath, mimeType);
+  } catch (error: unknown) {
+    const details = error instanceof Error ? error.message : String(error);
+    console.error('gong-kinh/media createSignedUpload failed:', details);
+    return res.status(503).json({
+      message: 'Khong tao duoc URL upload anh. Kiem tra cau hinh R2/Supabase media.',
+      details,
+    });
+  }
 
   const insertPayload: Record<string, unknown> = {
     tenant_id: tenantId,

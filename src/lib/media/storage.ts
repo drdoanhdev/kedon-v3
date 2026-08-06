@@ -200,7 +200,7 @@ function buildAwsV4SignedUrl(input: AwsSigV4Input): string {
   return `${endpoint.origin}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 }
 
-function resolveR2Config(): R2Config {
+function readR2ConfigFromEnv(): R2Config | null {
   const accessKeyId = (process.env.R2_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '').trim();
   const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '').trim();
   const endpointRaw = (process.env.R2_ENDPOINT || '').trim();
@@ -210,9 +210,7 @@ function resolveR2Config(): R2Config {
   const endpoint = endpointRaw || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : '');
 
   if (!accessKeyId || !secretAccessKey || !endpoint) {
-    throw new Error(
-      'Thieu cau hinh R2. Can dat R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY va R2_ENDPOINT (hoac R2_ACCOUNT_ID).'
-    );
+    return null;
   }
 
   return {
@@ -221,6 +219,20 @@ function resolveR2Config(): R2Config {
     secretAccessKey,
     region,
   };
+}
+
+export function isR2Configured(): boolean {
+  return readR2ConfigFromEnv() !== null;
+}
+
+function resolveR2Config(): R2Config {
+  const cfg = readR2ConfigFromEnv();
+  if (!cfg) {
+    throw new Error(
+      'Thieu cau hinh R2. Can dat R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY va R2_ENDPOINT (hoac R2_ACCOUNT_ID) tren moi truong deploy.'
+    );
+  }
+  return cfg;
 }
 
 function createProvider(driver: MediaStorageDriver, bucket: string): MediaStorageProvider {
@@ -240,7 +252,11 @@ class SupabaseMediaStorageProvider implements MediaStorageProvider {
       .createSignedUploadUrl(path);
 
     if (error || !data?.signedUrl) {
-      throw new Error(`Khong tao duoc signed upload URL: ${error?.message || 'Unknown error'}`);
+      const detail = error?.message || 'Unknown error';
+      throw new Error(
+        `Khong tao duoc signed upload URL (supabase bucket="${this.bucket}"): ${detail}. ` +
+          'Neu dung Cloudflare R2, dat MEDIA_STORAGE_DRIVER=r2 va R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_ENDPOINT.'
+      );
     }
 
     return {
@@ -361,12 +377,21 @@ class R2MediaStorageProvider implements MediaStorageProvider {
 
 function resolveDriver(): MediaStorageDriver {
   const raw = (process.env.MEDIA_STORAGE_DRIVER || 'r2').trim().toLowerCase();
-  return raw === 'supabase' ? 'supabase' : 'r2';
+  if (raw === 'supabase') return 'supabase';
+  // Mặc định r2 — nhưng nếu thiếu credentials thì fallback supabase để không gãy upload.
+  if (!isR2Configured()) {
+    console.warn(
+      '[media] MEDIA_STORAGE_DRIVER=r2 nhưng thiếu R2 credentials — fallback sang supabase storage.'
+    );
+    return 'supabase';
+  }
+  return 'r2';
 }
 
-function resolveBucket(scope?: MediaBucketScope, bucketOverride?: string): string {
+function resolveBucket(scope?: MediaBucketScope, bucketOverride?: string, driver: MediaStorageDriver = 'r2'): string {
   if (bucketOverride?.trim()) return bucketOverride.trim();
-  if (scope) return resolveMediaBucket(scope);
+  if (scope) return resolveMediaBucket(scope, driver);
+  if (driver === 'supabase') return DEFAULT_MEDIA_BUCKET;
   const raw = process.env.MEDIA_BUCKET_NAME?.trim();
   return raw || DEFAULT_MEDIA_BUCKET;
 }
@@ -375,7 +400,7 @@ const providerCache = new Map<string, MediaStorageProvider>();
 
 export function getMediaStorageProvider(scope: MediaBucketScope): MediaStorageProvider {
   const driver = resolveDriver();
-  const bucket = resolveMediaBucket(scope);
+  const bucket = resolveMediaBucket(scope, driver);
   const key = `${driver}:${bucket}`;
 
   const cached = providerCache.get(key);
@@ -387,12 +412,31 @@ export function getMediaStorageProvider(scope: MediaBucketScope): MediaStoragePr
 }
 
 export function getMediaStorageProviderForRow(driverRaw: unknown, bucketRaw: unknown): MediaStorageProvider {
-  const driver = typeof driverRaw === 'string' && driverRaw.trim().toLowerCase() === 'r2'
+  let driver: MediaStorageDriver = typeof driverRaw === 'string' && driverRaw.trim().toLowerCase() === 'r2'
     ? 'r2'
     : 'supabase';
+
+  if (driver === 'r2' && !isR2Configured()) {
+    // Ảnh cũ ghi driver=r2 nhưng runtime hiện tại thiếu key → không đọc được object.
+    // Vẫn tạo provider r2 để lỗi rõ; không đổi bucket sang supabase.
+    throw new Error(
+      'Anh luu tren R2 nhung thieu cau hinh R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_ENDPOINT.'
+    );
+  }
+
   const bucket = typeof bucketRaw === 'string' && bucketRaw.trim()
     ? bucketRaw.trim()
-    : resolveBucket();
+    : resolveBucket(undefined, undefined, driver);
 
   return createProvider(driver, bucket);
+}
+
+/** Xóa cache provider (dùng khi đổi env lúc runtime / test). */
+export function clearMediaStorageProviderCache(): void {
+  providerCache.clear();
+}
+
+export function getResolvedMediaStorageInfo(scope: MediaBucketScope): { driver: MediaStorageDriver; bucket: string } {
+  const driver = resolveDriver();
+  return { driver, bucket: resolveMediaBucket(scope, driver) };
 }

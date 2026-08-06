@@ -17,6 +17,10 @@ Tài liệu nội bộ: checklist env, release, runbook sự cố.
 | `TURNSTILE_SECRET_KEY` | Xác minh Cloudflare Turnstile (đăng ký) |
 | `CSP_REPORT_URI` | (Tùy chọn) Endpoint nhận báo cáo vi phạm CSP |
 | Key R2 / messaging / face embedding | Theo từng module |
+| `MEDIA_STORAGE_DRIVER` | `r2` (mặc định) hoặc `supabase` |
+| `MEDIA_BUCKET_DON_KINH` / `_GONG_KINH` / `_DON_THUOC` | Tên bucket R2 (vd `optigo`) — **chỉ dùng với driver r2** |
+| `R2_ENDPOINT` hoặc `R2_ACCOUNT_ID` | S3 API endpoint Cloudflare R2 |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | API token R2 (Object Read & Write) |
 
 ### Client-safe (`NEXT_PUBLIC_*`)
 

@@ -405,7 +405,11 @@ export default function DonKinhMediaPanel({
       }
 
       const message = axios.isAxiosError(error)
-        ? (error.response?.data?.message || error.message)
+        ? (
+            error.response?.data?.details
+            || error.response?.data?.message
+            || error.message
+          )
         : (error instanceof Error ? error.message : String(error));
       toast.error(`Không tải được ảnh ${file.name}: ${message}`);
     }

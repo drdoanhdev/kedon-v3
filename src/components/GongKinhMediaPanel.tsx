@@ -189,7 +189,7 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
       setItems((res.data?.data || []) as GongKinhMediaItem[]);
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
-        ? (error.response?.data?.message || error.message)
+        ? (error.response?.data?.details || error.response?.data?.message || error.message)
         : (error instanceof Error ? error.message : String(error));
       toast.error(`Lỗi tải ảnh gọng: ${message}`);
       setItems([]);
@@ -256,7 +256,7 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
       }
 
       const message = axios.isAxiosError(error)
-        ? (error.response?.data?.message || error.message)
+        ? (error.response?.data?.details || error.response?.data?.message || error.message)
         : (error instanceof Error ? error.message : String(error));
 
       toast.error(`Không tải được ảnh: ${message}`);
@@ -317,7 +317,7 @@ export default function GongKinhMediaPanel({ gongKinhId, className = '' }: GongK
       toast.success('Đã xóa ảnh');
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
-        ? (error.response?.data?.message || error.message)
+        ? (error.response?.data?.details || error.response?.data?.message || error.message)
         : (error instanceof Error ? error.message : String(error));
       toast.error(`Không xóa được ảnh: ${message}`);
     } finally {

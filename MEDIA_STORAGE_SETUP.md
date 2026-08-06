@@ -66,6 +66,13 @@ Tách như sau:
 
 Nếu chỉ có **một** bucket `optigo`, có thể dùng chung cho cả 3 loại ảnh (path object vẫn tách theo `donkinh/`, `donthuoc/`, v.v.).
 
+> **Lưu ý quan trọng:** `MEDIA_BUCKET_*=optigo` chỉ hợp lệ khi `MEDIA_STORAGE_DRIVER=r2`.
+> Trên Supabase, bucket đúng là `don-kinh-media` / `gong-kinh-media` / `don-thuoc-media`.
+> Nếu đặt `MEDIA_BUCKET_*=optigo` mà driver vẫn là `supabase`, upload sẽ lỗi
+> (`Loi he thong media DonKinh` / không tạo được signed URL).
+> Code hiện tại: khi driver = supabase sẽ **bỏ qua** override `optigo` và dùng bucket mặc định.
+> Khi `MEDIA_STORAGE_DRIVER=r2` nhưng thiếu credentials trên Vercel, hệ thống fallback sang Supabase.
+
 ```env
 # Driver: r2 (mặc định) | supabase (rollback)
 MEDIA_STORAGE_DRIVER=r2

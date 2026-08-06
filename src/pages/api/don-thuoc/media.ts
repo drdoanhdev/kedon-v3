@@ -348,7 +348,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, tenantId: s
   });
 
   const provider = getMediaStorageProvider('don_thuoc');
-  const uploadTarget = await provider.createSignedUpload(objectPath, mimeType);
+  let uploadTarget;
+  try {
+    uploadTarget = await provider.createSignedUpload(objectPath, mimeType);
+  } catch (error: unknown) {
+    const details = error instanceof Error ? error.message : String(error);
+    console.error('don-thuoc/media createSignedUpload failed:', details);
+    return res.status(503).json({
+      message: 'Khong tao duoc URL upload anh. Kiem tra cau hinh R2/Supabase media.',
+      details,
+    });
+  }
 
   const insertPayload: Record<string, unknown> = {
     tenant_id: tenantId,

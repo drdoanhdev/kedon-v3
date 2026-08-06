@@ -20,7 +20,24 @@ const MEDIA_BUCKET_BY_SCOPE: Record<MediaBucketScope, string> = {
   don_thuoc: MEDIA_BUCKET_DON_THUOC,
 };
 
-export function resolveMediaBucket(scope: MediaBucketScope): string {
+/** Bucket mặc định trên Supabase Storage (tách 3 bucket). */
+export function defaultMediaBucket(scope: MediaBucketScope): string {
+  return MEDIA_BUCKET_BY_SCOPE[scope];
+}
+
+/**
+ * Bucket theo scope.
+ * - R2: cho phép override qua MEDIA_BUCKET_* (thường dùng chung 1 bucket `optigo`).
+ * - Supabase: luôn dùng bucket mặc định theo scope — tránh nhầm MEDIA_BUCKET_*=optigo
+ *   (tên bucket R2) khi driver vẫn là supabase.
+ */
+export function resolveMediaBucket(
+  scope: MediaBucketScope,
+  driver: 'supabase' | 'r2' = 'r2'
+): string {
+  if (driver === 'supabase') {
+    return defaultMediaBucket(scope);
+  }
   const envKey = `MEDIA_BUCKET_${scope.toUpperCase()}` as const;
   const fromEnv = typeof process !== 'undefined' ? process.env[envKey]?.trim() : '';
   if (fromEnv) return fromEnv;
