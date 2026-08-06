@@ -1,10 +1,11 @@
 // API: Nhập kho tròng kính từ Excel (batch)
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireTenant, requireFeature, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { IMPORT_MAX_ROWS, LARGE_JSON_BODY_LIMIT, RATE_LIMITS } from '../../../lib/apiLimits';
+import { IMPORT_MAX_ROWS, RATE_LIMITS } from '../../../lib/apiLimits';
 import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
 
-export const config = { api: { bodyParser: { sizeLimit: LARGE_JSON_BODY_LIMIT } } };
+// sizeLimit must be a string literal — Next.js static-analyzes `config` (see apiLimits LARGE_JSON_BODY_LIMIT)
+export const config = { api: { bodyParser: { sizeLimit: '2mb' } } };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);

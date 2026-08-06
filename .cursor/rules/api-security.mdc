@@ -27,7 +27,8 @@ Endpoint public (hiếm) phải có lý do rõ và rate limit.
 
 ## Body / query limits
 
-- Dùng hằng từ `src/lib/apiLimits.ts` (`IMPORT_MAX_ROWS`, `QUERY_MAX_ROWS`, `FACE_EMBED_BODY_LIMIT`, …)
+- Dùng hằng từ `src/lib/apiLimits.ts` (`IMPORT_MAX_ROWS`, `QUERY_MAX_ROWS`, …)
+- `export const config` (Next.js page config): `bodyParser.sizeLimit` **phải là string literal** (vd `'2mb'`), không import biến — Next.js static-analyze và build sẽ fail
 - Upload binary: `bodyParser: false` + `readRequestBody(maxBytes)` trong `uploadProxyHandler`
 - Pagination nặng: cap `QUERY_MAX_ROWS` (50_000)
 

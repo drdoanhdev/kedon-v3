@@ -6,11 +6,12 @@
 /** Giới hạn mặc định body parser Next.js API (JSON). */
 export const DEFAULT_JSON_BODY_LIMIT = '1mb';
 
-/** Body lớn hơn cho avatar base64, import Excel. */
+/** Body lớn hơn cho avatar base64, import Excel, face embed (`'2mb'`). */
 export const LARGE_JSON_BODY_LIMIT = '2mb';
 
 /** Face embedding — tối đa 5 ảnh base64 mỗi request. */
 export const FACE_EMBED_MAX_IMAGES = 5;
+/** Cùng giá trị `'2mb'` — page `config.sizeLimit` phải dùng literal, không import hằng này. */
 export const FACE_EMBED_BODY_LIMIT = '2mb';
 
 /** Import kho — tối đa dòng mỗi batch. */

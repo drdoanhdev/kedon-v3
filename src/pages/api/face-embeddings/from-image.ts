@@ -5,13 +5,13 @@ import { planHasFeature } from '../../../lib/featureConfig';
 import { checkEmbeddingServiceHealth, getEmbeddingServiceUrl } from '../../../lib/faceEmbeddingService';
 import { normalize } from '../../../lib/faceSmartLearning';
 import {
-  FACE_EMBED_BODY_LIMIT,
   FACE_EMBED_MAX_IMAGES,
   RATE_LIMITS,
 } from '../../../lib/apiLimits';
 import { enforceRateLimit, getRateLimitIp, tenantIpRateLimitKey } from '../../../lib/rateLimit';
 
-export const config = { api: { bodyParser: { sizeLimit: FACE_EMBED_BODY_LIMIT } } };
+// sizeLimit must be a string literal — Next.js static-analyzes `config` (see apiLimits FACE_EMBED_BODY_LIMIT)
+export const config = { api: { bodyParser: { sizeLimit: '2mb' } } };
 
 async function assertTenantFeature(tenantId: string, res: NextApiResponse): Promise<boolean> {
   const { data: tenantRow } = await supabaseAdmin
