@@ -17,10 +17,12 @@ Không cần cài Python/Node.
 npm run pack:print-agent
 ```
 
-Tạo:
+Script sẽ:
 
-- `services/print-agent/dist/OptigoPrintAgent.zip`
-- `private/downloads/OptigoPrintAgent.zip`
+1. Tạo `src/lib/printAgentPackage.generated.ts` (nhúng vào code — **cần commit** để Vercel tải được)
+2. Tạo zip local tại `services/print-agent/dist/` và `private/downloads/` (gitignore, không lên server)
+
+**Lưu ý:** chỉ chạy `pack` trên máy local mà không commit file `.generated.ts` thì production vẫn báo thiếu gói.
 
 ## API localhost
 

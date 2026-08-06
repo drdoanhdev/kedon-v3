@@ -87,9 +87,9 @@ Browser/Agent → Cloudflare (WAF, Turnstile) → Vercel (Next.js API guards) �
 ## 6b. Print Agent (in tem kính)
 
 - Download chỉ qua `GET /api/print-agent/download` (auth + feature `print_config`).
-- Build: `npm run pack:print-agent` — zip PowerShell/bat, không cần runtime ngoài Windows.
+- Build: `npm run pack:print-agent` — cập nhật `src/lib/printAgentPackage.generated.ts` (commit file này).
 - Agent chỉ bind `127.0.0.1` (không mở LAN); CORS giới hạn origin Optigo.
-- Zip lưu tại `private/downloads/OptigoPrintAgent.zip`, không `public/`.
+- Không phụ thuộc `private/downloads/` trên Vercel (thư mục đó bị gitignore).
 
 ## 7. Cloudflare
 
