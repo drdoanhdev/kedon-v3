@@ -80,9 +80,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(enriched);
     }
 
-    // POST: Phân công nhân viên vào chi nhánh (1 nhân viên = 1 chi nhánh duy nhất)
+    // POST: Phân công nhân viên vào chi nhánh
+    // body: { user_id, branch_id, multi?: boolean, is_primary?: boolean }
+    // multi=true → thêm assignment (quản lý khu vực); mặc định thay thế như cũ
     if (req.method === 'POST') {
-      const { user_id: targetUserId, branch_id } = req.body;
+      const { user_id: targetUserId, branch_id, multi, is_primary } = req.body;
 
       if (!targetUserId || !branch_id) {
         return res.status(400).json({ error: 'Thiếu user_id và branch_id' });
@@ -113,13 +115,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Chi nhánh không hợp lệ' });
       }
 
-      // Xóa phân công cũ của nhân viên này (1 user = 1 branch)
-      await supabase
-        .from('staff_assignments')
-        .delete()
-        .eq('tenant_id', tenantId)
-        .eq('user_id', targetUserId)
-        .is('to_date', null);
+      if (!multi) {
+        // Hành vi cũ: 1 user = 1 branch (xóa active cũ)
+        await supabase
+          .from('staff_assignments')
+          .delete()
+          .eq('tenant_id', tenantId)
+          .eq('user_id', targetUserId)
+          .is('to_date', null);
+      } else {
+        // Multi: nếu đã có cùng branch thì thôi
+        const { data: existing } = await supabase
+          .from('staff_assignments')
+          .select('id')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', targetUserId)
+          .eq('branch_id', branch_id)
+          .is('to_date', null)
+          .maybeSingle();
+        if (existing) {
+          return res.status(200).json({ ...existing, already_assigned: true });
+        }
+        // Nếu đặt primary → bỏ primary cũ
+        if (is_primary) {
+          await supabase
+            .from('staff_assignments')
+            .update({ is_primary: false })
+            .eq('tenant_id', tenantId)
+            .eq('user_id', targetUserId)
+            .is('to_date', null);
+        }
+      }
+
+      // Khi multi và chưa có primary nào → gán primary
+      let primary = multi ? !!is_primary : true;
+      if (multi && !is_primary) {
+        const { count } = await supabase
+          .from('staff_assignments')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('user_id', targetUserId)
+          .eq('is_primary', true)
+          .is('to_date', null);
+        if (!count) primary = true;
+      }
 
       const { data, error } = await supabase
         .from('staff_assignments')
@@ -127,7 +166,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           tenant_id: tenantId,
           user_id: targetUserId,
           branch_id,
-          is_primary: true,
+          is_primary: primary,
           created_by: userId,
         })
         .select(`

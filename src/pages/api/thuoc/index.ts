@@ -34,14 +34,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .order('id', { ascending: false });
 
       if (!isSharedScope && branchId) {
-        query = query.eq('branch_id', branchId);
+        // Shared catalog + tồn theo CN (giống GongKinh)
+        query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
       }
 
       const { data, error } = await query;
       if (error) return res.status(500).json({ error: error.message });
 
+      let rows = Array.isArray(data) ? data : [];
+      if (!isSharedScope && branchId) {
+        const shared = rows.filter((item: any) => !item.branch_id);
+        const branchRows = rows.filter((item: any) => item.branch_id === branchId);
+        const stockByName = new Map<string, any>();
+        for (const br of branchRows) {
+          stockByName.set(String(br.tenthuoc || '').toLowerCase(), br);
+        }
+        if (shared.length > 0) {
+          rows = shared.map((item: any) => {
+            const br = stockByName.get(String(item.tenthuoc || '').toLowerCase());
+            if (!br) {
+              return { ...item, tonkho: 0, stock_branch_id: branchId, stock_source: 'shared_zero' };
+            }
+            return {
+              ...item,
+              tonkho: br.tonkho ?? 0,
+              muc_ton_can_co: br.muc_ton_can_co ?? item.muc_ton_can_co,
+              stock_row_id: br.id,
+              stock_branch_id: branchId,
+              stock_source: 'branch_stock',
+            };
+          });
+          const sharedNames = new Set(shared.map((s: any) => String(s.tenthuoc || '').toLowerCase()));
+          for (const br of branchRows) {
+            if (!sharedNames.has(String(br.tenthuoc || '').toLowerCase())) {
+              rows.push({ ...br, stock_source: 'branch_only' });
+            }
+          }
+        } else {
+          rows = branchRows;
+        }
+      }
+
       if (includeEffectivePrice) {
-        const rows = Array.isArray(data) ? data : [];
         const itemIds = rows.map((item: any) => Number(item.id)).filter((id: number) => Number.isFinite(id));
 
         const overrideByItemId = new Map<number, any>();
@@ -87,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json({ data: effectiveRows });
       }
 
-      return res.status(200).json({ data });
+      return res.status(200).json({ data: rows });
     }
 
     if (method === 'POST') {

@@ -7,7 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
   if (!(await requireFeature(ctx, res, 'print_config'))) return;
-  const { tenantId } = ctx;
+  const { tenantId, branchId } = ctx;
 
   if (req.method === 'GET') {
     try {
@@ -19,7 +19,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) throw error;
 
-      // Defaults for all fields (handles existing rows missing new columns)
       const defaults = {
         tenant_id: tenantId,
         ten_cua_hang: '',
@@ -48,17 +47,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_nguoi_ky_thuoc: true,
         hien_thi_ngay_kham: true,
         hien_thi_ngay_kham_thuoc: true,
+        use_branch_identity: true,
       };
 
-      if (!data) {
-        return res.status(200).json({ data: defaults });
+      const merged: Record<string, unknown> = { ...defaults };
+      if (data) {
+        for (const [k, v] of Object.entries(data)) {
+          if (v !== null && v !== undefined) merged[k] = v;
+        }
       }
 
-      // Merge defaults for any null/missing fields in existing rows
-      const merged: Record<string, unknown> = { ...defaults };
-      for (const [k, v] of Object.entries(data)) {
-        if (v !== null && v !== undefined) merged[k] = v;
+      const useBranch = merged.use_branch_identity !== false;
+      if (useBranch && branchId) {
+        const { data: branch } = await supabase
+          .from('branches')
+          .select('ten_chi_nhanh, dia_chi, dia_chi_full, dien_thoai')
+          .eq('id', branchId)
+          .eq('tenant_id', tenantId)
+          .maybeSingle();
+        if (branch) {
+          merged.ten_cua_hang = branch.ten_chi_nhanh || merged.ten_cua_hang;
+          merged.dia_chi = branch.dia_chi_full || branch.dia_chi || merged.dia_chi;
+          if (branch.dien_thoai) merged.dien_thoai = branch.dien_thoai;
+          merged.branch_identity_applied = true;
+          merged.branch_id = branchId;
+        }
       }
+
       res.status(200).json({ data: merged });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -93,6 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_nguoi_ky_thuoc,
         hien_thi_ngay_kham,
         hien_thi_ngay_kham_thuoc,
+        use_branch_identity,
       } = req.body;
 
       const payload = {
@@ -123,10 +139,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hien_thi_nguoi_ky_thuoc: hien_thi_nguoi_ky_thuoc ?? true,
         hien_thi_ngay_kham: hien_thi_ngay_kham ?? true,
         hien_thi_ngay_kham_thuoc: hien_thi_ngay_kham_thuoc ?? true,
+        use_branch_identity: use_branch_identity ?? true,
         updated_at: new Date().toISOString(),
       };
 
-      // Upsert: insert if not exists, update if exists
       const { data, error } = await supabase
         .from('cau_hinh_mau_in')
         .upsert(payload, { onConflict: 'tenant_id' })

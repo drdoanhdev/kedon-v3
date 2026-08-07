@@ -104,7 +104,7 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
   const [staffAssignments, setStaffAssignments] = useState<StaffAssignment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [showAssignStaff, setShowAssignStaff] = useState(false);
-  const [staffForm, setStaffForm] = useState({ user_id: '', branch_id: '' });
+  const [staffForm, setStaffForm] = useState({ user_id: '', branch_id: '', multi: false });
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [draggingAssignment, setDraggingAssignment] = useState<{ kind: 'assigned' | 'unassigned'; id: string; userId: string } | null>(null);
   const [dragOverBranch, setDragOverBranch] = useState<string | null>(null);
@@ -250,12 +250,16 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
       const res = await fetchWithAuth('/api/branches/staff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(staffForm),
+        body: JSON.stringify({
+          user_id: staffForm.user_id,
+          branch_id: staffForm.branch_id,
+          multi: staffForm.multi,
+        }),
       });
       if (res.ok) {
-        toast.success('Đã phân công nhân viên');
+        toast.success(staffForm.multi ? 'Đã thêm chi nhánh cho nhân viên' : 'Đã phân công nhân viên');
         setShowAssignStaff(false);
-        setStaffForm({ user_id: '', branch_id: '' });
+        setStaffForm({ user_id: '', branch_id: '', multi: false });
         loadStaff();
       } else {
         const err = await res.json();
@@ -569,7 +573,7 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
                         <option value="">-- Chọn nhân viên --</option>
                         {members.filter(m => {
                           if (!m.active) return false;
-                          // Chỉ hiện nhân viên chưa được phân công
+                          if (staffForm.multi) return true;
                           const assigned = staffAssignments.find(s => s.user_id === m.user_id);
                           return !assigned;
                         }).map(m => (
@@ -593,6 +597,15 @@ export function QuanLyChuoiSection({ embedded = false, initialTab = 'branches' }
                       </select>
                     </div>
                   </div>
+                  <label className="flex items-center gap-2 mt-3 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.multi}
+                      onChange={(e) => setStaffForm((f) => ({ ...f, multi: e.target.checked }))}
+                      className="rounded"
+                    />
+                    Thêm chi nhánh (quản lý khu vực) — giữ các phân công hiện có
+                  </label>
                   <div className="flex gap-2 mt-4">
                     <button
                       onClick={handleAssignStaff}

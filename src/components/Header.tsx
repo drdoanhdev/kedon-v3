@@ -110,8 +110,12 @@ export default function Header() {
     { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
     { href: '/quan-ly-ghi-chu-khach-hang', label: 'Việc cần làm KH', icon: CalendarDays, feature: 'crm' },
     { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
+    { href: '/ton-kho-chuoi', label: 'Tồn kho chuỗi', icon: BarChart3, feature: 'multi_branch' },
+    { href: '/gia-chi-nhanh', label: 'Giá chi nhánh', icon: BarChart3, feature: 'multi_branch' },
     { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
     { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },
+    { href: '/lab-gia-cong', label: 'Lab gia công', icon: BarChart3, feature: 'multi_branch' },
+    { href: '/cham-cong', label: 'Chấm công', icon: CalendarDays, feature: 'staff_attendance' },
   ];
 
   const isActivePage = (href: string) => router.pathname === href;

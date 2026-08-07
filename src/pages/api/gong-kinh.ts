@@ -143,9 +143,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (error) throw error;
 
       let rows = Array.isArray(data) ? data : [];
-      // Chi nhánh hiện tại + danh mục shared (branch_id null)
+      // Multi-branch: catalog shared (branch_id null) + tồn theo CN (overlay ton_kho từ hàng branch)
       if (!isSharedScope && branchId) {
-        rows = rows.filter((item: any) => !item.branch_id || item.branch_id === branchId);
+        const shared = rows.filter((item: any) => !item.branch_id);
+        const branchRows = rows.filter((item: any) => item.branch_id === branchId);
+        const stockByName = new Map<string, any>();
+        for (const br of branchRows) {
+          stockByName.set(String(br.ten_gong || '').toLowerCase(), br);
+        }
+        if (shared.length > 0) {
+          rows = shared.map((item: any) => {
+            const br = stockByName.get(String(item.ten_gong || '').toLowerCase());
+            if (!br) {
+              return { ...item, ton_kho: 0, stock_branch_id: branchId, stock_source: 'shared_zero' };
+            }
+            return {
+              ...item,
+              ton_kho: br.ton_kho ?? 0,
+              muc_ton_can_co: br.muc_ton_can_co ?? item.muc_ton_can_co,
+              stock_row_id: br.id,
+              stock_branch_id: branchId,
+              stock_source: 'branch_stock',
+            };
+          });
+          // Legacy: gọng chỉ có ở CN (chưa có catalog shared)
+          const sharedNames = new Set(shared.map((s: any) => String(s.ten_gong || '').toLowerCase()));
+          for (const br of branchRows) {
+            if (!sharedNames.has(String(br.ten_gong || '').toLowerCase())) {
+              rows.push({ ...br, stock_source: 'branch_only' });
+            }
+          }
+        } else {
+          rows = branchRows;
+        }
       }
 
       const rowsWithImage = await attachRepresentativeFrameImage(

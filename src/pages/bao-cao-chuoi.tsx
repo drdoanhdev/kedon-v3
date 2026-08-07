@@ -107,8 +107,9 @@ export default function BaoCaoChuoi() {
   const [transferStats, setTransferStats] = useState<TransferStats | null>(null);
   const [staffPerBranch, setStaffPerBranch] = useState<Record<string, StaffInfo[]>>({});
   const [branchesMeta, setBranchesMeta] = useState<{ id: string; ten_chi_nhanh: string }[]>([]);
+  const [optical, setOptical] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'ranking' | 'staff'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'ranking' | 'staff' | 'optical'>('overview');
 
   const now = new Date();
   const [fromDate, setFromDate] = useState(() => {
@@ -132,6 +133,7 @@ export default function BaoCaoChuoi() {
         setTransferStats(data.transferStats || null);
         setStaffPerBranch(data.staffPerBranch || {});
         setBranchesMeta(data.branches || []);
+        setOptical(data.optical || []);
       }
     } catch {}
     setLoading(false);
@@ -311,6 +313,15 @@ export default function BaoCaoChuoi() {
                   <Users className="w-4 h-4 inline mr-1.5" />
                   Nhân viên
                 </button>
+                <button
+                  onClick={() => setActiveTab('optical')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'optical' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  <Glasses className="w-4 h-4 inline mr-1.5" />
+                  Kính / Lab
+                </button>
               </div>
 
               {/* OVERVIEW TAB */}
@@ -488,6 +499,49 @@ export default function BaoCaoChuoi() {
                         </div>
                       );
                     })
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'optical' && (
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 border-b bg-gray-50">
+                    <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+                      <Glasses className="w-4 h-4 text-blue-600" />
+                      Chỉ số kính — margin, conversion, lab, đặt tròng
+                    </h2>
+                  </div>
+                  {optical.length === 0 ? (
+                    <div className="px-5 py-10 text-center text-gray-400">Chưa có dữ liệu</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
+                            <th className="px-4 py-3 text-left">Chi nhánh</th>
+                            <th className="px-4 py-3 text-right">Chờ khám</th>
+                            <th className="px-4 py-3 text-right">Conv. %</th>
+                            <th className="px-4 py-3 text-right">Margin %</th>
+                            <th className="px-4 py-3 text-right">Tròng đặt</th>
+                            <th className="px-4 py-3 text-right">Lab</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {optical.map((o) => (
+                            <tr key={o.branch_id} className="border-t">
+                              <td className="px-4 py-3 font-medium">{o.ten_chi_nhanh}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{o.cho_kham}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{o.conversion_pct}%</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{o.margin_pct}%</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{o.lens_order_count}</td>
+                              <td className="px-4 py-3 text-right text-xs text-gray-600">
+                                {o.lab_count} ({o.lab_dang_cat} cắt / {o.lab_san_sang} sẵn)
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               )}

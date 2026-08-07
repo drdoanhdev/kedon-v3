@@ -207,6 +207,68 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       completed: transfers?.filter((t: any) => t.status === 'completed').length || 0,
     };
 
+    // 8. Optical extras: funnel chờ khám→đơn, lab, đặt tròng, margin ước tính
+    const opticalByBranch = await Promise.all(branches.map(async (branch) => {
+      const [choKhamRes, labRes, lensOrderRes, donKinhCostRes] = await Promise.all([
+        supabase
+          .from('ChoKham')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('branch_id', branch.id)
+          .gte('created_at', fromDate)
+          .lte('created_at', toDate),
+        supabase
+          .from('DonKinh')
+          .select('id, lab_status', { count: 'exact' })
+          .eq('tenant_id', tenantId)
+          .eq('branch_id', branch.id)
+          .not('lab_status', 'is', null)
+          .gte('created_at', fromDate)
+          .lte('created_at', toDate),
+        supabase
+          .from('lens_order')
+          .select('id, trang_thai, DonKinh!inner(branch_id)', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('DonKinh.branch_id', branch.id)
+          .gte('created_at', fromDate)
+          .lte('created_at', toDate),
+        supabase
+          .from('DonKinh')
+          .select('giatrong, giagong, giagongrieng, gia_von_trong, gia_von_gong')
+          .eq('tenant_id', tenantId)
+          .eq('branch_id', branch.id)
+          .gte('created_at', fromDate)
+          .lte('created_at', toDate),
+      ]);
+
+      const donKinhCount = reports.find((r) => r.branch_id === branch.id)?.so_don_kinh || 0;
+      const choKham = choKhamRes.count || 0;
+      const conversionPct = choKham > 0 ? Math.round((donKinhCount / choKham) * 100) : 0;
+
+      let doanhThu = 0;
+      let giaVon = 0;
+      for (const d of donKinhCostRes.data || []) {
+        doanhThu += (d.giatrong || 0) + (d.giagong || 0) + (d.giagongrieng || 0);
+        giaVon += (d.gia_von_trong || 0) + (d.gia_von_gong || 0);
+      }
+      const margin = doanhThu - giaVon;
+      const marginPct = doanhThu > 0 ? Math.round((margin / doanhThu) * 100) : 0;
+
+      const labRows = labRes.data || [];
+      return {
+        branch_id: branch.id,
+        ten_chi_nhanh: branch.ten_chi_nhanh,
+        cho_kham: choKham,
+        conversion_pct: conversionPct,
+        lens_order_count: lensOrderRes.count || 0,
+        lab_count: labRes.count || labRows.length,
+        lab_dang_cat: labRows.filter((r: any) => r.lab_status === 'dang_cat').length,
+        lab_san_sang: labRows.filter((r: any) => r.lab_status === 'san_sang').length,
+        margin,
+        margin_pct: marginPct,
+      };
+    }));
+
     return res.status(200).json({
       branches,
       reports,
@@ -215,6 +277,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       homNay,
       staffPerBranch,
       transferStats,
+      optical: opticalByBranch,
       period: { from: fromDate, to: toDate },
     });
   } catch (err: any) {

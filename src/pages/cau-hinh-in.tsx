@@ -15,6 +15,7 @@ interface PrintConfig {
   dia_chi: string;
   dien_thoai: string;
   logo_url: string;
+  use_branch_identity?: boolean;
   // Đơn kính
   hien_thi_logo: boolean;
   hien_thi_chan_doan: boolean;
@@ -48,6 +49,7 @@ const defaultConfig: PrintConfig = {
   dia_chi: '',
   dien_thoai: '',
   logo_url: '',
+  use_branch_identity: true,
   hien_thi_logo: true,
   hien_thi_chan_doan: true,
   hien_thi_sokinh_cu: true,
@@ -149,9 +151,21 @@ function CauHinhInInner({ embedded = false }: { embedded?: boolean } = {}) {
         {/* Thông tin cửa hàng */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-3">
           <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Thông tin cửa hàng / phòng khám</h2>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.use_branch_identity !== false}
+              onChange={(e) => handleChange('use_branch_identity', e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Dùng tên / địa chỉ / SĐT của chi nhánh đang chọn khi in
+          </label>
+          <p className="text-xs text-gray-500 -mt-1">
+            Khi bật, phiếu in lấy thông tin từ chi nhánh hiện tại thay vì tên cửa hàng cố định bên dưới.
+          </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label className="text-sm">Tên cửa hàng</Label>
+              <Label className="text-sm">Tên cửa hàng (fallback)</Label>
               <Input
                 value={form.ten_cua_hang}
                 onChange={e => handleChange('ten_cua_hang', e.target.value)}

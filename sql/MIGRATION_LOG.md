@@ -212,6 +212,8 @@ Theo dõi trạng thái migration trên từng database.
 | V089 | V089_face_realtime_publication.sql | Bật Realtime publication cho ChoKham + PendingFaces (kiosk / toast tức thì) | | |
 | V090 | V090_face_kiosk_last_checkin.sql | ChoKham.last_face_checkin_at — phản hồi kiosk khi nhận diện lại | | |
 | V091 | V091_add_gioitinh_to_benhnhan.sql | Thêm cột gioitinh (Nam/Nữ/null) vào BenhNhan | | |
+| V092 | V092_drop_nhom_gia_gong.sql | Gỡ nhóm giá gọng (legacy) | | |
+| V093 | V093_multi_branch_enhancements.sql | Đa CN: multi-assignment, chấm công, lab DonKinh, print agent, KM, BH, PO tròng, extra_branches | | |
 
 ---
 

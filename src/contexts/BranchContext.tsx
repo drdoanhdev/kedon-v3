@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useAuth, supabaseAuth } from './AuthContext'
+import { planHasFeature } from '../lib/featureConfig'
 
 export interface Branch {
   id: string
@@ -40,7 +41,7 @@ export const BranchProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
   const [branchLoading, setBranchLoading] = useState(false)
 
-  const isMultiBranch = currentTenant?.plan === 'enterprise'
+  const isMultiBranch = planHasFeature(currentTenant?.plan, 'multi_branch')
 
   const fetchBranches = useCallback(async () => {
     if (!user || !currentTenantId) {

@@ -47,6 +47,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await supabase.rpc('create_default_branch_for_tenant', { p_tenant_id: tenantId });
       }
 
+      // Enforce max_branches (+ extra_branches addon)
+      const [{ data: tenant }, { data: plan }, { count: activeCount }] = await Promise.all([
+        supabase.from('tenants').select('plan, extra_branches').eq('id', tenantId).single(),
+        supabase
+          .from('subscription_plans')
+          .select('max_branches, branch_addon_price')
+          .eq('plan_key', 'enterprise')
+          .maybeSingle(),
+        supabase
+          .from('branches')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .eq('status', 'active'),
+      ]);
+
+      const baseMax = Number(plan?.max_branches || 20);
+      const extra = Number((tenant as any)?.extra_branches || 0);
+      const maxAllowed = baseMax + extra;
+      if ((activeCount || 0) >= maxAllowed) {
+        return res.status(403).json({
+          error: `Đã đạt giới hạn ${maxAllowed} chi nhánh. Mua thêm slot chi nhánh để tiếp tục.`,
+          max_branches: maxAllowed,
+          current: activeCount || 0,
+          branch_addon_price: plan?.branch_addon_price || 79000,
+        });
+      }
+
       const { data, error } = await supabase
         .from('branches')
         .insert({

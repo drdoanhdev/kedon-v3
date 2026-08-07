@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin, PanelLeftOpen, BellRing, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Check, Pill, Eye, Search, UserPlus, Calendar, Phone, MapPin, PanelLeftOpen, BellRing, AlertTriangle, Building2 } from "lucide-react";
 import axios from "axios";
 import Link from "next/link";
 import Head from "next/head";
@@ -28,6 +28,7 @@ import { searchByStartsWith, capitalizeWords } from '@/lib/utils';
 import ChoKhamPanel, { ChoKhamPanelRef } from '@/components/ChoKhamPanel';
 import FamilyCard from '@/components/FamilyCard';
 import { useBranch } from '../contexts/BranchContext';
+import { fetchWithAuth } from '../lib/fetchWithAuth';
 import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -179,6 +180,8 @@ export default function BenhNhanPage() {
   const [notesViewMode, setNotesViewMode] = useState<'active' | 'all' | 'trash'>('active');
   const [total, setTotal] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>("don-thuoc");
+  const [chainHistory, setChainHistory] = useState<any | null>(null);
+  const [loadingChainHistory, setLoadingChainHistory] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isWaitingPanelCollapsed, setIsWaitingPanelCollapsed] = useState<boolean>(false);
   
@@ -639,11 +642,29 @@ export default function BenhNhanPage() {
     [router, selectedBenhNhanId]
   );
 
+  const loadChainHistory = useCallback(async (benhnhanid: number) => {
+    if (!isMultiBranch || !benhnhanid) return;
+    setLoadingChainHistory(true);
+    try {
+      const res = await fetchWithAuth(`/api/branches/patient-history?benhnhan_id=${benhnhanid}`);
+      if (res.ok) setChainHistory(await res.json());
+      else setChainHistory(null);
+    } catch {
+      setChainHistory(null);
+    } finally {
+      setLoadingChainHistory(false);
+    }
+  }, [isMultiBranch]);
+
   const handleHistoryTabChange = useCallback(
     (tab: string) => {
       setActiveTab(tab);
 
       if (!selectedBenhNhanId) return;
+      if (tab === 'chuoi' && isMultiBranch) {
+        loadChainHistory(selectedBenhNhanId);
+        return;
+      }
       if (tab !== 'don-thuoc' && tab !== 'don-kinh') return;
 
       const patient = buildActivityPatient(findPatientById(selectedBenhNhanId));
@@ -655,7 +676,7 @@ export default function BenhNhanPage() {
         source: 'benh-nhan_history_tab',
       });
     },
-    [buildActivityPatient, findPatientById, selectedBenhNhanId]
+    [buildActivityPatient, findPatientById, selectedBenhNhanId, isMultiBranch, loadChainHistory]
   );
 
   const loadPatientNotes = useCallback(async (benhnhanid: number, options?: { includeDeleted?: boolean }) => {
@@ -1483,6 +1504,12 @@ export default function BenhNhanPage() {
                             <TabsTrigger value="lich-hen">Lịch hẹn ({henKhams.length})</TabsTrigger>
                             <TabsTrigger value="gia-dinh">Gia đình</TabsTrigger>
                             <TabsTrigger value="ghi-chu">Ghi chú</TabsTrigger>
+                            {isMultiBranch && (
+                              <TabsTrigger value="chuoi">
+                                <Building2 className="w-3 h-3 mr-1" />
+                                Chuỗi
+                              </TabsTrigger>
+                            )}
                           </TabsList>
                           
                           <TabsContent value="don-thuoc" className="mt-2">
@@ -1645,6 +1672,58 @@ export default function BenhNhanPage() {
                               </Button>
                             </div>
                           </TabsContent>
+
+                          {isMultiBranch && (
+                            <TabsContent value="chuoi" className="mt-2">
+                              {loadingChainHistory ? (
+                                <p className="text-xs text-gray-500">Đang tải lịch sử chuỗi...</p>
+                              ) : !chainHistory ? (
+                                <p className="text-xs text-gray-500">Không tải được lịch sử chuỗi.</p>
+                              ) : (
+                                <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {(chainHistory.by_branch || []).map((b: any, i: number) => (
+                                      <span key={i} className="text-[10px] bg-purple-50 text-purple-800 border border-purple-100 px-1.5 py-0.5 rounded">
+                                        {b.ten}: {b.don_kinh} kính / {b.don_thuoc} thuốc
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold mb-1">Đơn kính toàn chuỗi</p>
+                                    {(chainHistory.don_kinh || []).length === 0 ? (
+                                      <p className="text-xs text-gray-400">Chưa có đơn kính.</p>
+                                    ) : (
+                                      (chainHistory.don_kinh || []).slice(0, 20).map((d: any) => (
+                                        <div key={d.id} className="text-xs border rounded p-2 mb-1.5 bg-white">
+                                          <div className="flex justify-between gap-2">
+                                            <span>{d.ngay_kham ? new Date(d.ngay_kham).toLocaleDateString('vi-VN') : '—'}</span>
+                                            <span className="text-purple-700">{d.branch?.ten_chi_nhanh || '—'}</span>
+                                          </div>
+                                          <div className="text-gray-600 mt-0.5">
+                                            MP {d.sph_mp}/{d.cyl_mp} · MT {d.sph_mt}/{d.cyl_mt}
+                                            {d.lab_status ? ` · Lab: ${d.lab_status}` : ''}
+                                          </div>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold mb-1">Đơn thuốc toàn chuỗi</p>
+                                    {(chainHistory.don_thuoc || []).length === 0 ? (
+                                      <p className="text-xs text-gray-400">Chưa có đơn thuốc.</p>
+                                    ) : (
+                                      (chainHistory.don_thuoc || []).slice(0, 20).map((d: any) => (
+                                        <div key={d.id} className="text-xs border rounded p-2 mb-1.5 bg-white flex justify-between">
+                                          <span>{d.ngay_kham ? new Date(d.ngay_kham).toLocaleDateString('vi-VN') : '—'}</span>
+                                          <span className="text-purple-700">{d.branch?.ten_chi_nhanh || '—'}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </TabsContent>
+                          )}
                         </Tabs>
                       </div>
                     )}
@@ -2017,6 +2096,18 @@ export default function BenhNhanPage() {
                                     >
                                       📝 Ghi chú
                                     </button>
+                                    {isMultiBranch && (
+                                      <button
+                                        onClick={() => handleHistoryTabChange('chuoi')}
+                                        className={`px-3 py-1.5 text-xs rounded-t-md font-medium transition-colors ${
+                                          activeTab === 'chuoi'
+                                            ? 'bg-white text-blue-700 border border-b-white -mb-[9px] pb-[13px] shadow-sm'
+                                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                      >
+                                        🏬 Chuỗi
+                                      </button>
+                                    )}
                                   </div>
                                     
                                   {/* Content */}
@@ -2175,6 +2266,47 @@ export default function BenhNhanPage() {
                                         >
                                           <BellRing className="w-3.5 h-3.5 mr-1" /> Quản lý ghi chú
                                         </Button>
+                                      </div>
+                                    )}
+
+                                    {activeTab === 'chuoi' && isMultiBranch && (
+                                      <div className="space-y-3">
+                                        {loadingChainHistory ? (
+                                          <p className="text-xs text-gray-500">Đang tải lịch sử chuỗi...</p>
+                                        ) : !chainHistory ? (
+                                          <p className="text-xs text-gray-400 text-center py-4">Không tải được lịch sử chuỗi.</p>
+                                        ) : (
+                                          <>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {(chainHistory.by_branch || []).map((b: any, i: number) => (
+                                                <span key={i} className="text-[11px] bg-purple-50 text-purple-800 border border-purple-100 px-2 py-0.5 rounded">
+                                                  {b.ten}: {b.don_kinh} kính / {b.don_thuoc} thuốc
+                                                </span>
+                                              ))}
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-semibold mb-1.5">Đơn kính toàn chuỗi</p>
+                                              {(chainHistory.don_kinh || []).slice(0, 30).map((d: any) => (
+                                                <div key={d.id} className="bg-white border rounded-lg p-2.5 mb-1.5 text-xs flex justify-between gap-2">
+                                                  <div>
+                                                    <span className="text-gray-500">{d.ngay_kham ? new Date(d.ngay_kham).toLocaleDateString('vi-VN') : '—'}</span>
+                                                    <span className="ml-2 text-gray-700">MP {d.sph_mp}/{d.cyl_mp} · MT {d.sph_mt}/{d.cyl_mt}</span>
+                                                  </div>
+                                                  <span className="text-purple-700 whitespace-nowrap">{d.branch?.ten_chi_nhanh || '—'}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-semibold mb-1.5">Đơn thuốc toàn chuỗi</p>
+                                              {(chainHistory.don_thuoc || []).slice(0, 30).map((d: any) => (
+                                                <div key={d.id} className="bg-white border rounded-lg p-2.5 mb-1.5 text-xs flex justify-between">
+                                                  <span>{d.ngay_kham ? new Date(d.ngay_kham).toLocaleDateString('vi-VN') : '—'}</span>
+                                                  <span className="text-purple-700">{d.branch?.ten_chi_nhanh || '—'}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </>
+                                        )}
                                       </div>
                                     )}
                                   </div>
