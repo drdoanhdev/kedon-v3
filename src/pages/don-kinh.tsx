@@ -485,7 +485,8 @@ export default function DonKinhPage() {
         let errorDetails = '';
         if (axios.isAxiosError(error)) {
           errorMessage = error.response?.data?.message || error.message;
-          errorDetails = error.response?.data?.details || '';
+          const details = error.response?.data?.details;
+          errorDetails = typeof details === 'string' ? details : details ? JSON.stringify(details) : '';
         } else if (error instanceof Error) {
           errorMessage = error.message;
         }

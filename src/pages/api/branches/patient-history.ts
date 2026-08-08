@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       supabase
         .from('DonKinh')
         .select(
-          'id, ngay_kham, tong_tien, sph_mp, cyl_mp, ax_mp, sph_mt, cyl_mt, ax_mt, pd, gong, lab_status, branch_id, branch:branches(id, ten_chi_nhanh)'
+          'id, ngay_kham, tong_tien, sph_mp, cyl_mp, ax_mp, sph_mt, cyl_mt, ax_mt, pd, gong, lab_status, branch_id, branch:branches!DonKinh_branch_id_fkey(id, ten_chi_nhanh)'
         )
         .eq('tenant_id', tenantId)
         .eq('benhnhanid', benhnhanId)

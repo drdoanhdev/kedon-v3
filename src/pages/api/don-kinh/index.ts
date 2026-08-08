@@ -49,7 +49,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       
       let query = supabase
         .from('DonKinh')
-        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi), branch:branches(id, ten_chi_nhanh)`, { count: "exact" })
+        // Chỉ định rõ FK: DonKinh có 2 quan hệ tới branches (branch_id + lab_branch_id)
+        .select(`*, benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi), branch:branches!DonKinh_branch_id_fkey(id, ten_chi_nhanh)`, { count: "exact" })
         .eq('tenant_id', tenantId);
 
       // Branch filter (enterprise multi-branch)
@@ -141,7 +142,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       console.error('Supabase GET error:', error);
       res.status(500).json({ message: 'Lỗi khi lấy dữ liệu đơn kính', details: message });
     }
@@ -307,7 +308,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         inventoryWarnings,
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       console.error('Supabase POST error:', error);
       res.status(500).json({ message: 'Lỗi khi tạo đơn kính', details: message });
     }
@@ -473,7 +474,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         inventoryWarnings,
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       console.error('Supabase PUT error:', error);
       res.status(500).json({ message: 'Lỗi khi cập nhật đơn kính', details: message });
     }
@@ -526,7 +527,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         data: updated ? sanitizeRevenueFields(withDebtFields(updated) as Record<string, unknown>) : updated,
       });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       console.error('Supabase PATCH error:', error);
       res.status(500).json({ message: 'Lỗi khi cập nhật thanh toán đơn kính', details: message });
     }
@@ -567,13 +568,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       res.status(200).json({ message: 'Đã xoá đơn kính' });
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       console.error('Supabase DELETE error:', error);
       res.status(500).json({ message: 'Lỗi khi xoá đơn kính', details: message });
     }
   } else {
     res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
     res.status(405).json({ message: `Phương thức ${req.method} không được phép` });
+  }
+}
+
+/** PostgREST errors are plain objects, not Error instances — String(err) → "[object Object]" */
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const msg = (error as { message?: unknown }).message;
+    if (typeof msg === 'string' && msg) return msg;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
   }
 }
 
