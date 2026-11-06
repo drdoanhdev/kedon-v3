@@ -1,7 +1,7 @@
 //src/pages/api/don-thuoc/index.ts L1
 import { NextApiRequest, NextApiResponse } from "next";
-import { requireTenant, resolveBranchAccess, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
-import { requirePermission, userHasPermission } from '../../../lib/permissions';
+import { requireTenant, checkTrialLimit, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
+import { requirePermission, resolveBranchWithPermissions } from '../../../lib/permissions';
 import { withDebtFields, calcDebt } from '../../../lib/debt';
 
 // === INVENTORY HELPERS ===
@@ -144,11 +144,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Xác thực tenant
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
-  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
-  if (!branchAccess) return;
+  const gate = await resolveBranchWithPermissions(ctx, res);
+  if (!gate) return;
   const { tenantId } = ctx;
-  const { branchId } = branchAccess;
-  const canViewRevenue = await userHasPermission(ctx, 'view_revenue');
+  const { branchId } = gate;
+  const canViewRevenue = gate.permissions.has('view_revenue');
 
   const sanitizeRevenueFields = <T extends Record<string, unknown> | null>(row: T): T => {
     if (!row || canViewRevenue) return row;
@@ -179,7 +179,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           trangthai_thanh_toan,
           benhnhan:BenhNhan(id, ten, namsinh, gioitinh, dienthoai, diachi),
           branch:branches(id, ten_chi_nhanh)
-        `, { count: "exact" })
+        `, { count: "planned" })
         .eq("tenant_id", tenantId)
         .order("ngay_kham", { ascending: false });
 
@@ -244,7 +244,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             currentFrom += chunkSize;
             
             // Giới hạn an toàn: tối đa 50k records
-            if (allData.length >= 50000) break;
+            if (allData.length >= 10000) break;
           }
           
           // Filter trong memory

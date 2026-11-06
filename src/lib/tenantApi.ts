@@ -59,6 +59,29 @@ const authCache = new Map<string, CachedAuth>();
 const membershipCache = new Map<string, CachedMembership>();
 const lastLoginUpdated = new Map<string, number>(); // key -> timestamp
 
+const BRANCH_ACCESS_CACHE_TTL = 60_000;
+const branchAccessCache = new Map<string, { branchId: string | null; expiry: number }>();
+
+export type BranchAccessCoreResult =
+  | { ok: true; branchId: string | null }
+  | { ok: false; status: number; message: string };
+
+function branchAccessCacheKey(
+  ctx: TenantContext,
+  requestedBranchId: string | null,
+  options: BranchAccessOptions,
+): string {
+  return [
+    ctx.userId,
+    ctx.tenantId,
+    ctx.role,
+    requestedBranchId ?? '',
+    options.requireBranch ? '1' : '0',
+    options.requireForStaff === false ? '0' : '1',
+    options.allowAllForOwner === false ? '0' : '1',
+  ].join(':');
+}
+
 // ===== Helpers =====
 
 function getBearer(req: NextApiRequest): string | null {
@@ -222,7 +245,7 @@ interface GuardOptions {
   allowedRoles?: TenantRole[];
 }
 
-interface BranchAccessOptions {
+export interface BranchAccessOptions {
   /**
    * Nếu true, bắt buộc phải có branch_id cho mọi role.
    */
@@ -497,26 +520,35 @@ export async function requireTenant(
  * - Owner/admin: có thể xem all branches (branchId = null) nếu allowAllForOwner=true
  * - Staff/doctor: bắt buộc có branch_id và phải được phân công active tại branch đó
  */
-export async function resolveBranchAccess(
+/** Kiểm tra quyền chi nhánh — không ghi response (dùng song song với permission). */
+export async function resolveBranchAccessCore(
   ctx: TenantContext,
-  res: NextApiResponse,
-  options: BranchAccessOptions = {}
-): Promise<{ branchId: string | null } | null> {
+  options: BranchAccessOptions = {},
+): Promise<BranchAccessCoreResult> {
   const requireBranch = options.requireBranch === true;
   const requireForStaff = options.requireForStaff !== false;
   const allowAllForOwner = options.allowAllForOwner !== false;
   const requestedBranchId = options.branchId !== undefined ? options.branchId : ctx.branchId;
 
   const isAdminRole = ctx.role === 'owner' || ctx.role === 'admin';
+  const cacheKey = branchAccessCacheKey(ctx, requestedBranchId, options);
+  const now = Date.now();
+  const cached = branchAccessCache.get(cacheKey);
+  if (cached && cached.expiry > now) {
+    return { ok: true, branchId: cached.branchId };
+  }
+
+  const remember = (branchId: string | null): BranchAccessCoreResult => {
+    branchAccessCache.set(cacheKey, { branchId, expiry: now + BRANCH_ACCESS_CACHE_TTL });
+    return { ok: true, branchId };
+  };
 
   if (!requestedBranchId) {
     if (requireBranch) {
-      res.status(400).json({ message: 'Thiếu x-branch-id header' });
-      return null;
+      return { ok: false, status: 400, message: 'Thiếu x-branch-id header' };
     }
 
     if (!isAdminRole && requireForStaff) {
-      // Fallback: nếu client chưa kịp gửi x-branch-id, tự suy ra từ phân công active.
       const { data: assignments, error: assignmentErr } = await supabaseAdmin
         .from('staff_assignments')
         .select('branch_id, is_primary, from_date')
@@ -527,30 +559,30 @@ export async function resolveBranchAccess(
         .order('from_date', { ascending: false });
 
       if (assignmentErr) {
-        res.status(500).json({ message: 'Lỗi kiểm tra phân công chi nhánh: ' + assignmentErr.message });
-        return null;
+        return {
+          ok: false,
+          status: 500,
+          message: 'Lỗi kiểm tra phân công chi nhánh: ' + assignmentErr.message,
+        };
       }
 
       const inferredBranchId = assignments?.[0]?.branch_id || null;
       if (!inferredBranchId) {
-        res.status(400).json({ message: 'Thiếu x-branch-id header cho tài khoản nhân viên' });
-        return null;
+        return { ok: false, status: 400, message: 'Thiếu x-branch-id header cho tài khoản nhân viên' };
       }
 
-      return { branchId: inferredBranchId };
+      return remember(inferredBranchId);
     }
 
     if (isAdminRole && allowAllForOwner) {
-      return { branchId: null };
+      return remember(null);
     }
 
-    res.status(400).json({ message: 'Thiếu x-branch-id header' });
-    return null;
+    return { ok: false, status: 400, message: 'Thiếu x-branch-id header' };
   }
 
   if (!isValidUUID(requestedBranchId)) {
-    res.status(400).json({ message: 'branch_id không hợp lệ' });
-    return null;
+    return { ok: false, status: 400, message: 'branch_id không hợp lệ' };
   }
 
   const { data: branch, error: branchErr } = await supabaseAdmin
@@ -561,22 +593,19 @@ export async function resolveBranchAccess(
     .maybeSingle();
 
   if (branchErr) {
-    res.status(500).json({ message: 'Lỗi kiểm tra chi nhánh: ' + branchErr.message });
-    return null;
+    return { ok: false, status: 500, message: 'Lỗi kiểm tra chi nhánh: ' + branchErr.message };
   }
 
   if (!branch) {
-    res.status(403).json({ message: 'Bạn không có quyền truy cập chi nhánh này' });
-    return null;
+    return { ok: false, status: 403, message: 'Bạn không có quyền truy cập chi nhánh này' };
   }
 
   if (branch.status !== 'active') {
-    res.status(403).json({ message: 'Chi nhánh đang tạm ngưng hoạt động' });
-    return null;
+    return { ok: false, status: 403, message: 'Chi nhánh đang tạm ngưng hoạt động' };
   }
 
   if (isAdminRole) {
-    return { branchId: requestedBranchId };
+    return remember(requestedBranchId);
   }
 
   const { data: assignment, error: assErr } = await supabaseAdmin
@@ -589,28 +618,70 @@ export async function resolveBranchAccess(
     .maybeSingle();
 
   if (assErr) {
-    res.status(500).json({ message: 'Lỗi kiểm tra phân công chi nhánh: ' + assErr.message });
-    return null;
+    return { ok: false, status: 500, message: 'Lỗi kiểm tra phân công chi nhánh: ' + assErr.message };
   }
 
   if (!assignment) {
-    res.status(403).json({ message: 'Bạn không được phân công tại chi nhánh này' });
-    return null;
+    return { ok: false, status: 403, message: 'Bạn không được phân công tại chi nhánh này' };
   }
 
-  return { branchId: requestedBranchId };
+  return remember(requestedBranchId);
+}
+
+export async function resolveBranchAccess(
+  ctx: TenantContext,
+  res: NextApiResponse,
+  options: BranchAccessOptions = {},
+): Promise<{ branchId: string | null } | null> {
+  const result = await resolveBranchAccessCore(ctx, options);
+  if (!result.ok) {
+    res.status(result.status).json({ message: result.message });
+    return null;
+  }
+  return { branchId: result.branchId };
 }
 
 // ===== Feature gate middleware =====
 
 import { planHasFeature, roleHasPermission, getMinPlanForFeature, PLAN_LABELS, FEATURE_LABELS, type FeatureKey, type Permission, type PlanKey } from './featureConfig';
 
-// Cache tenant plan để tránh query lặp
-const tenantPlanCache = new Map<
-  string,
-  { plan: string; planExpiresAt: string | null; expiry: number }
->();
+interface CachedTenantBilling {
+  plan: string;
+  planExpiresAt: string | null;
+  trialStart: string | null;
+  trialDays: number | null;
+  trialMaxPrescriptions: number | null;
+  expiry: number;
+}
+
+// Cache billing/trial tenant — dùng chung requireFeature + checkTrialLimit
+const tenantPlanCache = new Map<string, CachedTenantBilling>();
 const PLAN_CACHE_TTL = 120_000; // 2 phút
+
+async function getTenantBilling(tenantId: string): Promise<CachedTenantBilling | null> {
+  const now = Date.now();
+  const cached = tenantPlanCache.get(tenantId);
+  if (cached && cached.expiry > now) return cached;
+
+  const { data, error } = await supabaseAdmin
+    .from('tenants')
+    .select('plan, plan_expires_at, trial_start, trial_days, trial_max_prescriptions')
+    .eq('id', tenantId)
+    .single();
+
+  if (error || !data) return null;
+
+  const row: CachedTenantBilling = {
+    plan: data.plan || 'trial',
+    planExpiresAt: data.plan_expires_at || null,
+    trialStart: data.trial_start || null,
+    trialDays: data.trial_days ?? null,
+    trialMaxPrescriptions: data.trial_max_prescriptions ?? null,
+    expiry: now + PLAN_CACHE_TTL,
+  };
+  tenantPlanCache.set(tenantId, row);
+  return row;
+}
 
 function isPaidPlanExpired(plan: string, planExpiresAt: string | null | undefined): boolean {
   if (!plan || plan === 'trial') return false;
@@ -631,30 +702,9 @@ export async function requireFeature(
   feature: FeatureKey,
   permission?: Permission
 ): Promise<boolean> {
-  // 1. Lấy plan của tenant (cached)
-  const now = Date.now();
-  let plan = 'trial';
-  let planExpiresAt: string | null = null;
-  const cached = tenantPlanCache.get(ctx.tenantId);
-  if (cached && cached.expiry > now) {
-    plan = cached.plan;
-    planExpiresAt = cached.planExpiresAt;
-  } else {
-    const { data, error } = await supabaseAdmin
-      .from('tenants')
-      .select('plan, plan_expires_at')
-      .eq('id', ctx.tenantId)
-      .single();
-    if (!error && data) {
-      plan = data.plan || 'trial';
-      planExpiresAt = data.plan_expires_at || null;
-      tenantPlanCache.set(ctx.tenantId, {
-        plan,
-        planExpiresAt,
-        expiry: now + PLAN_CACHE_TTL,
-      });
-    }
-  }
+  const billing = await getTenantBilling(ctx.tenantId);
+  const plan = billing?.plan ?? 'trial';
+  const planExpiresAt = billing?.planExpiresAt ?? null;
 
   // 1b. Paid plan hết hạn → không dùng feature trả phí
   if (isPaidPlanExpired(plan, planExpiresAt)) {
@@ -704,17 +754,11 @@ export async function checkTrialLimit(
   ctx: TenantContext,
   res: NextApiResponse
 ): Promise<boolean> {
-  // Lấy thông tin tenant
-  const { data: tenant } = await supabaseAdmin
-    .from('tenants')
-    .select('plan, trial_start, trial_days, trial_max_prescriptions, plan_expires_at')
-    .eq('id', ctx.tenantId)
-    .single();
-
+  const tenant = await getTenantBilling(ctx.tenantId);
   if (!tenant) return true;
 
   // Paid plan hết hạn → chặn tạo đơn mới
-  if (isPaidPlanExpired(tenant.plan, tenant.plan_expires_at)) {
+  if (isPaidPlanExpired(tenant.plan, tenant.planExpiresAt)) {
     res.status(403).json({
       message: 'Gói dịch vụ đã hết hạn. Vui lòng gia hạn để tiếp tục tạo đơn.',
       code: 'PLAN_EXPIRED',
@@ -726,9 +770,9 @@ export async function checkTrialLimit(
   if (tenant.plan !== 'trial') return true;
 
   // Check hết hạn ngày
-  if (tenant.trial_start && tenant.trial_days) {
-    const startDate = new Date(tenant.trial_start);
-    const endDate = new Date(startDate.getTime() + tenant.trial_days * 86400000);
+  if (tenant.trialStart && tenant.trialDays) {
+    const startDate = new Date(tenant.trialStart);
+    const endDate = new Date(startDate.getTime() + tenant.trialDays * 86400000);
     if (new Date() > endDate) {
       res.status(403).json({
         message: 'Gói dùng thử đã hết hạn. Vui lòng nâng cấp để tiếp tục tạo đơn.',
@@ -739,21 +783,22 @@ export async function checkTrialLimit(
   }
 
   // Check hết hạn số đơn
-  if (tenant.trial_max_prescriptions) {
-    const { count: countThuoc } = await supabaseAdmin
-      .from('DonThuoc')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', ctx.tenantId);
-
-    const { count: countKinh } = await supabaseAdmin
-      .from('DonKinh')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', ctx.tenantId);
+  if (tenant.trialMaxPrescriptions) {
+    const [{ count: countThuoc }, { count: countKinh }] = await Promise.all([
+      supabaseAdmin
+        .from('DonThuoc')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', ctx.tenantId),
+      supabaseAdmin
+        .from('DonKinh')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', ctx.tenantId),
+    ]);
 
     const totalPrescriptions = (countThuoc || 0) + (countKinh || 0);
-    if (totalPrescriptions >= tenant.trial_max_prescriptions) {
+    if (totalPrescriptions >= tenant.trialMaxPrescriptions) {
       res.status(403).json({
-        message: `Gói dùng thử đã đạt giới hạn ${tenant.trial_max_prescriptions} đơn. Vui lòng nâng cấp để tiếp tục tạo đơn.`,
+        message: `Gói dùng thử đã đạt giới hạn ${tenant.trialMaxPrescriptions} đơn. Vui lòng nâng cấp để tiếp tục tạo đơn.`,
         code: 'TRIAL_LIMIT_REACHED',
       });
       return false;

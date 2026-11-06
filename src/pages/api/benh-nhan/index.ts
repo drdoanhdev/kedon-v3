@@ -503,7 +503,7 @@ export default async function handler(
         // Fetch patient list with pagination and search
         let query = supabase
           .from("BenhNhan")
-          .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+          .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "planned" })
           .eq("tenant_id", tenantId)
           .order("id", { ascending: false });
 
@@ -522,7 +522,7 @@ export default async function handler(
         if (error && isMissingGioitinhColumn(error)) {
           let fallbackQuery = supabase
             .from("BenhNhan")
-            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, ghichu, created_at, branch:branches(id, ten_chi_nhanh)", { count: "planned" })
             .eq("tenant_id", tenantId)
             .order("id", { ascending: false });
 
@@ -543,7 +543,7 @@ export default async function handler(
         if (error && isMissingGhichuColumn(error)) {
           let fallbackQuery = supabase
             .from("BenhNhan")
-            .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .select("id, mabenhnhan, ten, namsinh, gioitinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "planned" })
             .eq("tenant_id", tenantId)
             .order("id", { ascending: false });
 
@@ -564,7 +564,7 @@ export default async function handler(
         if (error && (isMissingGioitinhColumn(error) || isMissingGhichuColumn(error))) {
           let fallbackQuery = supabase
             .from("BenhNhan")
-            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "exact" })
+            .select("id, mabenhnhan, ten, namsinh, dienthoai, diachi, created_at, branch:branches(id, ten_chi_nhanh)", { count: "planned" })
             .eq("tenant_id", tenantId)
             .order("id", { ascending: false });
 

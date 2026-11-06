@@ -11,7 +11,12 @@
  *   if (!(await requirePermission(ctx, res, 'manage_categories'))) return;
  */
 import type { NextApiResponse } from 'next';
-import { supabaseAdmin, type TenantContext } from './tenantApi';
+import {
+  resolveBranchAccessCore,
+  type BranchAccessOptions,
+  supabaseAdmin,
+  type TenantContext,
+} from './tenantApi';
 import { getPermissionsForRole, type Permission } from './featureConfig';
 
 interface CachedPermSet {
@@ -112,6 +117,28 @@ export async function userHasPermission(
 ): Promise<boolean> {
   const { permissions } = await getUserPermissions(ctx);
   return permissions.has(permission);
+}
+
+const DEFAULT_BRANCH_GATE: BranchAccessOptions = {
+  requireForStaff: true,
+  allowAllForOwner: true,
+};
+
+/** Song song: kiểm tra chi nhánh + nạp permission (giảm 1 round-trip tuần tự trên API list/đơn). */
+export async function resolveBranchWithPermissions(
+  ctx: TenantContext,
+  res: NextApiResponse,
+  branchOptions: BranchAccessOptions = DEFAULT_BRANCH_GATE,
+): Promise<{ branchId: string | null; permissions: Set<string> } | null> {
+  const [branchResult, permResult] = await Promise.all([
+    resolveBranchAccessCore(ctx, branchOptions),
+    getUserPermissions(ctx),
+  ]);
+  if (!branchResult.ok) {
+    res.status(branchResult.status).json({ message: branchResult.message });
+    return null;
+  }
+  return { branchId: branchResult.branchId, permissions: permResult.permissions };
 }
 
 /**
