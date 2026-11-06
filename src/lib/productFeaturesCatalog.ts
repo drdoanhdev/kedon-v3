@@ -40,7 +40,7 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
         summary: 'Tổng quan hoạt động phòng khám trong ngày.',
         details: [
           'Thống kê hôm nay: bệnh nhân, đơn thuốc/kính, doanh thu nhanh',
-          'Danh sách chờ khám và lịch hẹn sắp tới',
+          'Lịch hẹn sắp tới',
           'Cảnh báo tồn kho, CRM cần liên hệ',
           'Banner nhắc trial / nâng cấp gói khi áp dụng',
         ],
@@ -145,22 +145,10 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
     ],
   },
   {
-    id: 'waiting-appointments',
-    title: 'Phòng chờ & lịch hẹn',
-    description: 'Hàng đợi khám trong ngày và lịch tái khám.',
+    id: 'appointments',
+    title: 'Lịch hẹn',
+    description: 'Đặt và theo dõi lịch tái khám.',
     items: [
-      {
-        id: 'waiting-room',
-        name: FEATURE_LABELS.waiting_room,
-        summary: 'Quản lý hàng đợi: chờ / đang khám / hoàn tất.',
-        details: [
-          'Thêm bệnh nhân vào hàng chờ',
-          'Gọi lượt, chuyển trạng thái đang khám / xong',
-          'Đồng bộ với check-in nhận diện khuôn mặt (nếu bật)',
-        ],
-        href: '/cho-kham',
-        featureKey: 'waiting_room',
-      },
       {
         id: 'appointments',
         name: FEATURE_LABELS.appointments,
@@ -199,7 +187,6 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
           'Chọn thuốc từ danh mục / kho, liều dùng, số ngày',
           'Ghi diễn tiến bệnh, gắn gia đình',
           'Upload ảnh kèm đơn; in theo mẫu cấu hình',
-          'Đăng ký khuôn mặt bệnh nhân khi có tính năng nhận diện',
         ],
         href: '/ke-don',
         featureKey: 'prescription_medicine',
@@ -412,7 +399,7 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
         summary: 'Báo cáo tổng hợp đa chi nhánh.',
         details: [
           'So sánh và cộng dồn số liệu giữa các chi nhánh trong chuỗi',
-          'Margin ước tính, conversion chờ khám→đơn, lab & tròng cần đặt',
+          'Margin ước tính, lab & tròng cần đặt',
         ],
         href: '/bao-cao-chuoi',
         featureKey: 'chain_reports',
@@ -494,47 +481,6 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
         ],
         href: '/cai-dat-nhan-tin',
         featureKey: 'messaging_automation',
-      },
-    ],
-  },
-  {
-    id: 'face',
-    title: 'Nhận diện khuôn mặt',
-    description: 'Đăng ký mặt, agent cạnh thiết bị và kiosk check-in.',
-    items: [
-      {
-        id: 'face-management',
-        name: FEATURE_LABELS.face_recognition,
-        summary: 'Quản lý khuôn mặt chờ duyệt, camera đăng ký và agent.',
-        details: [
-          'Tabs: khuôn mặt chờ / camera enroll / thiết lập agent',
-          'Đồng bộ embedding với edge agent',
-          'Có thể enroll khi kê đơn thuốc',
-        ],
-        href: '/quan-ly-nhan-dien',
-        featureKey: 'face_recognition',
-      },
-      {
-        id: 'face-kiosk',
-        name: 'Kiosk nhận diện',
-        summary: 'Màn hình TV check-in vào phòng chờ bằng khuôn mặt.',
-        details: [
-          'Route theo deviceId',
-          'Nhận diện → đưa bệnh nhân vào hàng chờ khám',
-        ],
-        href: '/kiosk-nhan-dien/[deviceId]',
-        featureKey: 'face_recognition',
-      },
-      {
-        id: 'face-agent',
-        name: 'Edge face agent',
-        summary: 'Dịch vụ desktop bắt webcam/RTSP, pair thiết bị và sync.',
-        details: [
-          'Cài đặt agent trên máy phòng khám (services/face-agent)',
-          'Pair device, gửi embedding, hỗ trợ học thông minh',
-        ],
-        featureKey: 'face_recognition',
-        note: 'Chạy như dịch vụ cạnh thiết bị, không phải trang web chính.',
       },
     ],
   },
@@ -654,7 +600,7 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
       {
         id: 'clinic-settings',
         name: FEATURE_LABELS.clinic_settings,
-        summary: 'Hub cài đặt: thông tin PK, thành viên, gói, in, nhắn tin, face, VAT.',
+        summary: 'Hub cài đặt: thông tin PK, thành viên, gói, in, nhắn tin, VAT.',
         details: [
           'Thông tin phòng khám và cấu hình vận hành',
           'Liên kết nhanh tới thành viên, vai trò, chi nhánh, billing',

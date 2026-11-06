@@ -3,8 +3,7 @@ export type RecentActivityAction =
   | 'quick_history_open'
   | 'open_rx_drug'
   | 'open_rx_glasses'
-  | 'open_profile'
-  | 'add_waiting';
+  | 'open_profile';
 
 export interface ActivityPatientRef {
   id: number;

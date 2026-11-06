@@ -11,12 +11,11 @@ Tài liệu nội bộ: checklist env, release, runbook sự cố.
 | `SUPABASE_SERVICE_ROLE_KEY` | API backend, bypass RLS có kiểm soát |
 | `CRON_SECRET` | Vercel Cron + Bearer auth cron jobs |
 | `MESSAGING_CRON_SECRET` | Header `x-cron-secret` cho messaging worker |
-| `WAITING_ROOM_CLEANUP_SECRET` | Cleanup phòng chờ |
 | `RECENT_ACTIVITY_CLEANUP_SECRET` | Cleanup recent activity |
 | `PAYMENT_WEBHOOK_SECRET` | Webhook SePay / thanh toán |
 | `TURNSTILE_SECRET_KEY` | Xác minh Cloudflare Turnstile (đăng ký) |
 | `CSP_REPORT_URI` | (Tùy chọn) Endpoint nhận báo cáo vi phạm CSP |
-| Key R2 / messaging / face embedding | Theo từng module |
+| Key R2 / messaging | Theo từng module |
 | `MEDIA_STORAGE_DRIVER` | `r2` (mặc định) hoặc `supabase` |
 | `MEDIA_BUCKET_DON_KINH` / `_GONG_KINH` / `_DON_THUOC` | Tên bucket R2 (vd `optigo`) — **chỉ dùng với driver r2** |
 | `R2_ENDPOINT` hoặc `R2_ACCOUNT_ID` | S3 API endpoint Cloudflare R2 |
@@ -61,10 +60,8 @@ Browser/Agent → Cloudflare (WAF, Turnstile) → Vercel (Next.js API guards) �
 | Scope | Giới hạn |
 |-------|----------|
 | Đăng ký | 5 / 15 phút / IP |
-| Ghép face device | 10 / 10 phút / IP |
 | Báo cáo | 10 / phút / tenant+user |
 | Import Excel | 5 / 10 phút / tenant+user |
-| Face embedding | 20 / phút / tenant+IP |
 | Dashboard | 30 / phút / tenant+user |
 | Media upload | 60 / 10 phút / tenant+user |
 
@@ -78,13 +75,7 @@ Browser/Agent → Cloudflare (WAF, Turnstile) → Vercel (Next.js API guards) �
 | DDoS / scan lớn | Cloudflare **Under Attack Mode**; liên hệ Vercel support |
 | Lộ secret | Rotate key ngay trên Vercel + Supabase; redeploy |
 
-## 6. Face Agent
-
-- Download chỉ qua `GET /api/face-devices/download-agent` (auth + feature gate).
-- Build: `npm run pack:face-agent` — ưu tiên PyInstaller (không ship `.py` thuần).
-- Zip lưu tại `private/downloads/`, không `public/`.
-
-## 6b. Print Agent (in tem kính)
+## 6. Print Agent (in tem kính)
 
 - Download chỉ qua `GET /api/print-agent/download` (auth + feature `print_config`).
 - Build: `npm run pack:print-agent` — cập nhật `src/lib/printAgentPackage.generated.ts` (commit file này).

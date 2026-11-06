@@ -12,8 +12,6 @@ Khi tạo hoặc sửa route trong `src/pages/api/`:
 
 - API nghiệp vụ phòng khám: `requireTenant()` từ `src/lib/tenantApi.ts`
 - API admin nền tảng: `requireSuperAdmin()` từ `src/lib/adminGuard.ts`
-- Edge face agent: `requireFaceDevice()` từ `src/lib/faceDeviceAuth.ts`
-- Kiosk: `requireKioskDevice()` từ `src/lib/faceKiosk.ts`
 - Cron: secret qua `timingSafeEqualString` + `CRON_SECRET` / secret riêng
 - Webhook: verify secret (vd `PAYMENT_WEBHOOK_SECRET`)
 
@@ -23,7 +21,7 @@ Endpoint public (hiếm) phải có lý do rõ và rate limit.
 
 - Import từ `src/lib/rateLimit.ts`: `enforceRateLimit`, `tenantUserRateLimitKey`, `getRateLimitIp`
 - Ngưỡng đặt trong `src/lib/apiLimits.ts` — không hardcode magic numbers
-- API nặng (báo cáo, import, upload, embedding): **bắt buộc** rate limit sau `requireTenant`
+- API nặng (báo cáo, import, upload): **bắt buộc** rate limit sau `requireTenant`
 
 ## Body / query limits
 

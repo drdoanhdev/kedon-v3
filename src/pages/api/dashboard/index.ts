@@ -117,7 +117,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const bq = (q: any) => branchId ? q.eq('branch_id', branchId) : q;
 
     const [
-      choKhamRes,
       henHomNayRes,
       henCanXuLyRes,
       donKinhGanRes,
@@ -128,16 +127,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       overdueHenRes,
       crmAllDonKinh,
     ] = await Promise.all([
-      // 1. Chờ khám hôm nay (per-branch)
-      bq(supabase
-        .from('ChoKham')
-        .select('id, benhnhanid, thoigian, trangthai, BenhNhan:benhnhanid(id, ten, dienthoai)', { count: 'exact' })
-        .eq('tenant_id', tenantId))
-        .gte('thoigian', todayStr)
-        .lt('thoigian', todayStr + 'T23:59:59')
-        .order('thoigian', { ascending: true }),
-
-      // 2. Lịch hẹn hôm nay (per-branch)
+      // 1. Lịch hẹn hôm nay (per-branch)
       bq(supabase
         .from('hen_kham_lai')
         .select('*')
@@ -203,8 +193,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ]);
 
     // Process data
-    const choKham = choKhamRes.data || [];
-    const choKhamCho = choKham.filter((c: any) => c.trangthai === 'chờ');
     const henHomNay = henHomNayRes.data || [];
     const henCanXuLy = henCanXuLyRes.data || [];
     const donKinhGan = donKinhGanRes.data || [];
@@ -389,7 +377,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       today: todayStr,
       stats: {
         tongBenhNhan,
-        choKham: choKhamCho.length,
         henHomNay: henHomNay.length,
         canXuLy: henCanXuLy.length,
         henTong: henHomNay.length + henCanXuLy.length,
@@ -408,7 +395,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         gong: { het: frameHet.slice(0, 8), sapHet: frameSapHet.slice(0, 8) },
       },
       lichHomNay: henHomNay.slice(0, 10),
-      choKhamList: choKhamCho.slice(0, 10),
       crm: crmWithStatus,
       crmMeta: {
         daysThreshold: crmDaysThreshold,

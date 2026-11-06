@@ -508,7 +508,7 @@ export default function BaoCaoChuoi() {
                   <div className="px-5 py-3 border-b bg-gray-50">
                     <h2 className="font-semibold text-gray-800 flex items-center gap-2">
                       <Glasses className="w-4 h-4 text-blue-600" />
-                      Chỉ số kính — margin, conversion, lab, đặt tròng
+                      Chỉ số kính — margin, lab, đặt tròng
                     </h2>
                   </div>
                   {optical.length === 0 ? (
@@ -519,8 +519,6 @@ export default function BaoCaoChuoi() {
                         <thead>
                           <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
                             <th className="px-4 py-3 text-left">Chi nhánh</th>
-                            <th className="px-4 py-3 text-right">Chờ khám</th>
-                            <th className="px-4 py-3 text-right">Conv. %</th>
                             <th className="px-4 py-3 text-right">Margin %</th>
                             <th className="px-4 py-3 text-right">Tròng đặt</th>
                             <th className="px-4 py-3 text-right">Lab</th>
@@ -530,8 +528,6 @@ export default function BaoCaoChuoi() {
                           {optical.map((o) => (
                             <tr key={o.branch_id} className="border-t">
                               <td className="px-4 py-3 font-medium">{o.ten_chi_nhanh}</td>
-                              <td className="px-4 py-3 text-right tabular-nums">{o.cho_kham}</td>
-                              <td className="px-4 py-3 text-right tabular-nums">{o.conversion_pct}%</td>
                               <td className="px-4 py-3 text-right tabular-nums">{o.margin_pct}%</td>
                               <td className="px-4 py-3 text-right tabular-nums">{o.lens_order_count}</td>
                               <td className="px-4 py-3 text-right text-xs text-gray-600">

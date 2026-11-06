@@ -6,9 +6,9 @@ import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-  Users, Clock, CalendarDays, Bell, AlertTriangle, Glasses,
+  Users, CalendarDays, Bell, AlertTriangle, Glasses,
   Phone, RefreshCw, CheckCircle2,
-  UserCheck, Sparkles, HeartHandshake,
+  Sparkles, HeartHandshake,
 } from 'lucide-react';
 
 /* ───────── Types ───────── */
@@ -29,7 +29,7 @@ interface KhoKinhAlert { id: number; ten: string; chi_tiet: string; ton_kho: num
 interface DashboardData {
   today: string;
   stats: {
-    tongBenhNhan: number; choKham: number; henHomNay: number;
+    tongBenhNhan: number; henHomNay: number;
     canXuLy: number; henTong: number;
     trongSapHet: number; gongSapHet: number;
     trongCanDat: number; trongDangVe: number;
@@ -40,7 +40,6 @@ interface DashboardData {
     gong: { het: KhoKinhAlert[]; sapHet: KhoKinhAlert[] };
   };
   lichHomNay: any[];
-  choKhamList: any[];
   crm: {
     id: number;
     ten: string;
@@ -186,7 +185,6 @@ export default function HomePage() {
   const todayFmt = data?.today ? formatNgay(data.today) : new Date().toLocaleDateString('vi-VN');
   const s = data?.stats || {
     tongBenhNhan: 0,
-    choKham: 0,
     henHomNay: 0,
     canXuLy: 0,
     henTong: 0,
@@ -198,7 +196,6 @@ export default function HomePage() {
   const vcl = data?.viecCanLam || { henQuaHan: [], donKinhNo: [], henCanXuLy: [] };
   const kk = data?.khoKinh || { trong: { het: [], sapHet: [] }, gong: { het: [], sapHet: [] } };
   const lich = data?.lichHomNay || [];
-  const ckList = data?.choKhamList || [];
   const crm = data?.crm || [];
   const crmMeta = data?.crmMeta || {
     daysThreshold: 90,
@@ -259,23 +256,14 @@ export default function HomePage() {
 
           <TrialBanner />
 
-          {/* ══════ 2. TỔNG QUAN HÔM NAY — 6 stats ══════ */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* ══════ 2. TỔNG QUAN HÔM NAY — 5 stats ══════ */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <Link href="/benh-nhan" className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow border-l-4 border-blue-500">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0"><Users className="w-4.5 h-4.5 text-blue-600" /></div>
                 <div className="min-w-0">
                   <div className="text-xl font-bold text-gray-800 leading-tight">{s.tongBenhNhan}</div>
                   <div className="text-[11px] text-gray-500 truncate">Bệnh nhân</div>
-                </div>
-              </div>
-            </Link>
-            <Link href="/cho-kham" className="bg-white rounded-xl p-3.5 shadow-sm hover:shadow-md transition-shadow border-l-4 border-orange-500">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0"><Clock className="w-4.5 h-4.5 text-orange-600" /></div>
-                <div className="min-w-0">
-                  <div className="text-xl font-bold text-gray-800 leading-tight">{s.choKham}</div>
-                  <div className="text-[11px] text-gray-500 truncate">Đang chờ</div>
                 </div>
               </div>
             </Link>
@@ -446,11 +434,11 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ══════ CRM + LỊCH + CHỜ KHÁM (layout mới) ══════ */}
+          {/* ══════ CRM + LỊCH HÔM NAY ══════ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-            {/* LEFT (span 2 rows): CRM khách cần chăm sóc */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden lg:row-span-2 h-full">
+            {/* LEFT: CRM khách cần chăm sóc */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden h-full">
               <div className="px-4 py-3 border-b bg-teal-50 flex items-center gap-2">
                 <HeartHandshake className="w-4 h-4 text-teal-600" />
                 <span className="font-semibold text-sm text-teal-800">Khách cần chăm sóc</span>
@@ -565,8 +553,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* RIGHT TOP: Lịch hôm nay */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden lg:h-[18rem] flex flex-col">
+            {/* RIGHT: Lịch hôm nay */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col min-h-[18rem] lg:min-h-[36rem]">
               <div className="px-4 py-3 border-b bg-green-50 flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-green-600" />
                 <span className="font-semibold text-sm text-green-800">Lịch hôm nay</span>
@@ -602,33 +590,6 @@ export default function HomePage() {
                   ))
                 )}
                 <Link href="/lich-hen" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-1">Xem tất cả →</Link>
-              </div>
-            </div>
-
-            {/* RIGHT BOTTOM: Đang chờ khám */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden lg:h-[18rem] flex flex-col">
-              <div className="px-4 py-3 border-b bg-orange-50 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-600" />
-                <span className="font-semibold text-sm text-orange-800">Đang chờ khám</span>
-                {ckList.length > 0 && <span className="ml-auto text-xs bg-orange-600 text-white px-2 py-0.5 rounded-full">{ckList.length}</span>}
-              </div>
-              <div className="p-3 overflow-y-auto flex-1 min-h-0">
-                {ckList.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <UserCheck className="w-8 h-8 mx-auto mb-2" />
-                    <p className="text-sm">Không có bệnh nhân chờ</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {ckList.map((ck: any) => (
-                      <Link key={ck.id} href={ck.BenhNhan?.id ? `/ke-don-kinh?bn=${ck.BenhNhan.id}` : '/cho-kham'} className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors">
-                        <UserCheck className="w-3.5 h-3.5 text-orange-600" />
-                        <span className="text-sm font-medium text-gray-800">{ck.BenhNhan?.ten || 'BN'}</span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-                <Link href="/cho-kham" className="block text-center text-xs text-blue-600 hover:text-blue-800 font-medium pt-2">Mở phòng chờ →</Link>
               </div>
             </div>
           </div>

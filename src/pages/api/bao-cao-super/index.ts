@@ -57,7 +57,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       donThuocRes, donThuocPrevRes,
       donKinhRes, donKinhPrevRes,
       benhNhanRes, benhNhanNewRes,
-      choKhamRes,
       henKhamRes,
       thuocRes,
       lensStockRes, gongKinhRes,
@@ -97,12 +96,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .select('id', { count: 'exact' })
         .eq('tenant_id', tenantId)
         .gte('created_at', fromStr).lt('created_at', toStr)),
-
-      // ChoKham in period — PER-BRANCH
-      bq(supabase.from('ChoKham')
-        .select('id, thoigian, trangthai')
-        .eq('tenant_id', tenantId)
-        .gte('thoigian', fromStr).lt('thoigian', toStr)),
 
       // Appointments in period — PER-BRANCH
       bq(supabase.from('hen_kham_lai')
@@ -147,7 +140,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const donKinhsPrev = donKinhPrevRes.data || [];
     const benhNhans = benhNhanRes.data || [];
     const benhNhanNew = benhNhanNewRes.count || 0;
-    const choKhams = choKhamRes.data || [];
     const henKhams = henKhamRes.data || [];
     const thuocs = thuocRes.data || [];
     const lensAlerts = lensStockRes.data || [];
@@ -390,7 +382,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const soLuongHuy = thuocHuys.reduce((s: number, h: any) => s + (h.so_luong || 0), 0);
 
     // ===================== MODULE 4: HIEU SUAT =====================
-    const soLuotKham = choKhams.length;
+    const soLuotKham = donThuocs.length + donKinhs.length;
     const soNgay = dtByDayArray.length || 1;
     const donThuocTBNgay = donThuocs.length / soNgay;
     const donKinhTBNgay = donKinhs.length / soNgay;
@@ -402,13 +394,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return (paid / total) * 100;
     })();
 
-    // Visits by hour
+    // Visits by hour (from đơn thuốc + đơn kính trong kỳ)
     const visitByHour: Record<number, number> = {};
-    choKhams.forEach((ck: any) => {
-      if (!ck.thoigian) return;
-      const h = new Date(ck.thoigian).getHours();
+    const addVisitHour = (dateVal: unknown) => {
+      if (!dateVal) return;
+      const h = new Date(String(dateVal)).getHours();
+      if (!Number.isFinite(h)) return;
       visitByHour[h] = (visitByHour[h] || 0) + 1;
-    });
+    };
+    donThuocs.forEach((d: any) => addVisitHour(d.ngay_kham));
+    donKinhs.forEach((d: any) => addVisitHour(d.ngaykham));
     const visitByHourArray = Object.entries(visitByHour)
       .map(([h, count]) => ({ hour: parseInt(h), count: count as number }))
       .sort((a, b) => a.hour - b.hour);

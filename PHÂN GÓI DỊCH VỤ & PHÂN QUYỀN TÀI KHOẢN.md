@@ -103,7 +103,6 @@ FeatureGate.tsx     checkTrialLimit()        tenants (plan, trial_*)
 - ✅ Quản lý bệnh nhân
 - ✅ Kê đơn thuốc
 - ✅ Kê đơn kính
-- ✅ Phòng chờ khám
 - ✅ Danh mục thuốc cơ bản
 - ✅ Báo cáo cơ bản
 - ✅ Quản lý danh mục
@@ -189,24 +188,23 @@ Mỗi tính năng có 1 key kỹ thuật duy nhất, dùng trong code và DB:
 | 1 | `patient_management` | Quản lý bệnh nhân | Trial |
 | 2 | `prescription_medicine` | Kê đơn thuốc | Trial |
 | 3 | `prescription_glasses` | Kê đơn kính | Trial |
-| 4 | `waiting_room` | Phòng chờ khám | Trial |
-| 5 | `drug_catalog` | Danh mục thuốc | Trial |
-| 6 | `basic_reports` | Báo cáo cơ bản | Trial |
-| 7 | `categories` | Danh mục | Trial |
-| 8 | `appointments` | Lịch hẹn khám | Basic |
-| 9 | `print_config` | Cấu hình mẫu in | Basic |
-| 10 | `notifications` | Thông báo | Basic |
-| 11 | `inventory_lens` | Quản lý kho kính | Pro |
-| 12 | `inventory_drug` | Quản lý kho thuốc | Pro |
-| 13 | `advanced_reports` | Báo cáo nâng cao | Pro |
-| 14 | `crm` | Chăm sóc khách hàng | Pro |
-| 15 | `multi_staff` | Quản lý nhân viên | Pro |
-| 16 | `clinic_settings` | Cài đặt phòng khám | Pro |
-| 17 | `multi_branch` | Quản lý đa chi nhánh | Enterprise |
-| 18 | `branch_transfer` | Điều chuyển kho | Enterprise |
-| 19 | `chain_reports` | Báo cáo chuỗi | Enterprise |
-| 20 | `staff_attendance` | Chấm công | Enterprise |
-| 21 | `staff_transfer` | Điều chuyển nhân viên | Enterprise |
+| 4 | `drug_catalog` | Danh mục thuốc | Trial |
+| 5 | `basic_reports` | Báo cáo cơ bản | Trial |
+| 6 | `categories` | Danh mục | Trial |
+| 7 | `appointments` | Lịch hẹn khám | Basic |
+| 8 | `print_config` | Cấu hình mẫu in | Basic |
+| 9 | `notifications` | Thông báo | Basic |
+| 10 | `inventory_lens` | Quản lý kho kính | Pro |
+| 11 | `inventory_drug` | Quản lý kho thuốc | Pro |
+| 12 | `advanced_reports` | Báo cáo nâng cao | Pro |
+| 13 | `crm` | Chăm sóc khách hàng | Pro |
+| 14 | `multi_staff` | Quản lý nhân viên | Pro |
+| 15 | `clinic_settings` | Cài đặt phòng khám | Pro |
+| 16 | `multi_branch` | Quản lý đa chi nhánh | Enterprise |
+| 17 | `branch_transfer` | Điều chuyển kho | Enterprise |
+| 18 | `chain_reports` | Báo cáo chuỗi | Enterprise |
+| 19 | `staff_attendance` | Chấm công | Enterprise |
+| 20 | `staff_transfer` | Điều chuyển nhân viên | Enterprise |
 
 ---
 
@@ -217,7 +215,6 @@ Mỗi tính năng có 1 key kỹ thuật duy nhất, dùng trong code và DB:
 | Quản lý bệnh nhân | ✅ | ✅ | ✅ | ✅ |
 | Kê đơn thuốc | ✅ | ✅ | ✅ | ✅ |
 | Kê đơn kính | ✅ | ✅ | ✅ | ✅ |
-| Phòng chờ khám | ✅ | ✅ | ✅ | ✅ |
 | Danh mục thuốc | ✅ | ✅ | ✅ | ✅ |
 | Báo cáo cơ bản | ✅ | ✅ | ✅ | ✅ |
 | Danh mục | ✅ | ✅ | ✅ | ✅ |
@@ -250,7 +247,7 @@ Mỗi tính năng có 1 key kỹ thuật duy nhất, dùng trong code và DB:
 | **owner** | Chủ phòng khám. Toàn quyền, kể cả billing và quản lý thành viên. | Hệ thống (người tạo tenant) |
 | **admin** | Quản lý. Gần như toàn quyền, trừ billing. | Owner |
 | **doctor** | Bác sĩ. Kê đơn, quản lý bệnh nhân, xem báo cáo. | Owner hoặc Admin |
-| **staff** | Nhân viên. Tiếp nhận bệnh nhân, quản lý phòng chờ. | Owner hoặc Admin |
+| **staff** | Nhân viên. Tiếp nhận bệnh nhân, quản lý lịch hẹn. | Owner hoặc Admin |
 
 ---
 
@@ -268,12 +265,11 @@ Mỗi tính năng có 1 key kỹ thuật duy nhất, dùng trong code và DB:
 | `write_prescription` | Kê đơn thuốc/kính | ✅ | ✅ | ✅ | ❌ |
 | `manage_patients` | Thêm/sửa bệnh nhân | ✅ | ✅ | ✅ | ✅ |
 | `view_patients` | Xem danh sách bệnh nhân | ✅ | ✅ | ✅ | ✅ |
-| `manage_waiting_room` | Quản lý phòng chờ | ✅ | ✅ | ✅ | ✅ |
 | `manage_categories` | Quản lý danh mục | ✅ | ✅ | ❌ | ❌ |
 | `manage_appointments` | Quản lý lịch hẹn | ✅ | ✅ | ✅ | ✅ |
 | `manage_print_config` | Cấu hình in | ✅ | ✅ | ❌ | ❌ |
 
-**Tổng quyền:** Owner: 14 | Admin: 13 | Doctor: 6 | Staff: 4
+**Tổng quyền:** Owner: 13 | Admin: 12 | Doctor: 5 | Staff: 3
 
 ---
 

@@ -2,7 +2,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { requireTenant, resolveBranchAccess, supabaseAdmin as supabase, setNoCacheHeaders } from '../../../lib/tenantApi';
 import { requirePermission } from '../../../lib/permissions';
-import { deleteFaceBiometrics } from '../../../lib/faceRecognition';
 
 // Định nghĩa interface cho dữ liệu bệnh nhân
 interface BenhNhan {
@@ -120,14 +119,6 @@ async function reverseDonKinhInventoryForDelete(tenantId: string, donKinhId: num
 }
 
 async function deletePatientCascade(patientId: number, tenantId: string): Promise<SupabaseError | null> {
-  // Dọn dữ liệu sinh trắc (embedding + snapshot storage + audit) trước khi xóa hồ sơ.
-  // FK ON DELETE CASCADE xử lý embedding, nhưng ảnh snapshot trên storage cần xóa thủ công.
-  try {
-    await deleteFaceBiometrics(tenantId, patientId, { reason: 'patient_deleted' });
-  } catch (err) {
-    console.warn(`[delete-patient] dọn dữ liệu sinh trắc thất bại cho BN #${patientId}:`, err);
-  }
-
   // NoBenhNhan chỉ có ở một số DB (vd. Sáng Mắt) — xóa trước để không chặn FK
   {
     const { error } = await supabase.from('NoBenhNhan').delete().eq('benhnhanid', patientId);
@@ -197,7 +188,6 @@ async function deletePatientCascade(patientId: number, tenantId: string): Promis
   }
 
   const optionalTables: Array<[string, string, boolean]> = [
-    ['ChoKham', 'benhnhanid', true],
     ['DienTien', 'benhnhanid', true],
     ['hen_kham_lai', 'benhnhanid', true],
     ['family_members', 'benhnhan_id', true],

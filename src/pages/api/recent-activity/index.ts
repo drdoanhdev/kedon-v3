@@ -11,8 +11,7 @@ type ActivityAction =
   | 'quick_history_open'
   | 'open_rx_drug'
   | 'open_rx_glasses'
-  | 'open_profile'
-  | 'add_waiting';
+  | 'open_profile';
 
 const VALID_ACTIONS: ActivityAction[] = [
   'search_hit',
@@ -20,7 +19,6 @@ const VALID_ACTIONS: ActivityAction[] = [
   'open_rx_drug',
   'open_rx_glasses',
   'open_profile',
-  'add_waiting',
 ];
 
 const MAX_EVENTS_PER_REQUEST = 100;

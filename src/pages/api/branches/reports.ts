@@ -207,16 +207,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       completed: transfers?.filter((t: any) => t.status === 'completed').length || 0,
     };
 
-    // 8. Optical extras: funnel chờ khám→đơn, lab, đặt tròng, margin ước tính
+    // 8. Optical extras: lab, đặt tròng, margin ước tính
     const opticalByBranch = await Promise.all(branches.map(async (branch) => {
-      const [choKhamRes, labRes, lensOrderRes, donKinhCostRes] = await Promise.all([
-        supabase
-          .from('ChoKham')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenantId)
-          .eq('branch_id', branch.id)
-          .gte('created_at', fromDate)
-          .lte('created_at', toDate),
+      const [labRes, lensOrderRes, donKinhCostRes] = await Promise.all([
         supabase
           .from('DonKinh')
           .select('id, lab_status', { count: 'exact' })
@@ -241,10 +234,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .lte('created_at', toDate),
       ]);
 
-      const donKinhCount = reports.find((r) => r.branch_id === branch.id)?.so_don_kinh || 0;
-      const choKham = choKhamRes.count || 0;
-      const conversionPct = choKham > 0 ? Math.round((donKinhCount / choKham) * 100) : 0;
-
       let doanhThu = 0;
       let giaVon = 0;
       for (const d of donKinhCostRes.data || []) {
@@ -258,8 +247,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return {
         branch_id: branch.id,
         ten_chi_nhanh: branch.ten_chi_nhanh,
-        cho_kham: choKham,
-        conversion_pct: conversionPct,
         lens_order_count: lensOrderRes.count || 0,
         lab_count: labRes.count || labRows.length,
         lab_dang_cat: labRows.filter((r: any) => r.lab_status === 'dang_cat').length,

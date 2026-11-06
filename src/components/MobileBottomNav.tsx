@@ -129,8 +129,6 @@ function actionLabel(action: RecentActivityAction): string {
       return 'Mở kê đơn thuốc';
     case 'open_rx_glasses':
       return 'Mở kê đơn kính';
-    case 'add_waiting':
-      return 'Đưa vào chờ khám';
     case 'open_profile':
     default:
       return 'Mở hồ sơ';
@@ -155,7 +153,7 @@ function actionCategory(action: RecentActivityAction): ActivityFilter {
 }
 
 function isDangDoAction(action: RecentActivityAction): boolean {
-  return action === 'search_hit' || action === 'quick_history_open' || action === 'open_profile' || action === 'add_waiting';
+  return action === 'search_hit' || action === 'quick_history_open' || action === 'open_profile';
 }
 
 function loadLastAction(): DefaultAction {
@@ -776,7 +774,7 @@ export default function MobileBottomNav() {
         label: 'Lịch hẹn',
         icon: CalendarDays,
         feature: 'appointments',
-        match: (p) => p.startsWith('/lich-hen') || p.startsWith('/cho-kham'),
+        match: (p) => p.startsWith('/lich-hen'),
       },
     ],
     []

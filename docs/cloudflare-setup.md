@@ -54,13 +54,7 @@ Tạo theo thứ tự ưu tiên (rule trên chạy trước):
 - **Action:** Managed Challenge  
   *(Hoặc JS Challenge nếu Turnstile đã bật trên form — giảm false positive)*
 
-### Rule 4 — Challenge ghép thiết bị face
-
-- **Expression:**  
-  `(http.request.uri.path eq "/api/face-devices/pair" and http.request.method eq "POST")`
-- **Action:** Managed Challenge
-
-### Rule 5 — Challenge POST API burst (tùy chọn)
+### Rule 4 — Challenge POST API burst (tùy chọn)
 
 - **Expression:**  
   `(http.request.method eq "POST" and starts_with(http.request.uri.path, "/api/"))`

@@ -214,6 +214,7 @@ Theo dõi trạng thái migration trên từng database.
 | V091 | V091_add_gioitinh_to_benhnhan.sql | Thêm cột gioitinh (Nam/Nữ/null) vào BenhNhan | | |
 | V092 | V092_drop_nhom_gia_gong.sql | Gỡ nhóm giá gọng (legacy) | | |
 | V093 | V093_multi_branch_enhancements.sql | Đa CN: multi-assignment, chấm công, lab DonKinh, print agent, KM, BH, PO tròng, extra_branches | | |
+| V094 | V094_drop_face_and_waiting_room.sql | Gỡ face recognition + phòng chờ: drop face_*, PendingFaces, ChoKham, waiting_cleanup_*; strip plan features | | |
 
 ---
 

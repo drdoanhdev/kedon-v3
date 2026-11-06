@@ -17,16 +17,14 @@ import { Toaster } from 'react-hot-toast';
 // Register auth interceptors at module level (before any component effects run)
 initializeApiAuthHeaders();
 
-const noHeaderPages = ['/login', '/register', '/kiosk-nhan-dien/[deviceId]'];
+const noHeaderPages = ['/login', '/register'];
 
 /** Uniform mobile sticky bar color (matches brand blue). */
 const MOBILE_HEADER_BG = '#1565C0';
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
-  const showHeader =
-    !noHeaderPages.includes(router.pathname) &&
-    !router.pathname.startsWith('/kiosk-nhan-dien');
+  const showHeader = !noHeaderPages.includes(router.pathname);
   const shouldShowMobileHeader = showHeader && !hasCustomMobileHeader(router.pathname);
   const pageMeta = resolvePageMeta(router.pathname);
   const mainClass = showHeader ? 'pb-8 md:pt-10' : '';

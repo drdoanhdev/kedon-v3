@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle, Camera } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -31,8 +31,6 @@ import {
   PatientFamilyDesktopChip,
 } from '../components/family/PatientFamilyControls';
 import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
-import { FaceEnrollModal } from '../components/FaceEnrollModal';
-import { useFeatureGate } from '../hooks/useFeatureGate';
 
 interface Thuoc {
   id: number;
@@ -321,15 +319,12 @@ export default function KeDon() {
   const benhnhanid = searchParams.get('bn');
   const { loading: authLoading, tenancyLoading, currentTenantId } = useAuth();
   const { setLai: setFooterLai } = useFooter();
-  const { canAccessFeature } = useFeatureGate();
-  const showFaceEnroll = canAccessFeature('face_recognition');
   const authReady = !authLoading && !tenancyLoading && !!currentTenantId;
   const patientIdNumber = useMemo(() => {
     const parsed = Number.parseInt(benhnhanid || '', 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [benhnhanid]);
   const [imageTabCount, setImageTabCount] = useState(0);
-  const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
 
   const refreshImageTabCount = useCallback(async () => {
     if (!patientIdNumber) {
@@ -351,20 +346,6 @@ export default function KeDon() {
   useEffect(() => {
     void refreshImageTabCount();
   }, [refreshImageTabCount]);
-
-  // Auto chuyển trạng thái chờ khám → đang_khám khi mở trang kê đơn
-  useEffect(() => {
-    if (!benhnhanid || !authReady) return;
-    const pid = parseInt(benhnhanid);
-    (async () => {
-      try {
-        await axios.post('/api/cho-kham', { patient_id: pid });
-      } catch {}
-      try {
-        await axios.patch('/api/cho-kham', { benhnhanid: pid, trangthai: 'đang_khám' });
-      } catch {}
-    })();
-  }, [benhnhanid, authReady]);
 
   const [dsThuoc, setDsThuoc] = useState<Thuoc[]>([]);
   const [dsDonCu, setDsDonCu] = useState<DonThuocCu[]>([]);
@@ -1266,11 +1247,6 @@ export default function KeDon() {
         const draftQueueSnapshot = [...draftMediaQueue];
         saveChandoanToHistory(chandoan);
         toast.success(`Đã ${editDonThuocId ? 'cập nhật' : 'lưu'} đơn thuốc: ${data.data.madonthuoc}`);
-        // Auto chuyển trạng thái chờ khám → đã_xong
-        axios.patch('/api/cho-kham', {
-          benhnhanid: parseInt(benhnhanid!),
-          trangthai: 'đã_xong',
-        }).catch(() => {});
         // Hiển thị cảnh báo tồn kho
         const warnings: string[] = data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
@@ -1587,18 +1563,6 @@ export default function KeDon() {
             onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
             mobileHeaderRatio={mobileHeaderRatio}
             familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
-            footerAction={
-              showFaceEnroll && benhNhan && patientIdNumber ? (
-                <button
-                  type="button"
-                  className="h-6 px-2.5 flex-1 min-w-0 rounded-full border border-white/35 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center justify-center gap-1 whitespace-nowrap active:bg-white/20"
-                  onClick={() => setFaceEnrollOpen(true)}
-                >
-                  <Camera className="w-3 h-3 flex-shrink-0 opacity-80" />
-                  <span className="truncate">Đăng ký khuôn mặt</span>
-                </button>
-              ) : undefined
-            }
             renderBackgroundUploadNotice={renderBackgroundUploadNotice}
           />
 
@@ -2499,18 +2463,6 @@ export default function KeDon() {
         switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
         switchPageLabel="Đơn kính"
         familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
-        footerAction={
-          showFaceEnroll && benhNhan && patientIdNumber ? (
-            <button
-              type="button"
-              className="h-8 px-3 flex-1 min-w-0 rounded-full border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center justify-center gap-1 whitespace-nowrap hover:bg-blue-50 active:bg-blue-100 transition-colors"
-              onClick={() => setFaceEnrollOpen(true)}
-            >
-              <Camera className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="truncate">Đăng ký khuôn mặt</span>
-            </button>
-          ) : undefined
-        }
         renderBackgroundUploadNotice={renderBackgroundUploadNotice}
       />
 
@@ -3146,15 +3098,6 @@ export default function KeDon() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {showFaceEnroll && benhNhan && patientIdNumber && (
-        <FaceEnrollModal
-          open={faceEnrollOpen}
-          onOpenChange={setFaceEnrollOpen}
-          patientId={patientIdNumber}
-          patientName={benhNhan.ten}
-        />
-      )}
     </PatientFamilyProvider>
     </ProtectedRoute>
   );

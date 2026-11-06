@@ -22,10 +22,6 @@ const pageMetaByPath: PageMetaEntry[] = [
     meta: { title: 'Lịch hẹn', subtitle: 'Theo dõi lịch khám và nhắc hẹn' },
   },
   {
-    match: (p) => p.startsWith('/cho-kham'),
-    meta: { title: 'Chờ khám', subtitle: 'Sắp xếp bệnh nhân theo lượt' },
-  },
-  {
     match: (p) => p.startsWith('/don-thuoc-mau'),
     meta: { title: 'Đơn thuốc mẫu', subtitle: 'Mẫu kê đơn dùng nhanh' },
   },
@@ -144,10 +140,6 @@ const pageMetaByPath: PageMetaEntry[] = [
   {
     match: (p) => p.startsWith('/tien-luong-ksct'),
     meta: { title: 'Tiên lượng KSCT', subtitle: 'Dự báo tiến triển cận thị' },
-  },
-  {
-    match: (p) => p.startsWith('/quan-ly-nhan-dien'),
-    meta: { title: 'Nhận diện khuôn mặt', subtitle: 'Quản lý thiết bị và đăng ký khuôn mặt' },
   },
   {
     match: (p) => p.startsWith('/quan-ly-kinh'),

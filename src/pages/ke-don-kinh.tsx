@@ -473,20 +473,6 @@ export default function KeDonKinh() {
   const { setLai: setFooterLai } = useFooter();
   const isAdmin = isOwnerRole(currentRole);
 
-  // Auto chuyển trạng thái chờ khám → đang_khám khi mở trang kê đơn kính
-  useEffect(() => {
-    if (!benhnhanid) return;
-    const pid = parseInt(benhnhanid);
-    (async () => {
-      try {
-        await axios.post('/api/cho-kham', { patient_id: pid });
-      } catch {}
-      try {
-        await axios.patch('/api/cho-kham', { benhnhanid: pid, trangthai: 'đang_khám' });
-      } catch {}
-    })();
-  }, [benhnhanid]);
-
   const [benhNhan, setBenhNhan] = useState<BenhNhan | null>(null);
   const lastActivityPatientIdRef = useRef<number | null>(null);
   const [patientNotes, setPatientNotes] = useState<PatientNote[]>([]);
@@ -1788,11 +1774,6 @@ export default function KeDonKinh() {
       if (res.status === 200) {
         const draftQueueSnapshot = [...draftMediaQueue];
         toast.success('Đã lưu đơn kính');
-        // Auto chuyển trạng thái chờ khám → đã_xong
-        axios.patch('/api/cho-kham', {
-          benhnhanid: parseInt(benhnhanid || '0'),
-          trangthai: 'đã_xong',
-        }).catch(() => {});
         // Show inventory warnings
         const warnings: string[] = res.data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));
@@ -1853,11 +1834,6 @@ export default function KeDonKinh() {
       const res = await axios.put('/api/don-kinh', payload);
       if (res.status === 200) {
         toast.success('Đã cập nhật đơn kính');
-        // Auto chuyển trạng thái chờ khám → đã_xong
-        axios.patch('/api/cho-kham', {
-          benhnhanid: parseInt(benhnhanid || '0'),
-          trangthai: 'đã_xong',
-        }).catch(() => {});
         // Show inventory warnings
         const warnings: string[] = res.data.inventoryWarnings || [];
         warnings.forEach((w: string) => toast(w, { duration: 6000, icon: '📦' }));

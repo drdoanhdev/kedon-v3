@@ -3,7 +3,6 @@
  */
 import { supabaseAdmin } from '../tenantApi';
 import { getMediaStorageProviderForRow } from '../media/storage';
-import { deletePendingFaceSnapshot } from '../faceSnapshotUpload';
 
 export type PurgeTenantResult = {
   tenantId: string;
@@ -131,21 +130,6 @@ async function deleteMediaObjects(
     }
   }
 
-  const pending = await fetchAllByTenant<{ snapshot_url: string | null }>(
-    'PendingFaces',
-    'snapshot_url',
-    tenantId
-  );
-  for (const row of pending) {
-    try {
-      await deletePendingFaceSnapshot(row.snapshot_url);
-      if (row.snapshot_url) deleted += 1;
-    } catch (err: any) {
-      failed += 1;
-      warnings.push(`face snapshot: ${err?.message || String(err)}`);
-    }
-  }
-
   return { deleted, failed };
 }
 
@@ -187,13 +171,6 @@ async function clearClinicalData(tenantId: string, warnings: string[]): Promise<
     'don_thuoc_media',
     'gong_kinh_media',
 
-    // Face / biometrics
-    'face_audit_log',
-    'face_biometric_consent',
-    'face_embeddings',
-    'PendingFaces',
-    'face_devices',
-
     // Prescription / visit dependents
     'thuoc_xuat_don',
     'lens_export_sale',
@@ -209,7 +186,6 @@ async function clearClinicalData(tenantId: string, warnings: string[]): Promise<
     'thuoc_huy',
     'stock_movement',
 
-    'ChoKham',
     'DienTien',
     'hen_kham_lai',
     'patient_notes_simple',
@@ -220,8 +196,6 @@ async function clearClinicalData(tenantId: string, warnings: string[]): Promise<
     'patient_transfers',
     'family_members',
     'family_groups',
-    'waiting_cleanup_logs',
-    'waiting_cleanup_logs_archive',
 
     'DonKinh',
     'DonThuoc',

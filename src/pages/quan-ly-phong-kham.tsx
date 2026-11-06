@@ -54,7 +54,7 @@ export default function QuanLyPhongKham() {
   const [tenantCode, setTenantCode] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
   const [tenantAddress, setTenantAddress] = useState('');
-  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax' | 'face'>('info');
+  const [activeSection, setActiveSection] = useState<'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax'>('info');
 
   // VAT config state
   const [vatConfig, setVatConfig] = useState({ ap_dung_vat: false, thue_suat: 8, gia_da_bao_gom_vat: true, ma_so_thue: '', ten_don_vi: '', dia_chi_don_vi: '' });
@@ -500,7 +500,7 @@ export default function QuanLyPhongKham() {
   // Sidebar (KiotViet-style settings layout)
   // ========================================================================
   type Section = {
-    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax' | 'face';
+    id: 'info' | 'members' | 'plan' | 'branches' | 'chain' | 'roles' | 'print' | 'messaging' | 'tax';
     label: string;
     icon: string;
     group: string;
@@ -520,7 +520,6 @@ export default function QuanLyPhongKham() {
     { id: 'roles',     label: 'Quản lý vai trò & quyền',  icon: '🛡️', group: 'Cấu hình' },
     { id: 'print',     label: 'Cấu hình mẫu in',          icon: '🖨️', group: 'Cấu hình' },
     { id: 'messaging', label: 'Cài đặt nhắn tin tự động', icon: '💬', group: 'Cấu hình' },
-    { id: 'face',      label: 'Nhận diện khuôn mặt',      icon: '📷', group: 'Cấu hình' },
     { id: 'tax',       label: 'Khai thuế & hóa đơn',      icon: '🧾', group: 'Tài chính' },
   );
 
@@ -542,21 +541,6 @@ export default function QuanLyPhongKham() {
     roles:     <QuanLyVaiTroSection />,
     print:     <CauHinhInSection />,
     messaging: <CaiDatNhanTinSection />,
-    face: (
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4 max-w-lg">
-        <h3 className="text-lg font-semibold">Nhận diện khuôn mặt</h3>
-        <p className="text-sm text-gray-600">
-          Quản lý agent, camera, đăng ký BN và xử lý khuôn mặt chờ trên trang riêng — giao diện rộng hơn,
-          phù hợp lễ tân làm việc hàng ngày.
-        </p>
-        <Link
-          href="/quan-ly-nhan-dien"
-          className="inline-flex items-center justify-center rounded-md bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700"
-        >
-          Mở trang nhận diện →
-        </Link>
-      </div>
-    ),
     tax: taxSection,
   };
 
@@ -582,13 +566,7 @@ export default function QuanLyPhongKham() {
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => {
-                      if (s.id === 'face') {
-                        router.push('/quan-ly-nhan-dien');
-                        return;
-                      }
-                      setActiveSection(s.id as typeof activeSection);
-                    }}
+                    onClick={() => setActiveSection(s.id as typeof activeSection)}
                     className={`w-full text-left flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
                       active
                         ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600 font-medium'

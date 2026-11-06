@@ -2,14 +2,6 @@
   "regions": ["sin1"],
   "crons": [
     {
-      "path": "/api/cho-kham/cleanup-cron",
-      "schedule": "10 3 * * *"
-    },
-    {
-      "path": "/api/cho-kham/archive-cron",
-      "schedule": "0 3 * * *"
-    },
-    {
       "path": "/api/recent-activity/cleanup-cron",
       "schedule": "20 3 * * *"
     }
@@ -19,9 +11,6 @@
       "maxDuration": 60
     },
     "src/pages/api/bao-cao-super/index.ts": {
-      "maxDuration": 60
-    },
-    "src/pages/api/face-embeddings/from-image.ts": {
       "maxDuration": 60
     },
     "src/pages/api/admin/tenants/purge.ts": {

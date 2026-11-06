@@ -55,7 +55,7 @@ const FALLBACK_PLANS: Plan[] = [
   {
     name: 'Dùng thử', key: 'trial', price: 'Miễn phí', priceNum: 0,
     period: '3 tháng hoặc 1.000 đơn',
-    features: ['Quản lý bệnh nhân', 'Kê đơn thuốc & kính', 'Phòng chờ khám', 'Danh mục thuốc cơ bản', 'Báo cáo cơ bản', '1 người dùng'],
+    features: ['Quản lý bệnh nhân', 'Kê đơn thuốc & kính', 'Danh mục thuốc cơ bản', 'Báo cáo cơ bản', '1 người dùng'],
   },
   {
     name: 'Cơ bản', key: 'basic', price: '99.000đ', priceNum: 99000, period: '/tháng',
