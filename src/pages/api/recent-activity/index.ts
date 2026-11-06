@@ -1,5 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
+  RECENT_ACTIVITY_DEFAULT_DAYS,
+  RECENT_ACTIVITY_DEFAULT_LIMIT,
+  RECENT_ACTIVITY_MAX_DAYS,
+  RECENT_ACTIVITY_MAX_LIMIT,
+  RATE_LIMITS,
+} from '../../../lib/apiLimits';
+import { enforceRateLimit, tenantUserRateLimitKey } from '../../../lib/rateLimit';
+import {
   requireTenant,
   resolveBranchAccess,
   supabaseAdmin as supabase,
@@ -22,27 +30,6 @@ const VALID_ACTIONS: ActivityAction[] = [
 ];
 
 const MAX_EVENTS_PER_REQUEST = 100;
-const RATE_LIMIT_WINDOW_MS = 10_000;
-const RATE_LIMIT_MAX_REQUESTS = 30;
-const syncRateLimit = new Map<string, { count: number; resetAt: number }>();
-
-function checkSyncRateLimit(key: string): { allowed: boolean; retryAfterSec?: number } {
-  const now = Date.now();
-  const current = syncRateLimit.get(key);
-
-  if (!current || now >= current.resetAt) {
-    syncRateLimit.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true };
-  }
-
-  if (current.count >= RATE_LIMIT_MAX_REQUESTS) {
-    const retryMs = Math.max(0, current.resetAt - now);
-    return { allowed: false, retryAfterSec: Math.max(1, Math.ceil(retryMs / 1000)) };
-  }
-
-  current.count += 1;
-  return { allowed: true };
-}
 
 interface IncomingActivityEvent {
   client_event_id: string;
@@ -84,39 +71,73 @@ function normalizeIncomingEvents(input: unknown): IncomingActivityEvent[] {
   return Array.from(normalizedByEventId.values()).slice(0, MAX_EVENTS_PER_REQUEST);
 }
 
+function parseDays(raw: unknown): number {
+  const value = Number(raw ?? RECENT_ACTIVITY_DEFAULT_DAYS);
+  if (!Number.isFinite(value)) return RECENT_ACTIVITY_DEFAULT_DAYS;
+  return Math.min(Math.max(Math.floor(value), 1), RECENT_ACTIVITY_MAX_DAYS);
+}
+
+function parseLimit(raw: unknown): number {
+  const value = Number(raw ?? RECENT_ACTIVITY_DEFAULT_LIMIT);
+  if (!Number.isFinite(value)) return RECENT_ACTIVITY_DEFAULT_LIMIT;
+  return Math.min(Math.max(Math.floor(value), 1), RECENT_ACTIVITY_MAX_LIMIT);
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setNoCacheHeaders(res);
 
   const ctx = await requireTenant(req, res);
   if (!ctx) return;
-  const branchAccess = await resolveBranchAccess(ctx, res, { requireForStaff: true, allowAllForOwner: true });
+  const branchAccess = await resolveBranchAccess(ctx, res, {
+    requireForStaff: true,
+    allowAllForOwner: true,
+  });
   if (!branchAccess) return;
 
   const { tenantId, userId } = ctx;
-  const { branchId } = branchAccess;
+  // Prefer resolved branch; fall back to header/context so owner sync stays branch-scoped.
+  const branchId = branchAccess.branchId || ctx.branchId;
+
+  if (!branchId) {
+    return res.status(400).json({
+      message: 'Chọn chi nhánh để đồng bộ hoạt động',
+    });
+  }
+
+  const rlKey = tenantUserRateLimitKey(tenantId, userId, 'recent-activity');
+  if (!enforceRateLimit(
+    res,
+    rlKey,
+    RATE_LIMITS.recentActivity.limit,
+    RATE_LIMITS.recentActivity.windowMs,
+    'Đồng bộ quá nhanh, vui lòng thử lại sau vài giây'
+  )) {
+    return;
+  }
 
   try {
     if (req.method === 'GET') {
-      const limitRaw = Number(req.query.limit || 80);
-      const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 80;
-
+      const days = parseDays(req.query.days);
+      const limit = parseLimit(req.query.limit);
       const sinceRaw = typeof req.query.since === 'string' ? req.query.since : '';
       const sinceMs = sinceRaw ? Number(sinceRaw) : NaN;
       const hasSince = Number.isFinite(sinceMs) && sinceMs > 0;
+      const windowStartIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
       let query = supabase
         .from('recent_activity_events')
         .select('client_event_id, action, source, event_at, patient_id, patient_name, patient_phone, patient_address, patient_birth_year, branch_id, updated_at')
         .eq('tenant_id', tenantId)
-        .order('updated_at', { ascending: false })
+        .eq('branch_id', branchId)
+        .gte('event_at', windowStartIso)
         .limit(limit);
 
-      if (branchId) {
-        query = query.eq('branch_id', branchId);
-      }
-
       if (hasSince) {
-        query = query.gt('updated_at', new Date(sinceMs).toISOString());
+        query = query
+          .gt('updated_at', new Date(sinceMs).toISOString())
+          .order('updated_at', { ascending: false });
+      } else {
+        query = query.order('event_at', { ascending: false });
       }
 
       const { data, error } = await query;
@@ -124,19 +145,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi lấy activity', details: error.message });
       }
 
-      return res.status(200).json({ data: data || [] });
+      return res.status(200).json({ data: data || [], days, branch_id: branchId });
     }
 
     if (req.method === 'POST') {
-      const rateLimitKey = `${tenantId}:${userId}`;
-      const rl = checkSyncRateLimit(rateLimitKey);
-      if (!rl.allowed) {
-        if (rl.retryAfterSec) {
-          res.setHeader('Retry-After', String(rl.retryAfterSec));
-        }
-        return res.status(429).json({ message: 'Đồng bộ quá nhanh, vui lòng thử lại sau vài giây' });
-      }
-
       const events = normalizeIncomingEvents((req.body || {}).events);
       if (events.length === 0) {
         return res.status(400).json({ message: 'events không hợp lệ hoặc rỗng' });
@@ -144,17 +156,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const patientIds = Array.from(new Set(events.map((event) => event.patient_id)));
 
-      let patientQuery = supabase
+      const { data: patientRows, error: patientErr } = await supabase
         .from('BenhNhan')
         .select('id, ten, dienthoai, diachi, namsinh, branch_id')
         .eq('tenant_id', tenantId)
+        .eq('branch_id', branchId)
         .in('id', patientIds);
 
-      if (branchId) {
-        patientQuery = patientQuery.eq('branch_id', branchId);
-      }
-
-      const { data: patientRows, error: patientErr } = await patientQuery;
       if (patientErr) {
         return res.status(400).json({ message: 'Lỗi kiểm tra bệnh nhân activity', details: patientErr.message });
       }
@@ -169,19 +177,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const rows = validEvents.map((event) => {
         const patient = patientMap.get(event.patient_id);
         return {
-        tenant_id: tenantId,
-        branch_id: patient?.branch_id || branchId,
-        client_event_id: event.client_event_id,
-        action: event.action,
-        source: event.source || null,
-        event_at: event.event_at,
-        patient_id: event.patient_id,
-        patient_name: patient?.ten || `BN #${event.patient_id}`,
-        patient_phone: patient?.dienthoai || null,
-        patient_address: patient?.diachi || null,
-        patient_birth_year: patient?.namsinh || null,
-        created_by: userId,
-      }});
+          tenant_id: tenantId,
+          branch_id: patient?.branch_id || branchId,
+          client_event_id: event.client_event_id,
+          action: event.action,
+          source: event.source || null,
+          event_at: event.event_at,
+          patient_id: event.patient_id,
+          patient_name: patient?.ten || `BN #${event.patient_id}`,
+          patient_phone: patient?.dienthoai || null,
+          patient_address: patient?.diachi || null,
+          patient_birth_year: patient?.namsinh || null,
+          created_by: userId,
+        };
+      });
 
       const { data, error } = await supabase
         .from('recent_activity_events')

@@ -8,6 +8,7 @@ import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import MobileBottomNav from '../components/MobileBottomNav';
+import RecentActivitySyncRunner from '../components/RecentActivitySyncRunner';
 import { FooterProvider } from '../contexts/FooterContext';
 import { PageTabsProvider } from '../contexts/PageTabsContext';
 import { initializeApiAuthHeaders } from '../lib/apiAuthHeaders';
@@ -98,6 +99,7 @@ export default function App({ Component, pageProps }: AppProps) {
         </main>
         {showHeader && <Footer />}
         {showHeader && <MobileBottomNav />}
+        {showHeader && <RecentActivitySyncRunner />}
         <Toaster
           position="top-center"
           toastOptions={{

@@ -142,6 +142,18 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
         details: ['Tìm nhanh từ thanh điều hướng mà không cần vào trang Bệnh nhân'],
         featureKey: 'patient_management',
       },
+      {
+        id: 'fab-activity-hub',
+        name: 'Tìm kiếm nhanh K & hoạt động gần đây',
+        summary: 'Phím K / FAB tìm khách, timeline hoạt động đồng bộ theo chi nhánh.',
+        details: [
+          'Mở tìm kiếm nhanh bằng phím K hoặc nút FAB',
+          'Timeline hoạt động gần đây nhóm theo ngày (Hôm nay / Hôm qua / ngày)',
+          'Đồng bộ nền giữa thiết bị trong cùng chi nhánh, lưu khoảng 3 ngày',
+          'Lọc theo tìm kiếm, lịch sử, kê đơn, đang dang dở',
+        ],
+        featureKey: 'patient_management',
+      },
     ],
   },
   {

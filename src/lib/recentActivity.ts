@@ -63,12 +63,26 @@ const ACTIVITY_STORAGE_KEY = 'mbn:recent_activity_v1';
 const LEGACY_RECENT_KEY = 'mbn:recent_patients';
 const LAST_SYNC_AT_KEY = 'mbn:recent_activity_last_sync_at';
 const SYNC_BACKOFF_KEY = 'mbn:recent_activity_sync_backoff_v1';
-const MAX_ACTIVITY = 60;
+const LAST_FULL_PULL_AT_KEY = 'mbn:recent_activity_last_full_pull_at';
+
+/** Client display/sync window — keep last 3 days. */
+export const ACTIVITY_RETENTION_DAYS = 3;
+export const ACTIVITY_RETENTION_MS = ACTIVITY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+export const MAX_ACTIVITY_IN_WINDOW = 400;
 export const MAX_RECENT_PATIENTS = 30;
+
+/** Only collapse rapid search_hit spam for the same patient. */
+const SEARCH_HIT_DEDUPE_MS = 5_000;
+
 const UPDATE_EVENT_NAME = 'mbn:activity-updated';
+export const ACTIVITY_SYNC_REQUEST_EVENT = 'mbn:activity-sync-request';
 
 function nowTs(): number {
   return Date.now();
+}
+
+function retentionCutoff(now: number = nowTs()): number {
+  return now - ACTIVITY_RETENTION_MS;
 }
 
 function safeParseArray(raw: string | null): unknown[] {
@@ -111,14 +125,63 @@ function normalizeEvent(candidate: any): RecentActivityEvent | null {
   };
 }
 
+/** Drop events older than the retention window and cap total count. */
+export function pruneEvents(events: RecentActivityEvent[], now: number = nowTs()): RecentActivityEvent[] {
+  const cutoff = retentionCutoff(now);
+  return events
+    .filter((event) => event.timestamp >= cutoff)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, MAX_ACTIVITY_IN_WINDOW);
+}
+
+/**
+ * Soft-dedupe only for search_hit within a few seconds (typing spam).
+ * All other actions are kept as distinct timeline rows.
+ */
+function softDedupeEvents(events: RecentActivityEvent[]): RecentActivityEvent[] {
+  const next: RecentActivityEvent[] = [];
+  const seenIds = new Set<string>();
+
+  for (const event of events.sort((a, b) => b.timestamp - a.timestamp)) {
+    if (seenIds.has(event.eventId)) continue;
+
+    if (event.action === 'search_hit') {
+      const duplicatedIndex = next.findIndex((existing) => {
+        if (existing.action !== 'search_hit') return false;
+        if (existing.patient.id !== event.patient.id) return false;
+        return Math.abs(existing.timestamp - event.timestamp) < SEARCH_HIT_DEDUPE_MS;
+      });
+
+      if (duplicatedIndex >= 0) {
+        if (event.timestamp > next[duplicatedIndex].timestamp) {
+          seenIds.delete(next[duplicatedIndex].eventId);
+          next[duplicatedIndex] = event;
+          seenIds.add(event.eventId);
+        }
+        continue;
+      }
+    }
+
+    seenIds.add(event.eventId);
+    next.push(event);
+    if (next.length >= MAX_ACTIVITY_IN_WINDOW) break;
+  }
+
+  return next;
+}
+
+function finalizeEvents(events: RecentActivityEvent[]): RecentActivityEvent[] {
+  return pruneEvents(softDedupeEvents(events));
+}
+
 function readStorageEvents(): RecentActivityEvent[] {
   if (typeof window === 'undefined') return [];
 
-  const currentEvents = safeParseArray(localStorage.getItem(ACTIVITY_STORAGE_KEY))
-    .map(normalizeEvent)
-    .filter((event): event is RecentActivityEvent => !!event)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, MAX_ACTIVITY);
+  const currentEvents = finalizeEvents(
+    safeParseArray(localStorage.getItem(ACTIVITY_STORAGE_KEY))
+      .map(normalizeEvent)
+      .filter((event): event is RecentActivityEvent => !!event)
+  );
 
   if (currentEvents.length > 0) return currentEvents;
 
@@ -153,7 +216,7 @@ function readStorageEvents(): RecentActivityEvent[] {
     .filter((item): item is RecentActivityEvent => !!item);
 
   if (migrated.length > 0) {
-    localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(migrated));
+    writeStorageEvents(migrated);
   }
 
   return migrated;
@@ -161,8 +224,9 @@ function readStorageEvents(): RecentActivityEvent[] {
 
 function writeStorageEvents(events: RecentActivityEvent[]) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(events.slice(0, MAX_ACTIVITY)));
-  window.dispatchEvent(new CustomEvent(UPDATE_EVENT_NAME, { detail: events.slice(0, MAX_ACTIVITY) }));
+  const next = finalizeEvents(events);
+  localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent(UPDATE_EVENT_NAME, { detail: next }));
 }
 
 function getCurrentBranchId(): string | null {
@@ -172,29 +236,9 @@ function getCurrentBranchId(): string | null {
   return localStorage.getItem(`currentBranchId_${tenantId}`);
 }
 
-function compactEvents(events: RecentActivityEvent[]): RecentActivityEvent[] {
-  const next: RecentActivityEvent[] = [];
-
-  for (const event of events.sort((a, b) => b.timestamp - a.timestamp)) {
-    const duplicatedIndex = next.findIndex((existing) => {
-      const sameAction = existing.action === event.action;
-      const samePatient = existing.patient.id === event.patient.id;
-      const nearTime = Math.abs(existing.timestamp - event.timestamp) < 45 * 1000;
-      return sameAction && samePatient && nearTime;
-    });
-
-    if (duplicatedIndex >= 0) {
-      if (event.timestamp > next[duplicatedIndex].timestamp) {
-        next[duplicatedIndex] = event;
-      }
-      continue;
-    }
-
-    next.push(event);
-    if (next.length >= MAX_ACTIVITY) break;
-  }
-
-  return next;
+function requestActivitySync(reason: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(ACTIVITY_SYNC_REQUEST_EVENT, { detail: { reason } }));
 }
 
 export function buildActivityPatientRef(patient: {
@@ -252,9 +296,10 @@ export function pushRecentActivity(input: {
   }
 
   const current = readStorageEvents();
-  const compacted = compactEvents([event, ...current]);
-  writeStorageEvents(compacted);
-  return compacted;
+  const next = finalizeEvents([event, ...current]);
+  writeStorageEvents(next);
+  requestActivitySync('local_push');
+  return next;
 }
 
 export function getRecentPatientsFromActivities(
@@ -280,7 +325,9 @@ export function subscribeRecentActivityUpdates(callback: (events: RecentActivity
   const onUpdate = (event: Event) => {
     const customEvent = event as CustomEvent<RecentActivityEvent[]>;
     const detail = Array.isArray(customEvent.detail)
-      ? customEvent.detail.map(normalizeEvent).filter((item): item is RecentActivityEvent => !!item)
+      ? finalizeEvents(
+          customEvent.detail.map(normalizeEvent).filter((item): item is RecentActivityEvent => !!item)
+        )
       : readStorageEvents();
     callback(detail);
   };
@@ -301,6 +348,20 @@ export function setActivityLastSyncAt(ts: number) {
   if (typeof window === 'undefined') return;
   if (!Number.isFinite(ts) || ts <= 0) return;
   localStorage.setItem(LAST_SYNC_AT_KEY, String(Math.floor(ts)));
+}
+
+export function getActivityLastFullPullAt(): number | null {
+  if (typeof window === 'undefined') return null;
+  const raw = localStorage.getItem(LAST_FULL_PULL_AT_KEY);
+  if (!raw) return null;
+  const ts = Number(raw);
+  return Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
+export function setActivityLastFullPullAt(ts: number) {
+  if (typeof window === 'undefined') return;
+  if (!Number.isFinite(ts) || ts <= 0) return;
+  localStorage.setItem(LAST_FULL_PULL_AT_KEY, String(Math.floor(ts)));
 }
 
 export function getActivitySyncBackoffState(): ActivitySyncBackoffState | null {
@@ -351,7 +412,7 @@ function toIso(ts: number): string {
   return new Date(ts).toISOString();
 }
 
-export function getPendingActivityPayload(limit: number = 30): RecentActivitySyncPayload[] {
+export function getPendingActivityPayload(limit: number = 40): RecentActivitySyncPayload[] {
   const events = readStorageEvents();
   return events
     .filter((event) => event.pendingSync)
@@ -437,7 +498,7 @@ export function mergeRecentActivityFromServer(rows: RecentActivityServerRow[]): 
     });
   }
 
-  const merged = compactEvents(Array.from(byEventId.values()));
+  const merged = finalizeEvents(Array.from(byEventId.values()));
   writeStorageEvents(merged);
   const maxServerTs = getMaxServerUpdatedAt(rows);
   if (maxServerTs) {
