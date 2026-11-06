@@ -26,3 +26,4 @@ CREATE TRIGGER trigger_reset_face_embedding_learn_count
 
 COMMENT ON COLUMN face_embeddings.embedding_count IS 'Số lần centroid được cập nhật (Smart Learning)';
 COMMENT ON COLUMN face_embeddings.quality_score IS 'Độ tin cậy centroid 0-1, tăng dần theo số lần học';
+

@@ -2,6 +2,11 @@
 
 Hướng dẫn thiết lập edge security trên **Cloudflare Free** phía trước **Vercel**.
 
+## Kiểm tra nhanh (trước khi chỉnh Bot Fight Mode)
+
+1. **Account home → Domains** phải thấy ít nhất một website (zone). Nếu trống (chỉ có R2 / Turnstile) thì Bot Fight Mode **không áp dụng** cho app — không có gì để tắt trên account đó.
+2. DNS production: `app.optigo.vn` phải trỏ qua Cloudflare (nameserver Cloudflare hoặc bản ghi **Proxied**). Nếu `nslookup app.optigo.vn` trả về `*.vercel-dns.com` thì traffic **đi thẳng Vercel**, không qua Cloudflare → tắt Bot Fight Mode trên dashboard **không** làm app nhanh hơn.
+
 ## 1. DNS và SSL
 
 1. Thêm domain `app.optigo.vn` vào Cloudflare, bật **Proxied** (orange cloud) cho bản ghi trỏ Vercel.
@@ -13,7 +18,7 @@ Hướng dẫn thiết lập edge security trên **Cloudflare Free** phía trư�
 
 | Mục | Vị trí | Giá trị |
 |-----|--------|---------|
-| Bot Fight Mode | Security → Bots | **On** |
+| Bot Fight Mode | Security → Settings → Bot traffic | **Off** (bắt buộc Off: chế độ này challenge cả `/api/*`, làm chậm lưu/sửa/xóa, không skip được bằng WAF) |
 | Browser Integrity Check | Security → Settings | **On** |
 | Security Level | Security → Settings | **Medium** (tăng **High** khi bị scan) |
 
