@@ -10,7 +10,7 @@ type PageMetaEntry = {
 };
 
 /** Paths that render their own mobile header (skip shared sticky bar). */
-export const customMobileHeaderPaths = ['/benh-nhan', '/don-kinh', '/ke-don'];
+export const customMobileHeaderPaths = ['/benh-nhan', '/don-kinh', '/don-thuoc', '/ke-don'];
 
 const pageMetaByPath: PageMetaEntry[] = [
   {
@@ -169,5 +169,6 @@ export function resolvePageMeta(pathname: string): PageMeta {
 }
 
 export function hasCustomMobileHeader(pathname: string): boolean {
+  if (pathname.startsWith('/don-thuoc-mau')) return false;
   return customMobileHeaderPaths.some((path) => pathname.startsWith(path));
 }

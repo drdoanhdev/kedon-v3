@@ -1,12 +1,12 @@
 //src/pages/don-thuoc.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Pagination, SimplePagination } from '../components/ui/pagination';
-import { Pencil, Trash2, Settings, Wallet } from 'lucide-react';
+import { Pencil, Trash2, Settings, Wallet, Phone, MessageSquare, MessageCircle, Search } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -64,6 +64,309 @@ function calcAge(namsinh: string | null): number | "" {
   return "";
 }
 
+const APP_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+
+function formatMobileOrderTime(dateValue: string): string {
+  return new Date(dateValue).toLocaleTimeString('vi-VN', {
+    timeZone: APP_TIME_ZONE,
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getMobileOrderDateKey(dateValue: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(dateValue));
+}
+
+function formatMobileOrderDayLabel(dateValue: string): string {
+  const raw = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: APP_TIME_ZONE,
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(dateValue));
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function normalizeDialPhone(phone: string | null | undefined): string {
+  if (!phone) return '';
+  return phone.replace(/[^\d+]/g, '');
+}
+
+function normalizeZaloPhone(phone: string | null | undefined): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) return `84${digits.slice(1)}`;
+  return digits;
+}
+
+interface MobileDonThuocOrderCardProps {
+  dt: DonThuoc;
+  showProfit: boolean;
+  isExpanded: boolean;
+  chiTietLoaded: boolean;
+  chiTiet: ChiTietDonThuoc[];
+  onToggleExpand: (id: number) => void;
+  onDelete: (id: number) => Promise<void>;
+  onPay: (id: number) => void;
+  formatMoney: (amount: number) => string;
+  formatTime: (value: string) => string;
+}
+
+const MobileDonThuocOrderCard = React.memo(function MobileDonThuocOrderCard({
+  dt,
+  showProfit,
+  isExpanded,
+  chiTietLoaded,
+  chiTiet,
+  onToggleExpand,
+  onDelete,
+  onPay,
+  formatMoney,
+  formatTime,
+}: MobileDonThuocOrderCardProps) {
+  const remaining = typeof dt.con_no === 'number' ? dt.con_no : Math.max(0, dt.tongtien - dt.sotien_da_thanh_toan);
+  const isDebt = remaining > 0;
+  const rightInfoWidthClass = showProfit ? 'w-[112px]' : isDebt ? 'w-[104px]' : 'w-[88px]';
+  const rightInfoPaddingClass = showProfit ? 'pr-[118px]' : isDebt ? 'pr-[110px]' : 'pr-[94px]';
+  const rawPhone = (dt.benhnhan?.dienthoai || '').trim();
+  const dialPhone = normalizeDialPhone(rawPhone);
+  const zaloPhone = normalizeZaloPhone(rawPhone);
+  const hasPhone = dialPhone.length > 0;
+  const benhnhanId = dt.benhnhan?.id || '';
+
+  const handleToggleExpand = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    onToggleExpand(dt.id);
+  }, [dt.id, onToggleExpand]);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl border shadow-sm ${isDebt ? 'border-amber-400 bg-amber-50/50' : 'border-slate-200 bg-white'}`}
+      onClick={handleToggleExpand}
+    >
+      <div className="relative">
+        <CardContent className="space-y-2.5 p-3">
+          <div className="relative">
+            <div className={`absolute right-0 top-0 text-right ${rightInfoWidthClass}`}>
+              <p className="text-xs text-slate-500">{formatTime(dt.ngay_kham)}</p>
+              <p className="mt-0.5 text-xl font-semibold leading-none text-blue-700">{formatMoney(dt.tongtien)}k</p>
+              {isDebt && (
+                <p className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Nợ: {formatMoney(remaining)}k
+                </p>
+              )}
+              {showProfit && dt.lai !== undefined && (
+                <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  isDebt ? 'bg-yellow-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {formatMoney(dt.lai)}k{isDebt ? '/ngày' : ''}
+                </p>
+              )}
+            </div>
+            <h3 className={`min-w-0 truncate text-base font-semibold leading-tight text-slate-800 ${rightInfoPaddingClass}`}>
+              {dt.benhnhan?.ten || 'Không có tên'}
+            </h3>
+          </div>
+
+          {!isExpanded ? (
+            <>
+              <div className={`flex min-w-0 items-center gap-x-2 text-[13px] text-slate-600 ${rightInfoPaddingClass}`}>
+                <span className="shrink-0">NS: {dt.benhnhan?.namsinh || '-'}</span>
+                <span className="shrink-0 text-slate-300">•</span>
+                <span className="shrink-0">{rawPhone || '-'}</span>
+                <span className="shrink-0 text-slate-300">•</span>
+                <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-clip">{dt.benhnhan?.diachi || '-'}</span>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[13px]">
+                <span className="max-w-full truncate rounded-full bg-violet-100 px-2 py-0.5 text-violet-800">
+                  {dt.chandoan || 'Chưa có chẩn đoán'}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={`space-y-1 text-[13px] text-slate-700 ${rightInfoPaddingClass}`}>
+                <p>
+                  <span className="font-medium text-slate-500">Ngày sinh: </span>
+                  {dt.benhnhan?.namsinh || '-'}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-500">Số điện thoại: </span>
+                  {rawPhone || '-'}
+                </p>
+                <p className="break-words">
+                  <span className="font-medium text-slate-500">Địa chỉ: </span>
+                  {dt.benhnhan?.diachi || '-'}
+                </p>
+                <p className="break-words">
+                  <span className="font-medium text-slate-500">Chẩn đoán: </span>
+                  {dt.chandoan || '-'}
+                </p>
+              </div>
+
+              <div className="space-y-1.5 text-[13px] text-slate-700">
+                <p className="text-xs font-semibold text-slate-500">Thuốc trong đơn</p>
+                {!chiTietLoaded ? (
+                  <p className="text-xs text-slate-400">Đang tải chi tiết...</p>
+                ) : chiTiet.length === 0 ? (
+                  <p className="text-xs text-slate-400">Không có thuốc trong đơn.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {chiTiet.map((ct) => (
+                      <div key={ct.thuoc.id} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                        <p className="font-medium text-slate-800">{ct.thuoc.tenthuoc}</p>
+                        <p className="text-xs text-slate-500">
+                          SL: {ct.soluong} {ct.donvitinh} · {ct.cachdung}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+
+        {isExpanded && (
+          <div
+            className="space-y-2.5 border-t border-slate-200 bg-slate-50 px-3 py-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`grid gap-1.5 ${isDebt ? 'grid-cols-6' : 'grid-cols-5'}`}>
+              {hasPhone ? (
+                <a
+                  href={`tel:${dialPhone}`}
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] font-medium text-slate-700"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  Gọi
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-[11px] font-medium text-slate-400"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  Gọi
+                </button>
+              )}
+
+              {hasPhone ? (
+                <a
+                  href={`sms:${dialPhone}`}
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] font-medium text-slate-700"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Nhắn
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-[11px] font-medium text-slate-400"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Nhắn
+                </button>
+              )}
+
+              {zaloPhone ? (
+                <a
+                  href={`https://zalo.me/${zaloPhone}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] font-medium text-sky-700"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Zalo
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-[11px] font-medium text-slate-400"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Zalo
+                </button>
+              )}
+
+              <a
+                href={`/ke-don?bn=${benhnhanId}&donthuocid=${dt.id}`}
+                className="flex h-10 flex-col items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-[11px] font-medium text-blue-700"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Sửa
+              </a>
+
+              {isDebt && (
+                <button
+                  type="button"
+                  className="flex h-10 flex-col items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-800"
+                  onClick={() => onPay(dt.id)}
+                >
+                  <Wallet className="h-3.5 w-3.5" />
+                  Thu
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="flex h-10 flex-col items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-[11px] font-medium text-rose-600"
+                onClick={() => { void onDelete(dt.id); }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Xóa
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+MobileDonThuocOrderCard.displayName = 'MobileDonThuocOrderCard';
+
+function MobileHeaderIconButton({
+  children,
+  active = false,
+  onClick,
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  onClick: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+        active
+          ? 'bg-white text-[#1f6cc0] shadow-sm ring-2 ring-white/70'
+          : 'bg-white/15 text-white hover:bg-white/25'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+type MobileQuickFilter = 'all' | 'debt';
+
 export default function DonThuocPage() {
   const { confirm } = useConfirm();
   const [donThuocs, setDonThuocs] = useState<DonThuoc[]>([]);
@@ -82,6 +385,9 @@ export default function DonThuocPage() {
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payDonId, setPayDonId] = useState<number | null>(null);
   const [payAmount, setPayAmount] = useState(''); // nhập theo nghìn
+  const [mobileQuickFilter, setMobileQuickFilter] = useState<MobileQuickFilter>('all');
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const { has } = usePermissions();
   const canViewProfit = has('view_revenue');
   const { isMultiBranch } = useBranch();
@@ -107,6 +413,22 @@ export default function DonThuocPage() {
       setShowProfit(false);
     }
   }, [canViewProfit, showProfit]);
+
+  useEffect(() => {
+    setSelectedDonThuocId(null);
+  }, [currentPage, rowsPerPage, searchDebounced, filterDate, filterNo]);
+
+  useEffect(() => {
+    setMobileQuickFilter(filterNo ? 'debt' : 'all');
+  }, [filterNo]);
+
+  useEffect(() => {
+    if (!showMobileSearch) return;
+    const timer = window.setTimeout(() => {
+      mobileSearchInputRef.current?.focus();
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [showMobileSearch]);
 
   const handleSettingsClick = () => {
     if (!canViewProfit) {
@@ -235,6 +557,51 @@ export default function DonThuocPage() {
     }
   }, [selectedDonThuocId, fetchChiTietDonThuoc]);
 
+  const toggleExpandedCard = useCallback((id: number) => {
+    handleRowClick(id);
+  }, [handleRowClick]);
+
+  const applyMobileQuickFilter = useCallback((next: MobileQuickFilter) => {
+    setMobileQuickFilter(next);
+    setCurrentPage(1);
+    setFilterNo(next === 'debt');
+  }, []);
+
+  const toggleMobileSearch = useCallback(() => {
+    setShowMobileSearch((prev) => {
+      if (prev) {
+        setSearch('');
+      }
+      return !prev;
+    });
+  }, []);
+
+  const toggleShowProfit = useCallback(() => {
+    if (!canViewProfit) {
+      toast.error('Bạn không có quyền xem lãi');
+      return;
+    }
+    setShowProfit((prev) => {
+      const next = !prev;
+      toast.success(next ? 'Đã hiện cột lãi' : 'Đã ẩn cột lãi');
+      return next;
+    });
+  }, [canViewProfit]);
+
+  const openPayDialog = useCallback((id: number) => {
+    setPayDonId(id);
+    setPayAmount('');
+    setPayDialogOpen(true);
+  }, []);
+
+  const formatMoney = useCallback((amount: number) => {
+    return (amount / 1000).toLocaleString('vi-VN');
+  }, []);
+
+  const formatOrderTime = useCallback((value: string) => {
+    return formatMobileOrderTime(value);
+  }, []);
+
   // Backend đã xử lý filter, không cần filter ở client nữa
   const filteredDonThuocs = useMemo(() => donThuocs, [donThuocs]);
 
@@ -242,66 +609,109 @@ export default function DonThuocPage() {
   const totalPages = Math.ceil(total / rowsPerPage);
   const paginatedDonThuocs = useMemo(() => filteredDonThuocs, [filteredDonThuocs]);
 
+  const mobileGroupedByDay = useMemo(() => {
+    const grouped = new Map<string, {
+      key: string;
+      label: string;
+      items: DonThuoc[];
+    }>();
+
+    paginatedDonThuocs.forEach((dt) => {
+      const key = getMobileOrderDateKey(dt.ngay_kham);
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: formatMobileOrderDayLabel(dt.ngay_kham),
+          items: [],
+        });
+      }
+      grouped.get(key)?.items.push(dt);
+    });
+
+    return Array.from(grouped.values());
+  }, [paginatedDonThuocs]);
+
   return (
     <ProtectedRoute>
-      <div className="p-4 lg:p-4">
+      <div className="space-y-4 px-4 pb-4 pt-0 md:pt-4 lg:p-6">
 
   <div className="w-full mx-auto">
-          {/* Mobile Controls */}
-          <div className="block md:hidden mb-4 space-y-3">
-            <Input
-              placeholder="Tìm theo tên, mã BN, SĐT, địa chỉ..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-              }}
-              className="w-full h-12"
-            />
-            <Input
-              type="date"
-              value={filterDate}
-              onChange={(e) => {
-                setFilterDate(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full h-12"
-            />
-            <div className="flex items-center justify-between">
-              <Button
-                variant={filterNo ? 'default' : 'outline'}
-                onClick={() => {
-                  setFilterNo(!filterNo);
-                  setCurrentPage(1);
-                }}
-                className="h-10"
+          {/* Mobile Header */}
+          <div className="sticky top-0 z-40 -mx-4 block border-b border-[#1565C0] bg-gradient-to-r from-[#1f78d1] via-[#2d80d7] to-[#1f6cc0] text-white shadow-sm md:hidden">
+            <div className="flex items-center justify-between px-4 py-2">
+              <h1 className="text-xl font-extrabold leading-tight tracking-tight text-white">Đơn thuốc</h1>
+              <MobileHeaderIconButton
+                ariaLabel="Tìm kiếm"
+                active={showMobileSearch}
+                onClick={toggleMobileSearch}
               >
-                Chỉ hiện đơn còn nợ
-              </Button>
-              <select
-                value={rowsPerPage}
-                onChange={(e) => {
-                  setRowsPerPage(+e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="border px-3 py-2 rounded text-sm h-10"
-              >
-                {[50, 100, 200, 500].map((val) => (
-                  <option key={val} value={val}>{val}</option>
-                ))}
-              </select>
+                <Search className="h-4 w-4" />
+              </MobileHeaderIconButton>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                {search || filterDate || filterNo ? (
-                  <>Tìm thấy: {total} đơn (trang {currentPage}/{totalPages})</>
-                ) : (
-                  <>Tổng: {total} đơn thuốc (trang {currentPage}/{totalPages})</>
-                )}
+
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-out ${
+                showMobileSearch ? 'max-h-28 opacity-100' : 'max-h-0 opacity-0'
+              }`}
+            >
+              <div className="space-y-2 px-4 pb-2">
+                <Input
+                  ref={mobileSearchInputRef}
+                  placeholder="Tìm theo tên, mã BN, SĐT..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                  }}
+                  className="h-9 border-white/30 bg-white text-slate-900 placeholder:text-slate-400"
+                />
+                <Input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => {
+                    setFilterDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-9 border-white/30 bg-white text-slate-900"
+                />
               </div>
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-white/20 bg-black/10 px-4 py-2">
+              <button
+                type="button"
+                onClick={() => applyMobileQuickFilter('all')}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  mobileQuickFilter === 'all'
+                    ? 'bg-white text-[#1f6cc0]'
+                    : 'bg-white/15 text-white/90'
+                }`}
+              >
+                Tất cả
+              </button>
+              <button
+                type="button"
+                onClick={() => applyMobileQuickFilter('debt')}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  mobileQuickFilter === 'debt'
+                    ? 'bg-white text-[#1f6cc0]'
+                    : 'bg-white/15 text-white/90'
+                }`}
+              >
+                Còn nợ
+              </button>
+              <div className="flex-1" />
               {canViewProfit && (
-                <Button variant={showProfit ? 'default' : 'outline'} size="sm" className="h-10 px-3" type="button" onClick={handleSettingsClick}>
-                  <Settings className="w-4 h-4" />
-                </Button>
+                <button
+                  type="button"
+                  onClick={toggleShowProfit}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    showProfit
+                      ? 'bg-amber-400 text-amber-950 font-semibold shadow-sm'
+                      : 'bg-white/15 text-white/90'
+                  }`}
+                >
+                  Xem
+                </button>
               )}
             </div>
           </div>
@@ -356,120 +766,51 @@ export default function DonThuocPage() {
           </div>
 
           {/* Mobile Card Layout */}
-          <div className="block md:hidden space-y-4">
-            {paginatedDonThuocs.map((dt, index) => {
-              const chiTiet = chiTietDonThuocs[dt.id] || [];
-              const stt = (currentPage - 1) * rowsPerPage + index + 1;
-              const remaining = typeof dt.con_no === 'number' ? dt.con_no : Math.max(0, dt.tongtien - dt.sotien_da_thanh_toan);
-              const isDebt = remaining > 0;
-              return (
-                <Card key={dt.id} className={`border ${isDebt ? 'bg-amber-200 border-amber-500 shadow-md ring-1 ring-amber-400/60' : ''}`}>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <h3 className="font-semibold text-base flex items-center gap-2"><span className="text-[10px] font-mono bg-gray-200 text-gray-700 px-1 rounded">{stt}</span>{dt.benhnhan?.ten || 'Không có tên'}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(dt.ngay_kham).toLocaleDateString('vi-VN')} {new Date(dt.ngay_kham).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-base font-semibold">{(dt.tongtien / 1000).toFixed(0)}k</p>
-                        {isDebt && (
-                          <p className="text-sm text-red-600">
-                            Nợ: {(remaining / 1000).toFixed(0)}k
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">NS:</span> {dt.benhnhan?.namsinh || '-'}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Tuổi:</span> {calcAge(dt.benhnhan?.namsinh ?? null)}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">SĐT:</span> {dt.benhnhan?.dienthoai || '-'}
-                      </div>
-                    </div>
+          <div
+            className="block md:hidden space-y-2.5"
+            onClick={() => {
+              setSelectedDonThuocId(null);
+            }}
+          >
+            {mobileGroupedByDay.map((group) => (
+              <div key={group.key} className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-xs font-semibold text-slate-600">{group.label}</p>
+                  <p className="text-[11px] text-slate-500">{group.items.length} đơn</p>
+                </div>
 
-                    <div className="text-sm">
-                      <div><span className="text-muted-foreground">Địa chỉ:</span> {dt.benhnhan?.diachi || '-'}</div>
-                      <div><span className="text-muted-foreground">Chẩn đoán:</span> {dt.chandoan || '-'}</div>
-                    </div>
+                <div className="space-y-2.5">
+                  {group.items.map((dt) => (
+                    <MobileDonThuocOrderCard
+                      key={dt.id}
+                      dt={dt}
+                      showProfit={showProfit}
+                      isExpanded={selectedDonThuocId === dt.id}
+                      chiTietLoaded={chiTietDonThuocs[dt.id] !== undefined}
+                      chiTiet={chiTietDonThuocs[dt.id] || []}
+                      onToggleExpand={toggleExpandedCard}
+                      onDelete={handleDelete}
+                      onPay={openPayDialog}
+                      formatMoney={formatMoney}
+                      formatTime={formatOrderTime}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
 
-                    <div className="flex flex-col gap-2 pt-2">
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="w-full h-10 justify-start"
-                        onClick={() => handleRowClick(dt.id)}
-                      >
-                        {selectedDonThuocId === dt.id ? 'Ẩn chi tiết' : 'Xem chi tiết thuốc'}
-                      </Button>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="flex-1 h-10" asChild>
-                          <Link href={`/ke-don?bn=${dt.benhnhan?.id || ''}&donthuocid=${dt.id}`}>
-                            <Pencil className="w-4 h-4 mr-1" />
-                            Sửa
-                          </Link>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="flex-1 h-10"
-                          disabled={!isDebt}
-                          onClick={() => {
-                            setPayDonId(dt.id);
-                            setPayAmount('');
-                            setPayDialogOpen(true);
-                          }}
-                        >
-                          <Wallet className="w-4 h-4 mr-1" />
-                          Thu tiền
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="destructive" 
-                          className="flex-1 h-10" 
-                          onClick={() => handleDelete(dt.id)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          Xóa
-                        </Button>
-                      </div>
-                    </div>
-
-                    {chiTiet.length > 0 && selectedDonThuocId === dt.id && (
-                      <div className="mt-3 p-3 bg-green-50 rounded border">
-                        <div className="text-xs text-gray-800">
-                          <strong>Chi tiết đơn thuốc:</strong>
-                          <div className="mt-2 space-y-2">
-                            {chiTiet.map((ct: ChiTietDonThuoc) => (
-                              <div key={ct.thuoc.id} className="p-2 bg-white rounded border text-xs">
-                                <div className="font-semibold">{ct.thuoc.tenthuoc}</div>
-                                <div className="grid grid-cols-3 gap-2 mt-1 text-muted-foreground">
-                                  <div>SL: {ct.soluong}</div>
-                                  <div>ĐV: {ct.donvitinh}</div>
-                                  <div>Cách dùng: {ct.cachdung}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
             {paginatedDonThuocs.length === 0 && (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
                   Không tìm thấy đơn thuốc.
                 </CardContent>
               </Card>
+            )}
+
+            {paginatedDonThuocs.length > 0 && (
+              <div className="rounded-lg bg-slate-100 px-3 py-2 text-center text-[11px] text-slate-500">
+                Chạm đơn để xem chi tiết và thao tác
+              </div>
             )}
           </div>
 
@@ -481,6 +822,27 @@ export default function DonThuocPage() {
               onPageChange={setCurrentPage}
               className="mt-4"
             />
+
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium text-slate-700">Số đơn trên trang</label>
+                <select
+                  value={rowsPerPage}
+                  onChange={(e) => {
+                    setRowsPerPage(+e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+                >
+                  {[25, 50, 100, 200].map((val) => (
+                    <option key={val} value={val}>{val} / trang</option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Tổng: {total} đơn thuốc (trang {currentPage}/{totalPages})
+              </p>
+            </div>
           </div>
 
           {/* Desktop Table Layout */}
