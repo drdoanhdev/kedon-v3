@@ -145,11 +145,13 @@ export const PRODUCT_FEATURE_GROUPS: ProductFeatureGroup[] = [
       {
         id: 'fab-activity-hub',
         name: 'Tìm kiếm nhanh K & hoạt động gần đây',
-        summary: 'Phím K / FAB tìm khách, timeline hoạt động đồng bộ theo chi nhánh.',
+        summary: 'Phím K / FAB tìm khách, danh sách khách gần đây đồng bộ theo chi nhánh.',
         details: [
           'Mở tìm kiếm nhanh bằng phím K hoặc nút FAB',
-          'Timeline hoạt động gần đây nhóm theo ngày (Hôm nay / Hôm qua / ngày)',
-          'Đồng bộ nền giữa thiết bị trong cùng chi nhánh, lưu khoảng 3 ngày',
+          'Chạm tên khách để mở menu một hàng: kê kính, kê thuốc, sửa, gọi, Zalo',
+          'Mỗi khách một dòng — thao tác gần nhất (3 ngày, theo chi nhánh)',
+          'Nhóm theo ngày (Hôm nay / Hôm qua / ngày); hiện tên nhân viên khác khi có',
+          'Đồng bộ nền giữa thiết bị trong cùng chi nhánh (cần chọn chi nhánh cụ thể)',
           'Lọc theo tìm kiếm, lịch sử, kê đơn, đang dang dở',
         ],
         featureKey: 'patient_management',

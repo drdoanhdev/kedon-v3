@@ -23,6 +23,8 @@ export interface RecentActivityEvent {
   branchId?: string | null;
   pendingSync?: boolean;
   syncedAt?: number | null;
+  createdBy?: string | null;
+  createdByName?: string | null;
 }
 
 export interface RecentActivitySyncPayload {
@@ -49,6 +51,8 @@ export interface RecentActivityServerRow {
   patient_address?: string | null;
   patient_birth_year?: string | null;
   branch_id?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
 }
 
 export type ActivitySyncBackoffReason = 'rate_limit' | 'network' | 'server';
@@ -59,11 +63,18 @@ export interface ActivitySyncBackoffState {
   nextRetryAt: number;
 }
 
-const ACTIVITY_STORAGE_KEY = 'mbn:recent_activity_v1';
+export interface ActivityStorageScope {
+  tenantId: string | null;
+  branchId: string | null;
+  userId: string | null;
+}
+
+const ACTIVITY_STORAGE_KEY_BASE = 'mbn:recent_activity_v1';
 const LEGACY_RECENT_KEY = 'mbn:recent_patients';
-const LAST_SYNC_AT_KEY = 'mbn:recent_activity_last_sync_at';
-const SYNC_BACKOFF_KEY = 'mbn:recent_activity_sync_backoff_v1';
-const LAST_FULL_PULL_AT_KEY = 'mbn:recent_activity_last_full_pull_at';
+const LAST_SYNC_AT_KEY_BASE = 'mbn:recent_activity_last_sync_at';
+const SYNC_BACKOFF_KEY_BASE = 'mbn:recent_activity_sync_backoff_v1';
+const LAST_FULL_PULL_AT_KEY_BASE = 'mbn:recent_activity_last_full_pull_at';
+const ACTIVITY_USER_ID_KEY = 'mbn:activity_user_id';
 
 /** Client display/sync window — keep last 3 days. */
 export const ACTIVITY_RETENTION_DAYS = 3;
@@ -74,8 +85,20 @@ export const MAX_RECENT_PATIENTS = 30;
 /** Only collapse rapid search_hit spam for the same patient. */
 const SEARCH_HIT_DEDUPE_MS = 5_000;
 
+/** Prefer meaningful actions over search_hit when collapsing near-duplicate rows. */
+const COLLAPSE_PRIORITY_WINDOW_MS = 2 * 60 * 1000;
+
+const ACTION_PRIORITY: Record<RecentActivityAction, number> = {
+  open_rx_drug: 5,
+  open_rx_glasses: 5,
+  quick_history_open: 4,
+  open_profile: 3,
+  search_hit: 1,
+};
+
 const UPDATE_EVENT_NAME = 'mbn:activity-updated';
 export const ACTIVITY_SYNC_REQUEST_EVENT = 'mbn:activity-sync-request';
+export const ACTIVITY_SCOPE_CHANGED_EVENT = 'mbn:activity-scope-changed';
 
 function nowTs(): number {
   return Date.now();
@@ -114,6 +137,8 @@ function normalizeEvent(candidate: any): RecentActivityEvent | null {
     branchId: typeof candidate?.branchId === 'string' ? candidate.branchId : null,
     pendingSync: candidate?.pendingSync === true,
     syncedAt: Number.isFinite(Number(candidate?.syncedAt)) ? Number(candidate.syncedAt) : null,
+    createdBy: typeof candidate?.createdBy === 'string' ? candidate.createdBy : null,
+    createdByName: typeof candidate?.createdByName === 'string' ? candidate.createdByName : null,
     patient: {
       id: patientId,
       ten: patientName,
@@ -174,16 +199,112 @@ function finalizeEvents(events: RecentActivityEvent[]): RecentActivityEvent[] {
   return pruneEvents(softDedupeEvents(events));
 }
 
+/**
+ * Display helper: one row per patient — newest event, with a short window
+ * preferring prescription/history actions over search_hit spam.
+ */
+export function collapseActivitiesToLatestPerPatient(
+  events: RecentActivityEvent[]
+): RecentActivityEvent[] {
+  const sorted = [...events].sort((a, b) => b.timestamp - a.timestamp);
+  const byPatient = new Map<number, RecentActivityEvent>();
+
+  for (const event of sorted) {
+    const existing = byPatient.get(event.patient.id);
+    if (!existing) {
+      byPatient.set(event.patient.id, event);
+      continue;
+    }
+
+    const withinWindow = Math.abs(existing.timestamp - event.timestamp) <= COLLAPSE_PRIORITY_WINDOW_MS;
+    if (
+      withinWindow &&
+      (ACTION_PRIORITY[event.action] || 0) > (ACTION_PRIORITY[existing.action] || 0)
+    ) {
+      byPatient.set(event.patient.id, event);
+    }
+  }
+
+  return Array.from(byPatient.values()).sort((a, b) => b.timestamp - a.timestamp);
+}
+
+export function getActivityStorageScope(): ActivityStorageScope {
+  if (typeof window === 'undefined') {
+    return { tenantId: null, branchId: null, userId: null };
+  }
+
+  const tenantId = localStorage.getItem('currentTenantId');
+  const branchId = tenantId ? localStorage.getItem(`currentBranchId_${tenantId}`) : null;
+  const userId = localStorage.getItem(ACTIVITY_USER_ID_KEY);
+  return {
+    tenantId: tenantId || null,
+    branchId: branchId || null,
+    userId: userId || null,
+  };
+}
+
+export function hasCompleteActivityScope(scope: ActivityStorageScope = getActivityStorageScope()): boolean {
+  return !!(scope.tenantId && scope.branchId && scope.userId);
+}
+
+export function getActivityScopeKey(scope: ActivityStorageScope = getActivityStorageScope()): string | null {
+  if (!scope.tenantId || !scope.branchId || !scope.userId) return null;
+  return `${scope.tenantId}:${scope.branchId}:${scope.userId}`;
+}
+
+function scopedStorageKey(base: string, scope: ActivityStorageScope = getActivityStorageScope()): string {
+  const scopeKey = getActivityScopeKey(scope);
+  return scopeKey ? `${base}:${scopeKey}` : `${base}:noscope`;
+}
+
+export function setActivityUserId(userId: string | null) {
+  if (typeof window === 'undefined') return;
+  const prev = localStorage.getItem(ACTIVITY_USER_ID_KEY);
+  const next = userId || null;
+  if (next) localStorage.setItem(ACTIVITY_USER_ID_KEY, next);
+  else localStorage.removeItem(ACTIVITY_USER_ID_KEY);
+
+  if (prev !== next) {
+    notifyActivityScopeChanged('user');
+  }
+}
+
+export function notifyActivityScopeChanged(reason: string = 'scope') {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(ACTIVITY_SCOPE_CHANGED_EVENT, { detail: { reason } }));
+  // Reload UI from the scoped bucket for the new tenant/branch/user (no rewrite).
+  window.dispatchEvent(new CustomEvent(UPDATE_EVENT_NAME, { detail: readStorageEvents() }));
+}
+
 function readStorageEvents(): RecentActivityEvent[] {
   if (typeof window === 'undefined') return [];
 
+  const scopedKey = scopedStorageKey(ACTIVITY_STORAGE_KEY_BASE);
   const currentEvents = finalizeEvents(
-    safeParseArray(localStorage.getItem(ACTIVITY_STORAGE_KEY))
+    safeParseArray(localStorage.getItem(scopedKey))
       .map(normalizeEvent)
       .filter((event): event is RecentActivityEvent => !!event)
   );
 
   if (currentEvents.length > 0) return currentEvents;
+
+  // One-time migration: legacy unscoped activity → current scope (when scope is complete).
+  if (hasCompleteActivityScope()) {
+    const legacyEvents = finalizeEvents(
+      safeParseArray(localStorage.getItem(ACTIVITY_STORAGE_KEY_BASE))
+        .map(normalizeEvent)
+        .filter((event): event is RecentActivityEvent => !!event)
+    );
+    if (legacyEvents.length > 0) {
+      writeStorageEvents(legacyEvents);
+      try {
+        localStorage.removeItem(ACTIVITY_STORAGE_KEY_BASE);
+      } catch {
+        /* ignore */
+      }
+      return legacyEvents;
+    }
+  }
 
   // Migrate legacy recent list to activity events lazily.
   const legacy = safeParseArray(localStorage.getItem(LEGACY_RECENT_KEY));
@@ -215,7 +336,7 @@ function readStorageEvents(): RecentActivityEvent[] {
     })
     .filter((item): item is RecentActivityEvent => !!item);
 
-  if (migrated.length > 0) {
+  if (migrated.length > 0 && hasCompleteActivityScope()) {
     writeStorageEvents(migrated);
   }
 
@@ -225,15 +346,12 @@ function readStorageEvents(): RecentActivityEvent[] {
 function writeStorageEvents(events: RecentActivityEvent[]) {
   if (typeof window === 'undefined') return;
   const next = finalizeEvents(events);
-  localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(next));
+  localStorage.setItem(scopedStorageKey(ACTIVITY_STORAGE_KEY_BASE), JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT_NAME, { detail: next }));
 }
 
 function getCurrentBranchId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const tenantId = localStorage.getItem('currentTenantId');
-  if (!tenantId) return null;
-  return localStorage.getItem(`currentBranchId_${tenantId}`);
+  return getActivityStorageScope().branchId;
 }
 
 function requestActivitySync(reason: string) {
@@ -309,7 +427,7 @@ export function getRecentPatientsFromActivities(
   const seen = new Set<number>();
   const patients: ActivityPatientRef[] = [];
 
-  for (const event of events) {
+  for (const event of collapseActivitiesToLatestPerPatient(events)) {
     if (seen.has(event.patient.id)) continue;
     seen.add(event.patient.id);
     patients.push(event.patient);
@@ -338,7 +456,7 @@ export function subscribeRecentActivityUpdates(callback: (events: RecentActivity
 
 export function getActivityLastSyncAt(): number | null {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(LAST_SYNC_AT_KEY);
+  const raw = localStorage.getItem(scopedStorageKey(LAST_SYNC_AT_KEY_BASE));
   if (!raw) return null;
   const ts = Number(raw);
   return Number.isFinite(ts) && ts > 0 ? ts : null;
@@ -347,12 +465,12 @@ export function getActivityLastSyncAt(): number | null {
 export function setActivityLastSyncAt(ts: number) {
   if (typeof window === 'undefined') return;
   if (!Number.isFinite(ts) || ts <= 0) return;
-  localStorage.setItem(LAST_SYNC_AT_KEY, String(Math.floor(ts)));
+  localStorage.setItem(scopedStorageKey(LAST_SYNC_AT_KEY_BASE), String(Math.floor(ts)));
 }
 
 export function getActivityLastFullPullAt(): number | null {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(LAST_FULL_PULL_AT_KEY);
+  const raw = localStorage.getItem(scopedStorageKey(LAST_FULL_PULL_AT_KEY_BASE));
   if (!raw) return null;
   const ts = Number(raw);
   return Number.isFinite(ts) && ts > 0 ? ts : null;
@@ -361,12 +479,12 @@ export function getActivityLastFullPullAt(): number | null {
 export function setActivityLastFullPullAt(ts: number) {
   if (typeof window === 'undefined') return;
   if (!Number.isFinite(ts) || ts <= 0) return;
-  localStorage.setItem(LAST_FULL_PULL_AT_KEY, String(Math.floor(ts)));
+  localStorage.setItem(scopedStorageKey(LAST_FULL_PULL_AT_KEY_BASE), String(Math.floor(ts)));
 }
 
 export function getActivitySyncBackoffState(): ActivitySyncBackoffState | null {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(SYNC_BACKOFF_KEY);
+  const raw = localStorage.getItem(scopedStorageKey(SYNC_BACKOFF_KEY_BASE));
   if (!raw) return null;
 
   try {
@@ -391,12 +509,12 @@ export function getActivitySyncBackoffState(): ActivitySyncBackoffState | null {
 
 export function setActivitySyncBackoffState(state: ActivitySyncBackoffState) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(SYNC_BACKOFF_KEY, JSON.stringify(state));
+  localStorage.setItem(scopedStorageKey(SYNC_BACKOFF_KEY_BASE), JSON.stringify(state));
 }
 
 export function clearActivitySyncBackoffState() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(SYNC_BACKOFF_KEY);
+  localStorage.removeItem(scopedStorageKey(SYNC_BACKOFF_KEY_BASE));
 }
 
 export function getMaxServerUpdatedAt(rows: RecentActivityServerRow[]): number | null {
@@ -446,6 +564,8 @@ function mapServerRowToEvent(row: RecentActivityServerRow): RecentActivityEvent 
     branchId: row.branch_id || null,
     pendingSync: false,
     syncedAt: Number.isFinite(rowSyncedAt) ? rowSyncedAt : Date.now(),
+    createdBy: row.created_by || null,
+    createdByName: row.created_by_name || null,
     patient: {
       id: row.patient_id,
       ten: row.patient_name,
@@ -465,6 +585,18 @@ export function markActivitiesSynced(eventIds: string[], syncedAt: number = Date
   });
   writeStorageEvents(events);
   setActivityLastSyncAt(syncedAt);
+  return events;
+}
+
+/** Drop pending flag for events the server rejected (wrong branch / invalid patient). */
+export function discardPendingActivities(eventIds: string[]): RecentActivityEvent[] {
+  if (eventIds.length === 0) return readStorageEvents();
+  const idSet = new Set(eventIds);
+  const events = readStorageEvents().map((event) => {
+    if (!idSet.has(event.eventId)) return event;
+    return { ...event, pendingSync: false };
+  });
+  writeStorageEvents(events);
   return events;
 }
 
@@ -491,6 +623,8 @@ export function mergeRecentActivityFromServer(rows: RecentActivityServerRow[]): 
       ...event,
       pendingSync: false,
       syncedAt: event.syncedAt || existing.syncedAt || Date.now(),
+      createdBy: event.createdBy || existing.createdBy || null,
+      createdByName: event.createdByName || existing.createdByName || null,
       patient: {
         ...existing.patient,
         ...event.patient,

@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useAuth, supabaseAuth } from './AuthContext'
 import { planHasFeature } from '../lib/featureConfig'
+import { notifyActivityScopeChanged } from '../lib/recentActivity'
 
 export interface Branch {
   id: string
@@ -137,6 +138,7 @@ export const BranchProvider = ({ children }: { children: React.ReactNode }) => {
         else localStorage.removeItem(storageKey)
       } catch {}
     }
+    notifyActivityScopeChanged('branch')
   }, [currentTenantId])
 
   const currentBranch = branches.find(b => b.id === currentBranchId) || null

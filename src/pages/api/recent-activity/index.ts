@@ -126,7 +126,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       let query = supabase
         .from('recent_activity_events')
-        .select('client_event_id, action, source, event_at, patient_id, patient_name, patient_phone, patient_address, patient_birth_year, branch_id, updated_at')
+        .select('client_event_id, action, source, event_at, patient_id, patient_name, patient_phone, patient_address, patient_birth_year, branch_id, updated_at, created_by')
         .eq('tenant_id', tenantId)
         .eq('branch_id', branchId)
         .gte('event_at', windowStartIso)
@@ -145,7 +145,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ message: 'Lỗi lấy activity', details: error.message });
       }
 
-      return res.status(200).json({ data: data || [], days, branch_id: branchId });
+      const rows = data || [];
+      const creatorIds = Array.from(
+        new Set(
+          rows
+            .map((row: any) => (typeof row.created_by === 'string' ? row.created_by : null))
+            .filter((id: string | null): id is string => !!id)
+        )
+      );
+
+      let nameByUserId = new Map<string, string>();
+      if (creatorIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('id, full_name')
+          .in('id', creatorIds);
+        nameByUserId = new Map(
+          (profiles || [])
+            .map((profile: any) => {
+              const id = typeof profile?.id === 'string' ? profile.id : '';
+              const fullName = typeof profile?.full_name === 'string' ? profile.full_name.trim() : '';
+              if (!id || !fullName) return null;
+              return [id, fullName] as const;
+            })
+            .filter((entry): entry is readonly [string, string] => !!entry)
+        );
+      }
+
+      const enriched = rows.map((row: any) => ({
+        ...row,
+        created_by_name: row.created_by ? nameByUserId.get(row.created_by) || null : null,
+      }));
+
+      return res.status(200).json({ data: enriched, days, branch_id: branchId });
     }
 
     if (req.method === 'POST') {
@@ -170,8 +202,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const patientMap = new Map<number, any>((patientRows || []).map((p: any) => [Number(p.id), p]));
 
       const validEvents = events.filter((event) => patientMap.has(event.patient_id));
+      const skippedClientEventIds = events
+        .filter((event) => !patientMap.has(event.patient_id))
+        .map((event) => event.client_event_id);
+
       if (validEvents.length === 0) {
-        return res.status(200).json({ data: [], accepted: 0, skipped: events.length });
+        return res.status(200).json({
+          data: [],
+          accepted: 0,
+          skipped: events.length,
+          skipped_client_event_ids: skippedClientEventIds,
+        });
       }
 
       const rows = validEvents.map((event) => {
@@ -195,16 +236,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { data, error } = await supabase
         .from('recent_activity_events')
         .upsert(rows, { onConflict: 'tenant_id,client_event_id' })
-        .select('client_event_id, action, source, event_at, patient_id, patient_name, patient_phone, patient_address, patient_birth_year, branch_id, updated_at');
+        .select('client_event_id, action, source, event_at, patient_id, patient_name, patient_phone, patient_address, patient_birth_year, branch_id, updated_at, created_by');
 
       if (error) {
         return res.status(400).json({ message: 'Lỗi lưu activity', details: error.message });
       }
 
+      let createdByName: string | null = null;
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .maybeSingle();
+      if (typeof profile?.full_name === 'string' && profile.full_name.trim()) {
+        createdByName = profile.full_name.trim();
+      }
+
+      const enriched = (data || []).map((row: any) => ({
+        ...row,
+        created_by_name: createdByName,
+      }));
+
       return res.status(200).json({
-        data: data || [],
+        data: enriched,
         accepted: validEvents.length,
         skipped: Math.max(0, events.length - validEvents.length),
+        skipped_client_event_ids: skippedClientEventIds,
       });
     }
 

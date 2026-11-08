@@ -35,12 +35,12 @@ import {
   CheckSquare,
   LogOut,
   GitBranch,
-  ChevronRight,
+  ChevronDown,
+  Pencil,
   Phone,
   Loader2,
   Lock,
   History,
-  ChevronRight as ChevronRightIcon,
   Sparkles,
   RefreshCw,
 } from 'lucide-react';
@@ -50,6 +50,7 @@ import { useFeatureGate } from '../hooks/useFeatureGate';
 import { useNotificationPolling } from '../hooks/useNotificationPolling';
 import { usePageTabsContext } from '../contexts/PageTabsContext';
 import {
+  collapseActivitiesToLatestPerPatient,
   getRecentPatientsFromActivities,
   loadRecentActivities,
   pushRecentActivity,
@@ -103,10 +104,8 @@ interface PatientResult {
 }
 
 type DefaultAction = 'kinh' | 'thuoc' | 'hoso';
+type PatientMenuAction = DefaultAction | 'sua';
 type ActivityFilter = 'all' | 'search' | 'history' | 'prescription' | 'dang_do';
-
-const LAST_ACTION_KEY = 'mbn:last_action';
-const CONTACT_SWIPE_HINT_KEY = 'mbn:contact_swipe_hint_seen';
 const FAB_SEARCH_PAGE_SIZE = 80;
 const FAB_SEARCH_INITIAL_VISIBLE = 30;
 const FAB_SEARCH_VISIBLE_STEP = 30;
@@ -143,26 +142,6 @@ function actionCategory(action: RecentActivityAction): ActivityFilter {
 
 function isDangDoAction(action: RecentActivityAction): boolean {
   return action === 'search_hit' || action === 'quick_history_open' || action === 'open_profile';
-}
-
-function loadLastAction(): DefaultAction {
-  if (typeof window === 'undefined') return 'kinh';
-  try {
-    const v = localStorage.getItem(LAST_ACTION_KEY);
-    if (v === 'kinh' || v === 'thuoc' || v === 'hoso') return v;
-  } catch {
-    /* ignore */
-  }
-  return 'kinh';
-}
-
-function saveLastAction(a: DefaultAction) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(LAST_ACTION_KEY, a);
-  } catch {
-    /* ignore */
-  }
 }
 
 function normalizeNameLike(text: string): string {
@@ -260,24 +239,6 @@ function parsePatientSeed(raw: string): { ten: string; namsinh: string; dienthoa
   }
 
   return { ten, namsinh, dienthoai, diachi };
-}
-
-function hasSeenContactSwipeHint(): boolean {
-  if (typeof window === 'undefined') return true;
-  try {
-    return localStorage.getItem(CONTACT_SWIPE_HINT_KEY) === '1';
-  } catch {
-    return true;
-  }
-}
-
-function markContactSwipeHintSeen() {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(CONTACT_SWIPE_HINT_KEY, '1');
-  } catch {
-    /* ignore */
-  }
 }
 
 // Sắp xếp kết quả: ưu tiên SĐT khớp chính xác → tiền tố SĐT → khớp tên
@@ -388,9 +349,8 @@ export default function MobileBottomNav() {
   const [activityLastSyncAt, setActivityLastSyncAtState] = useState<number | null>(null);
   const [activitySyncError, setActivitySyncError] = useState<string>('');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  const [showContactSwipeHint, setShowContactSwipeHint] = useState(false);
-  const [openContactSwipeId, setOpenContactSwipeId] = useState<number | null>(null);
-  const [defaultAction, setDefaultAction] = useState<DefaultAction>('kinh');
+  const [activityHasBranch, setActivityHasBranch] = useState(!!currentBranchId);
+  const [expandedMenuPatientId, setExpandedMenuPatientId] = useState<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const desktopSearchInputRef = useRef<HTMLInputElement>(null);
   const [showFabMenu, setShowFabMenu] = useState(false);
@@ -405,14 +365,19 @@ export default function MobileBottomNav() {
     return recentActivities.filter((activity) => actionCategory(activity.action) === activityFilter);
   }, [activityFilter, recentActivities]);
 
-  const filteredPatients = useMemo(
-    () => getRecentPatientsFromActivities(filteredActivities) as PatientResult[],
+  const displayActivities = useMemo(
+    () => collapseActivitiesToLatestPerPatient(filteredActivities),
     [filteredActivities]
   );
 
+  const filteredPatients = useMemo(
+    () => getRecentPatientsFromActivities(displayActivities) as PatientResult[],
+    [displayActivities]
+  );
+
   const visibleActivities = useMemo(
-    () => filteredActivities.slice(0, activityVisibleCount),
-    [filteredActivities, activityVisibleCount]
+    () => displayActivities.slice(0, activityVisibleCount),
+    [displayActivities, activityVisibleCount]
   );
 
   const activityDayGroups = useMemo(
@@ -420,7 +385,7 @@ export default function MobileBottomNav() {
     [visibleActivities]
   );
 
-  const canLoadMoreActivities = filteredActivities.length > activityVisibleCount;
+  const canLoadMoreActivities = displayActivities.length > activityVisibleCount;
 
   const visibleSearchResults = useMemo(
     () => searchResults.slice(0, searchVisibleCount),
@@ -430,11 +395,6 @@ export default function MobileBottomNav() {
   const canLoadMoreSearchResults = useMemo(
     () => searchResults.length > searchVisibleCount,
     [searchResults.length, searchVisibleCount]
-  );
-
-  const shouldShowSearchContactHint = useMemo(
-    () => visibleSearchResults.some((item) => digitsOnly(item.dienthoai).length >= 8),
-    [visibleSearchResults]
   );
 
   const activitySyncMetaText = useMemo(() => {
@@ -462,7 +422,7 @@ export default function MobileBottomNav() {
     clearFabHoldTimer();
     fabLongPressTriggeredRef.current = false;
     setShowFabMenu(false);
-    setOpenContactSwipeId(null);
+    setExpandedMenuPatientId(null);
     setShowSearch(false);
     setShowMore(false);
   }, [clearFabHoldTimer]);
@@ -567,10 +527,11 @@ export default function MobileBottomNav() {
       setActivitySyncError(status.error);
       setPendingSyncCount(status.pendingCount);
       setSyncingActivity(status.syncing);
+      setActivityHasBranch(status.hasBranch);
+      setActivityHasBranch(status.hasBranch);
       setActivityFilter('all');
       setActivityVisibleCount(ACTIVITY_TIMELINE_INITIAL);
-      setDefaultAction(loadLastAction());
-      setShowContactSwipeHint(!hasSeenContactSwipeHint());
+      setExpandedMenuPatientId(null);
       scheduleRecentActivitySync('open_search');
       const t = setTimeout(() => {
         if (window.matchMedia('(min-width: 768px)').matches) {
@@ -581,8 +542,7 @@ export default function MobileBottomNav() {
       }, 120);
       return () => clearTimeout(t);
     } else {
-      setShowContactSwipeHint(false);
-      setOpenContactSwipeId(null);
+      setExpandedMenuPatientId(null);
       setSearchTerm('');
       setSearchResults([]);
       setSearchVisibleCount(FAB_SEARCH_INITIAL_VISIBLE);
@@ -611,15 +571,20 @@ export default function MobileBottomNav() {
       setActivityLastSyncAtState(status.lastSyncAt);
       setActivitySyncError(status.error);
       setPendingSyncCount(status.pendingCount);
+      setActivityHasBranch(status.hasBranch);
     });
   }, []);
+
+  useEffect(() => {
+    setActivityHasBranch(!!currentBranchId);
+  }, [currentBranchId]);
 
   // Debounced search
   useEffect(() => {
     if (!showSearch) return;
     const term = searchTerm.trim();
     if (!term) {
-      setOpenContactSwipeId(null);
+      setExpandedMenuPatientId(null);
       setSearchResults([]);
       setSearching(false);
       return;
@@ -711,19 +676,30 @@ export default function MobileBottomNav() {
   const totalNotif =
     (counts?.thongBao || 0) + (counts?.tinNhanPlatform || 0);
 
-  const triggerAction = (p: PatientResult, action: DefaultAction, origin: 'search' | 'activity' = 'activity') => {
-    if (origin === 'search') {
+  const triggerMenuAction = (
+    p: PatientResult,
+    action: PatientMenuAction,
+    origin: 'search' | 'activity' = 'activity'
+  ) => {
+    // From search results, record the real action only (avoid search_hit + open_* duplicate).
+    // search_hit is reserved for browse/select without navigating to a workspace action.
+    if (action !== 'sua') {
+      pushRecentActivity({
+        action: actionFromDefault(action),
+        patient: p,
+        source: origin === 'search' ? 'fab_search_action' : 'fab_action',
+      });
+    } else if (origin === 'search') {
       pushRecentActivity({ action: 'search_hit', patient: p, source: 'fab_search' });
     }
-    pushRecentActivity({ action: actionFromDefault(action), patient: p, source: 'fab_action' });
-    saveLastAction(action);
-    setDefaultAction(action);
-    setOpenContactSwipeId(null);
+    setExpandedMenuPatientId(null);
     setShowFabMenu(false);
     setShowSearch(false);
     if (action === 'kinh') router.push(`/ke-don-kinh?bn=${p.id}`);
     else if (action === 'thuoc') router.push(`/ke-don?bn=${p.id}`);
-    else {
+    else if (action === 'sua') {
+      router.push(`/benh-nhan?focusId=${p.id}&edit=1`);
+    } else {
       const params = new URLSearchParams();
       const searchSeed = (p.dienthoai || p.ten || '').trim();
       if (searchSeed) params.set('search', searchSeed);
@@ -732,26 +708,38 @@ export default function MobileBottomNav() {
     }
   };
 
-  const dismissContactSwipeHint = () => {
-    markContactSwipeHintSeen();
-    setShowContactSwipeHint(false);
+  const openBranchPicker = () => {
+    setShowSearch(false);
+    setShowFabMenu(false);
+    setShowMore(true);
   };
 
-  const handlePatientZaloAction = async (p: PatientResult) => {
+  const handlePatientZaloAction = (p: PatientResult) => {
     const zaloNumber = toZaloNumber(digitsOnly(p.dienthoai));
     if (!zaloNumber) return;
 
-    setOpenContactSwipeId(null);
-    dismissContactSwipeHint();
-
-    // Mở thẳng chat nhanh để thao tác 1 chạm từ FAB.
+    setExpandedMenuPatientId(null);
     openZaloDeepLink(zaloNumber);
   };
 
-  const handleEnterDefault = () => {
-    const list = searchTerm.trim() ? searchResults : filteredPatients;
+  const handlePatientCallAction = (p: PatientResult) => {
+    const phoneDigits = digitsOnly(p.dienthoai);
+    if (phoneDigits.length < 8) return;
+    const dial = toDialNumber(phoneDigits);
+    if (!dial) return;
+    setExpandedMenuPatientId(null);
+    window.location.href = `tel:${dial}`;
+  };
+
+  const togglePatientMenu = (patientId: number) => {
+    setExpandedMenuPatientId((prev) => (prev === patientId ? null : patientId));
+  };
+
+  const handleEnterExpandFirst = () => {
+    const list = searchTerm.trim() ? visibleSearchResults : filteredPatients;
     if (list.length === 0) return;
-    triggerAction(list[0], defaultAction, searchTerm.trim() ? 'search' : 'activity');
+    const firstId = list[0].id;
+    setExpandedMenuPatientId((prev) => (prev === firstId ? null : firstId));
   };
 
   const handleAddNewPatient = (seedText?: string) => {
@@ -803,11 +791,6 @@ export default function MobileBottomNav() {
     toggleSearchSheet();
   };
 
-  const shouldShowSwipeHint =
-    showContactSwipeHint &&
-    !searching &&
-    (searchTerm.trim() ? searchResults.length > 0 : filteredPatients.length > 0);
-
   return (
     <>
       {/* Desktop search modal */}
@@ -841,7 +824,7 @@ export default function MobileBottomNav() {
                         handleAddNewPatient();
                         return;
                       }
-                      handleEnterDefault();
+                      handleEnterExpandFirst();
                     }}
                     className="w-full h-12 pl-10 pr-10 rounded-xl bg-gray-100 text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition-all"
                   />
@@ -863,39 +846,6 @@ export default function MobileBottomNav() {
                 >
                   Đóng
                 </button>
-              </div>
-
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[11px] text-gray-400 font-medium">Mặc định:</span>
-                <div className="flex gap-1 flex-1">
-                  <DefaultActionPill
-                    active={defaultAction === 'kinh'}
-                    icon={Glasses}
-                    label="Kê kính"
-                    onClick={() => {
-                      setDefaultAction('kinh');
-                      saveLastAction('kinh');
-                    }}
-                  />
-                  <DefaultActionPill
-                    active={defaultAction === 'thuoc'}
-                    icon={FileText}
-                    label="Kê thuốc"
-                    onClick={() => {
-                      setDefaultAction('thuoc');
-                      saveLastAction('thuoc');
-                    }}
-                  />
-                  <DefaultActionPill
-                    active={defaultAction === 'hoso'}
-                    icon={Users}
-                    label="Hồ sơ"
-                    onClick={() => {
-                      setDefaultAction('hoso');
-                      saveLastAction('hoso');
-                    }}
-                  />
-                </div>
               </div>
             </div>
 
@@ -935,14 +885,16 @@ export default function MobileBottomNav() {
                   activityDayGroups={activityDayGroups}
                   canLoadMoreActivities={canLoadMoreActivities}
                   visibleCount={visibleActivities.length}
-                  totalCount={filteredActivities.length}
+                  totalCount={displayActivities.length}
                   onLoadMore={() => setActivityVisibleCount((prev) => prev + ACTIVITY_TIMELINE_STEP)}
-                  defaultAction={defaultAction}
-                  onAction={triggerAction}
-                  openContactSwipeId={openContactSwipeId}
-                  setOpenContactSwipeId={setOpenContactSwipeId}
+                  expandedMenuPatientId={expandedMenuPatientId}
+                  onToggleMenu={togglePatientMenu}
+                  onMenuAction={(patient, action) => triggerMenuAction(patient, action, 'activity')}
+                  onCallAction={handlePatientCallAction}
                   onZaloAction={handlePatientZaloAction}
-                  onSwipeHintSeen={dismissContactSwipeHint}
+                  needsBranch={!activityHasBranch}
+                  onPickBranch={openBranchPicker}
+                  currentUserId={user?.id || null}
                 />
               )}
 
@@ -953,12 +905,11 @@ export default function MobileBottomNav() {
                       <PatientRow
                         key={`sd-${p.id}`}
                         p={p}
-                        defaultAction={defaultAction}
-                        onAction={(patient, action) => triggerAction(patient, action, 'search')}
-                        isContactSwipeOpen={openContactSwipeId === p.id}
-                        setOpenContactSwipeId={setOpenContactSwipeId}
+                        isMenuOpen={expandedMenuPatientId === p.id}
+                        onToggleMenu={() => togglePatientMenu(p.id)}
+                        onMenuAction={(patient, action) => triggerMenuAction(patient, action, 'search')}
+                        onCallAction={handlePatientCallAction}
                         onZaloAction={handlePatientZaloAction}
-                        onSwipeHintSeen={dismissContactSwipeHint}
                       />
                     ))}
                   </ul>
@@ -971,16 +922,6 @@ export default function MobileBottomNav() {
                       >
                         Xem thêm ({visibleSearchResults.length}/{searchResults.length})
                       </button>
-                    </div>
-                  )}
-                  {shouldShowSearchContactHint && (
-                    <div className="px-5 pb-3">
-                      <div className="rounded-xl border border-blue-100 bg-blue-50 text-blue-900 px-3 py-2.5 flex items-start gap-2">
-                        <MessageCircle className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
-                        <div className="flex-1 text-xs leading-relaxed">
-                          Vuốt sang trái để gọi hoặc nhắn Zalo với khách hàng có số điện thoại.
-                        </div>
-                      </div>
                     </div>
                   )}
                 </>
@@ -1178,7 +1119,7 @@ export default function MobileBottomNav() {
                         handleAddNewPatient();
                         return;
                       }
-                      handleEnterDefault();
+                      handleEnterExpandFirst();
                     }}
                     className="w-full h-12 pl-10 pr-10 rounded-xl bg-gray-100 text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:bg-white transition-all"
                   />
@@ -1202,62 +1143,10 @@ export default function MobileBottomNav() {
                 </button>
               </div>
 
-              {/* Default action selector — quyết định hành động khi bấm Enter / chạm vào dòng */}
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[11px] text-gray-400 font-medium">Mặc định:</span>
-                <div className="flex gap-1 flex-1">
-                  <DefaultActionPill
-                    active={defaultAction === 'kinh'}
-                    icon={Glasses}
-                    label="Kê kính"
-                    onClick={() => {
-                      setDefaultAction('kinh');
-                      saveLastAction('kinh');
-                    }}
-                  />
-                  <DefaultActionPill
-                    active={defaultAction === 'thuoc'}
-                    icon={FileText}
-                    label="Kê thuốc"
-                    onClick={() => {
-                      setDefaultAction('thuoc');
-                      saveLastAction('thuoc');
-                    }}
-                  />
-                  <DefaultActionPill
-                    active={defaultAction === 'hoso'}
-                    icon={Users}
-                    label="Hồ sơ"
-                    onClick={() => {
-                      setDefaultAction('hoso');
-                      saveLastAction('hoso');
-                    }}
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Results / Recent */}
             <div className="flex-1 overflow-y-auto">
-              {shouldShowSwipeHint && (
-                <div className="px-4 pt-3">
-                  <div className="rounded-xl border border-blue-100 bg-blue-50 text-blue-900 px-3 py-2.5 flex items-start gap-2">
-                    <MessageCircle className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
-                    <div className="flex-1 text-xs leading-relaxed">
-                      Vuốt sang trái trên mỗi khách để hiện nút Gọi và Zalo.
-                    </div>
-                    <button
-                      type="button"
-                      onClick={dismissContactSwipeHint}
-                      className="text-blue-500 hover:text-blue-700"
-                      aria-label="Ẩn hướng dẫn vuốt"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {searching && (
                 <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1294,14 +1183,16 @@ export default function MobileBottomNav() {
                   activityDayGroups={activityDayGroups}
                   canLoadMoreActivities={canLoadMoreActivities}
                   visibleCount={visibleActivities.length}
-                  totalCount={filteredActivities.length}
+                  totalCount={displayActivities.length}
                   onLoadMore={() => setActivityVisibleCount((prev) => prev + ACTIVITY_TIMELINE_STEP)}
-                  defaultAction={defaultAction}
-                  onAction={triggerAction}
-                  openContactSwipeId={openContactSwipeId}
-                  setOpenContactSwipeId={setOpenContactSwipeId}
+                  expandedMenuPatientId={expandedMenuPatientId}
+                  onToggleMenu={togglePatientMenu}
+                  onMenuAction={(patient, action) => triggerMenuAction(patient, action, 'activity')}
+                  onCallAction={handlePatientCallAction}
                   onZaloAction={handlePatientZaloAction}
-                  onSwipeHintSeen={dismissContactSwipeHint}
+                  needsBranch={!activityHasBranch}
+                  onPickBranch={openBranchPicker}
+                  currentUserId={user?.id || null}
                 />
               )}
 
@@ -1312,12 +1203,11 @@ export default function MobileBottomNav() {
                       <PatientRow
                         key={p.id}
                         p={p}
-                        defaultAction={defaultAction}
-                        onAction={(patient, action) => triggerAction(patient, action, 'search')}
-                        isContactSwipeOpen={openContactSwipeId === p.id}
-                        setOpenContactSwipeId={setOpenContactSwipeId}
+                        isMenuOpen={expandedMenuPatientId === p.id}
+                        onToggleMenu={() => togglePatientMenu(p.id)}
+                        onMenuAction={(patient, action) => triggerMenuAction(patient, action, 'search')}
+                        onCallAction={handlePatientCallAction}
                         onZaloAction={handlePatientZaloAction}
-                        onSwipeHintSeen={dismissContactSwipeHint}
                       />
                     ))}
                   </ul>
@@ -1330,16 +1220,6 @@ export default function MobileBottomNav() {
                       >
                         Xem thêm ({visibleSearchResults.length}/{searchResults.length})
                       </button>
-                    </div>
-                  )}
-                  {shouldShowSearchContactHint && (
-                    <div className="px-4 pb-3">
-                      <div className="rounded-xl border border-blue-100 bg-blue-50 text-blue-900 px-3 py-2.5 flex items-start gap-2">
-                        <MessageCircle className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
-                        <div className="flex-1 text-xs leading-relaxed">
-                          Vuốt sang trái để gọi hoặc nhắn Zalo với khách hàng có số điện thoại.
-                        </div>
-                      </div>
                     </div>
                   )}
                 </>
@@ -1564,33 +1444,6 @@ function FabQuickAction({
   );
 }
 
-function DefaultActionPill({
-  active,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-        active
-          ? 'bg-blue-600 text-white shadow-sm'
-          : 'bg-gray-100 text-gray-600 active:bg-gray-200'
-      }`}
-    >
-      <Icon className="w-3.5 h-3.5" />
-      {label}
-    </button>
-  );
-}
-
 function ActivityFilterPill({
   label,
   active,
@@ -1615,6 +1468,13 @@ function ActivityFilterPill({
   );
 }
 
+function staffBadgeLabel(fullName?: string | null): string {
+  const name = (fullName || '').trim();
+  if (!name) return '';
+  const parts = name.split(/\s+/).filter(Boolean);
+  return parts[parts.length - 1] || name;
+}
+
 function RecentActivityTimeline({
   paddingClass,
   activityFilter,
@@ -1628,12 +1488,14 @@ function RecentActivityTimeline({
   visibleCount,
   totalCount,
   onLoadMore,
-  defaultAction,
-  onAction,
-  openContactSwipeId,
-  setOpenContactSwipeId,
+  expandedMenuPatientId,
+  onToggleMenu,
+  onMenuAction,
+  onCallAction,
   onZaloAction,
-  onSwipeHintSeen,
+  needsBranch,
+  onPickBranch,
+  currentUserId,
 }: {
   paddingClass: string;
   activityFilter: ActivityFilter;
@@ -1647,19 +1509,21 @@ function RecentActivityTimeline({
   visibleCount: number;
   totalCount: number;
   onLoadMore: () => void;
-  defaultAction: DefaultAction;
-  onAction: (p: PatientResult, action: DefaultAction) => void;
-  openContactSwipeId: number | null;
-  setOpenContactSwipeId: (id: number | null) => void;
+  expandedMenuPatientId: number | null;
+  onToggleMenu: (patientId: number) => void;
+  onMenuAction: (p: PatientResult, action: PatientMenuAction) => void;
+  onCallAction: (p: PatientResult) => void;
   onZaloAction: (p: PatientResult) => void;
-  onSwipeHintSeen?: () => void;
+  needsBranch?: boolean;
+  onPickBranch?: () => void;
+  currentUserId?: string | null;
 }) {
   return (
     <>
       <div className={`${paddingClass} pt-3 pb-1 flex items-center justify-between gap-2`}>
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-gray-400">
           <History className="w-3 h-3" />
-          Hoạt động gần đây
+          Khách gần đây
         </div>
         <div className="flex items-center gap-1.5 min-w-0">
           <span className={`text-[10px] truncate ${activitySyncError ? 'text-amber-600' : 'text-blue-500'}`}>
@@ -1668,7 +1532,8 @@ function RecentActivityTimeline({
           <button
             type="button"
             onClick={onRefresh}
-            className="p-1 rounded-md text-blue-500 hover:bg-blue-50 active:scale-95 transition-transform"
+            disabled={needsBranch}
+            className="p-1 rounded-md text-blue-500 hover:bg-blue-50 active:scale-95 transition-transform disabled:opacity-40"
             aria-label="Đồng bộ lại hoạt động"
             title="Đồng bộ lại"
           >
@@ -1676,6 +1541,27 @@ function RecentActivityTimeline({
           </button>
         </div>
       </div>
+
+      {needsBranch && (
+        <div className={`${paddingClass} pb-2`}>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <div className="text-xs font-semibold text-amber-900 mb-1">
+              Chọn chi nhánh để đồng bộ khách gần đây
+            </div>
+            <div className="text-[11px] text-amber-800 mb-2">
+              Activity Hub đồng bộ theo từng chi nhánh giữa các thiết bị. Khi đang xem &quot;Tất cả chi nhánh&quot;, hãy chọn một chi nhánh cụ thể.
+            </div>
+            <button
+              type="button"
+              onClick={onPickBranch}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white active:scale-[0.98]"
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              Chọn chi nhánh
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className={`${paddingClass} pb-2 flex items-center gap-1.5 overflow-x-auto`}>
         <ActivityFilterPill
@@ -1715,20 +1601,28 @@ function RecentActivityTimeline({
                 </div>
               </div>
               <ul className="divide-y divide-gray-100">
-                {group.items.map((activity) => (
-                  <PatientRow
-                    key={activity.eventId}
-                    p={activity.patient as PatientResult}
-                    defaultAction={defaultAction}
-                    onAction={onAction}
-                    isContactSwipeOpen={openContactSwipeId === activity.patient.id}
-                    setOpenContactSwipeId={setOpenContactSwipeId}
-                    onZaloAction={onZaloAction}
-                    onSwipeHintSeen={onSwipeHintSeen}
-                    activityLabel={actionLabel(activity.action)}
-                    activityRelativeTime={formatActivityClock(activity.timestamp)}
-                  />
-                ))}
+                {group.items.map((activity) => {
+                  const staffLabel =
+                    activity.createdBy &&
+                    currentUserId &&
+                    activity.createdBy !== currentUserId
+                      ? staffBadgeLabel(activity.createdByName)
+                      : '';
+                  return (
+                    <PatientRow
+                      key={activity.eventId}
+                      p={activity.patient as PatientResult}
+                      isMenuOpen={expandedMenuPatientId === activity.patient.id}
+                      onToggleMenu={() => onToggleMenu(activity.patient.id)}
+                      onMenuAction={onMenuAction}
+                      onCallAction={onCallAction}
+                      onZaloAction={onZaloAction}
+                      activityLabel={actionLabel(activity.action)}
+                      activityRelativeTime={formatActivityClock(activity.timestamp)}
+                      staffLabel={staffLabel || undefined}
+                    />
+                  );
+                })}
               </ul>
             </div>
           ))}
@@ -1747,221 +1641,170 @@ function RecentActivityTimeline({
       ) : (
         <div className={`${paddingClass} py-10 text-center text-gray-400 text-sm`}>
           <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-          <div className="font-medium text-gray-500 mb-1">Chưa có hoạt động phù hợp</div>
-          <div>Đổi bộ lọc hoặc thao tác thêm để làm đầy Activity Hub</div>
+          <div className="font-medium text-gray-500 mb-1">
+            {needsBranch ? 'Chưa thể đồng bộ danh sách' : 'Chưa có khách phù hợp'}
+          </div>
+          <div>
+            {needsBranch
+              ? 'Chọn chi nhánh để tải khách gần đây từ các thiết bị khác'
+              : 'Đổi bộ lọc hoặc thao tác thêm để làm đầy Activity Hub'}
+          </div>
         </div>
       )}
     </>
   );
 }
 
+function PatientFabActionBtn({
+  label,
+  icon: Icon,
+  onClick,
+  disabled,
+  tone,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+  disabled?: boolean;
+  tone: 'emerald' | 'blue' | 'violet' | 'amber' | 'slate' | 'rose';
+}) {
+  const toneClass: Record<typeof tone, string> = {
+    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-100 active:bg-emerald-100',
+    blue: 'bg-blue-50 text-blue-800 border-blue-100 active:bg-blue-100',
+    violet: 'bg-violet-50 text-violet-800 border-violet-100 active:bg-violet-100',
+    amber: 'bg-amber-50 text-amber-900 border-amber-100 active:bg-amber-100',
+    slate: 'bg-slate-50 text-slate-800 border-slate-100 active:bg-slate-100',
+    rose: 'bg-rose-50 text-rose-800 border-rose-100 active:bg-rose-100',
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1.5 min-w-0 text-[9px] font-semibold leading-tight transition-colors ${
+        disabled ? 'opacity-40 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-100' : toneClass[tone]
+      }`}
+    >
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      <span className="text-center">{label}</span>
+    </button>
+  );
+}
+
 function PatientRow({
   p,
-  defaultAction,
-  onAction,
-  isContactSwipeOpen,
-  setOpenContactSwipeId,
+  isMenuOpen,
+  onToggleMenu,
+  onMenuAction,
+  onCallAction,
   onZaloAction,
-  onSwipeHintSeen,
   activityLabel,
   activityRelativeTime,
+  staffLabel,
 }: {
   p: PatientResult;
-  defaultAction: DefaultAction;
-  onAction: (p: PatientResult, action: DefaultAction) => void;
-  isContactSwipeOpen: boolean;
-  setOpenContactSwipeId: (id: number | null) => void;
-  onZaloAction: (p: PatientResult) => void;
-  onSwipeHintSeen?: () => void;
+  isMenuOpen: boolean;
+  onToggleMenu: () => void;
+  onMenuAction: (patient: PatientResult, action: PatientMenuAction) => void;
+  onCallAction: (patient: PatientResult) => void;
+  onZaloAction: (patient: PatientResult) => void;
   activityLabel?: string;
   activityRelativeTime?: string;
+  staffLabel?: string;
 }) {
-  const SWIPE_ACTION_WIDTH_PX = 132;
-  const [dragging, setDragging] = useState(false);
-  const [dragOffsetPx, setDragOffsetPx] = useState(0);
-  const touchStartXRef = useRef(0);
-  const touchCurrentXRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const touchCurrentYRef = useRef(0);
-  const swipingRef = useRef(false);
-  const swipeAxisLockRef = useRef<'h' | 'v' | null>(null);
-  const swipeBaseOffsetRef = useRef(0);
   const phoneDigits = digitsOnly(p.dienthoai);
   const canContact = phoneDigits.length >= 8;
 
-  const handleSwipeStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!canContact) return;
-    if (!isContactSwipeOpen) {
-      setOpenContactSwipeId(null);
-    }
-
-    const touch = e.touches[0];
-    if (!touch) return;
-
-    swipingRef.current = true;
-    swipeAxisLockRef.current = null;
-    touchStartXRef.current = touch.clientX;
-    touchCurrentXRef.current = touch.clientX;
-    touchStartYRef.current = touch.clientY;
-    touchCurrentYRef.current = touch.clientY;
-    swipeBaseOffsetRef.current = isContactSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0;
-    setDragging(true);
-    setDragOffsetPx(swipeBaseOffsetRef.current);
-  };
-
-  const handleSwipeMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!swipingRef.current) return;
-
-    const touch = e.touches[0];
-    if (!touch) return;
-
-    touchCurrentXRef.current = touch.clientX;
-    touchCurrentYRef.current = touch.clientY;
-
-    const deltaX = touchCurrentXRef.current - touchStartXRef.current;
-    const deltaY = touchCurrentYRef.current - touchStartYRef.current;
-
-    if (swipeAxisLockRef.current === null) {
-      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
-      swipeAxisLockRef.current = Math.abs(deltaX) > Math.abs(deltaY) * 1.2 ? 'h' : 'v';
-    }
-
-    if (swipeAxisLockRef.current !== 'h') return;
-
-    e.preventDefault();
-    const rawOffset = swipeBaseOffsetRef.current + deltaX;
-    const clampedOffset = Math.max(-SWIPE_ACTION_WIDTH_PX, Math.min(0, rawOffset));
-    setDragOffsetPx(clampedOffset);
-  };
-
-  const handleSwipeEnd = () => {
-    if (!swipingRef.current) return;
-
-    const deltaX = touchCurrentXRef.current - touchStartXRef.current;
-    const rawOffset = swipeBaseOffsetRef.current + deltaX;
-    const clampedOffset = Math.max(-SWIPE_ACTION_WIDTH_PX, Math.min(0, rawOffset));
-    const shouldStayOpen =
-      swipeAxisLockRef.current === 'h'
-        ? clampedOffset <= -SWIPE_ACTION_WIDTH_PX * 0.35
-        : isContactSwipeOpen;
-
-    if (shouldStayOpen) onSwipeHintSeen?.();
-    setOpenContactSwipeId(shouldStayOpen ? p.id : null);
-    setDragging(false);
-    setDragOffsetPx(0);
-    swipingRef.current = false;
-    swipeAxisLockRef.current = null;
-  };
-
-  const handleCall = () => {
-    if (!canContact) return;
-    const dial = toDialNumber(phoneDigits);
-    if (!dial) return;
-
-    onSwipeHintSeen?.();
-    setOpenContactSwipeId(null);
-    window.location.href = `tel:${dial}`;
-  };
-
-  const handleOpenZalo = () => {
-    if (!canContact) return;
-    onSwipeHintSeen?.();
-    setOpenContactSwipeId(null);
-    onZaloAction(p);
-  };
-
-  const cardTranslateX = dragging ? dragOffsetPx : (isContactSwipeOpen ? -SWIPE_ACTION_WIDTH_PX : 0);
   return (
-    <li>
-      <div className="relative overflow-hidden">
-        <div className="absolute inset-y-0 right-0 w-[132px] grid grid-cols-2">
-          <button
-            type="button"
-            onClick={handleCall}
-            disabled={!canContact}
-            className={`h-full flex flex-col items-center justify-center gap-1 text-[10px] font-semibold leading-tight transition-colors ${
-              canContact
-                ? 'bg-emerald-600 text-white active:bg-emerald-700'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-            aria-label={canContact ? `Gọi ${p.ten || 'khách hàng'}` : 'Không có số điện thoại để gọi'}
-          >
-            <Phone className="w-3.5 h-3.5" />
-            Gọi
-          </button>
-          <button
-            type="button"
-            onClick={handleOpenZalo}
-            disabled={!canContact}
-            className={`h-full flex flex-col items-center justify-center gap-1 text-[10px] font-semibold leading-tight transition-colors ${
-              canContact
-                ? 'bg-blue-600 text-white active:bg-blue-700'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-            aria-label={canContact ? `Nhắn Zalo cho ${p.ten || 'khách hàng'}` : 'Không có số điện thoại để nhắn Zalo'}
-          >
-            <MessageCircle className="w-3.5 h-3.5" />
-            Zalo
-          </button>
+    <li className="bg-white">
+      <button
+        type="button"
+        onClick={onToggleMenu}
+        aria-expanded={isMenuOpen}
+        className="w-full px-4 py-2.5 flex items-center gap-3 text-left active:bg-gray-50"
+      >
+        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
+          {(p.ten || '?')[0]?.toUpperCase()}
         </div>
-
-        <div
-          className={`relative px-4 py-2.5 touch-pan-y ${dragging ? '' : 'transition-transform duration-200 ease-out'} bg-white`}
-          style={{
-            transform: `translateX(${cardTranslateX}px)`,
-            willChange: 'transform',
-          }}
-          onTouchStart={handleSwipeStart}
-          onTouchMove={handleSwipeMove}
-          onTouchEnd={handleSwipeEnd}
-          onTouchCancel={handleSwipeEnd}
-        >
-        {/* Top: avatar + info + main action */}
-        <button
-          type="button"
-          onClick={() => {
-            setOpenContactSwipeId(null);
-            onAction(p, defaultAction);
-          }}
-          className="w-full flex items-center gap-3 text-left active:opacity-70"
-        >
-          <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
-            {(p.ten || '?')[0]?.toUpperCase()}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-sm font-semibold text-gray-800 truncate">{p.ten || '(không tên)'}</span>
+            {p.namsinh && <span className="text-xs text-gray-500 shrink-0">• {p.namsinh}</span>}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-sm font-semibold text-gray-800 truncate">{p.ten || '(không tên)'}</span>
-              {p.namsinh && <span className="text-xs text-gray-500 shrink-0">• {p.namsinh}</span>}
+          {(p.dienthoai || p.diachi) && (
+            <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5 min-w-0">
+              {p.dienthoai && (
+                <span className="flex items-center gap-1 shrink-0">
+                  <Phone className="w-3 h-3" />
+                  {p.dienthoai}
+                </span>
+              )}
+              {p.dienthoai && p.diachi && <span className="text-gray-300">•</span>}
+              {p.diachi && <span className="truncate">{p.diachi}</span>}
             </div>
-            {(p.dienthoai || p.diachi) && (
-              <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5 min-w-0">
-                {p.dienthoai && (
-                  <span className="flex items-center gap-1 shrink-0">
-                    <Phone className="w-3 h-3" />
-                    {p.dienthoai}
-                  </span>
-                )}
-                {p.dienthoai && p.diachi && <span className="text-gray-300">•</span>}
-                {p.diachi && <span className="truncate">{p.diachi}</span>}
-              </div>
-            )}
-            {(activityLabel || activityRelativeTime) && (
-              <div className="mt-1 flex items-center gap-1.5 min-w-0">
-                {activityLabel && (
-                  <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold truncate">
-                    {activityLabel}
-                  </span>
-                )}
-                {activityRelativeTime && (
-                  <span className="text-[10px] text-gray-400 shrink-0">{activityRelativeTime}</span>
-                )}
-              </div>
-            )}
-          </div>
-          <ChevronRightIcon className="w-4 h-4 text-gray-300 flex-shrink-0" />
-        </button>
-      </div>
-      </div>
+          )}
+          {(activityLabel || activityRelativeTime || staffLabel) && (
+            <div className="mt-1 flex items-center gap-1.5 min-w-0">
+              {activityLabel && (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold truncate">
+                  {activityLabel}
+                </span>
+              )}
+              {staffLabel && (
+                <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold shrink-0">
+                  {staffLabel}
+                </span>
+              )}
+              {activityRelativeTime && (
+                <span className="text-[10px] text-gray-400 shrink-0">{activityRelativeTime}</span>
+              )}
+            </div>
+          )}
+        </div>
+        <ChevronDown
+          className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${
+            isMenuOpen ? 'rotate-180 text-blue-600' : ''
+          }`}
+        />
+      </button>
+
+      {isMenuOpen && (
+        <div className="px-3 pb-3 grid grid-cols-5 gap-1 border-t border-gray-50 pt-2">
+          <PatientFabActionBtn
+            label="Kê kính"
+            icon={Glasses}
+            tone="emerald"
+            onClick={() => onMenuAction(p, 'kinh')}
+          />
+          <PatientFabActionBtn
+            label="Kê thuốc"
+            icon={FileText}
+            tone="blue"
+            onClick={() => onMenuAction(p, 'thuoc')}
+          />
+          <PatientFabActionBtn
+            label="Sửa"
+            icon={Pencil}
+            tone="amber"
+            onClick={() => onMenuAction(p, 'sua')}
+          />
+          <PatientFabActionBtn
+            label="Gọi"
+            icon={Phone}
+            tone="emerald"
+            disabled={!canContact}
+            onClick={() => onCallAction(p)}
+          />
+          <PatientFabActionBtn
+            label="Zalo"
+            icon={MessageCircle}
+            tone="blue"
+            disabled={!canContact}
+            onClick={() => onZaloAction(p)}
+          />
+        </div>
+      )}
     </li>
   );
 }

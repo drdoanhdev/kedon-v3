@@ -1,14 +1,19 @@
 import { fetchWithAuth } from './fetchWithAuth';
 import {
   ACTIVITY_RETENTION_DAYS,
+  ACTIVITY_SCOPE_CHANGED_EVENT,
   ACTIVITY_SYNC_REQUEST_EVENT,
   clearActivitySyncBackoffState,
+  discardPendingActivities,
   getActivityLastFullPullAt,
   getActivityLastSyncAt,
+  getActivityScopeKey,
+  getActivityStorageScope,
   getActivitySyncBackoffState,
   getMaxServerUpdatedAt,
   getPendingActivityCount,
   getPendingActivityPayload,
+  hasCompleteActivityScope,
   markActivitiesSynced,
   mergeRecentActivityFromServer,
   setActivityLastFullPullAt,
@@ -25,13 +30,15 @@ export type ActivitySyncReason =
   | 'local_push'
   | 'manual'
   | 'open_search'
-  | 'full_window';
+  | 'full_window'
+  | 'scope_change';
 
 export type ActivitySyncStatus = {
   syncing: boolean;
   error: string;
   lastSyncAt: number | null;
   pendingCount: number;
+  hasBranch: boolean;
 };
 
 type SyncListener = (status: ActivitySyncStatus) => void;
@@ -47,13 +54,11 @@ let intervalTimer: ReturnType<typeof setInterval> | null = null;
 let listenersAttached = false;
 let loopStarted = false;
 let lastError = '';
+let lastSyncedScopeKey: string | null = null;
 const statusListeners = new Set<SyncListener>();
 
 function getCurrentBranchId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const tenantId = localStorage.getItem('currentTenantId');
-  if (!tenantId) return null;
-  return localStorage.getItem(`currentBranchId_${tenantId}`);
+  return getActivityStorageScope().branchId;
 }
 
 function buildStatus(): ActivitySyncStatus {
@@ -62,6 +67,7 @@ function buildStatus(): ActivitySyncStatus {
     error: lastError,
     lastSyncAt: getActivityLastSyncAt(),
     pendingCount: getPendingActivityCount(),
+    hasBranch: !!getCurrentBranchId(),
   };
 }
 
@@ -195,6 +201,13 @@ async function pushPending(): Promise<boolean> {
   markActivitiesSynced(syncedIds, Date.now());
   mergeRecentActivityFromServer(savedRows);
 
+  const skippedIds = Array.isArray(pushPayload?.skipped_client_event_ids)
+    ? (pushPayload.skipped_client_event_ids as string[]).filter(Boolean)
+    : [];
+  if (skippedIds.length > 0) {
+    discardPendingActivities(skippedIds);
+  }
+
   const maxPushSyncTs = getMaxServerUpdatedAt(savedRows);
   if (maxPushSyncTs) {
     setActivityLastSyncAt(maxPushSyncTs);
@@ -211,16 +224,23 @@ export async function syncRecentActivity(opts?: {
   if (syncing) return;
 
   const reason = opts?.reason || 'interval';
-  const forceFull = opts?.forceFull === true || reason === 'full_window' || reason === 'boot';
+  const scopeKey = getActivityScopeKey();
+  const scopeChanged = !!scopeKey && scopeKey !== lastSyncedScopeKey;
+  const forceFull =
+    opts?.forceFull === true ||
+    reason === 'full_window' ||
+    reason === 'boot' ||
+    reason === 'scope_change' ||
+    scopeChanged;
 
-  if (!getCurrentBranchId()) {
+  if (!getCurrentBranchId() || !hasCompleteActivityScope()) {
     lastError = 'Chọn chi nhánh để đồng bộ hoạt động';
     emitStatus();
     return;
   }
 
   const backoffState = getActivitySyncBackoffState();
-  if (backoffState && backoffState.nextRetryAt > Date.now() && reason !== 'manual') {
+  if (backoffState && backoffState.nextRetryAt > Date.now() && reason !== 'manual' && reason !== 'scope_change') {
     const remainSec = Math.max(1, Math.ceil((backoffState.nextRetryAt - Date.now()) / 1000));
     lastError = `Tạm hoãn đồng bộ ${remainSec}s`;
     emitStatus();
@@ -240,6 +260,7 @@ export async function syncRecentActivity(opts?: {
 
     clearActivitySyncBackoffState();
     lastError = '';
+    lastSyncedScopeKey = scopeKey;
   } catch {
     scheduleBackoff('network');
   } finally {
@@ -251,14 +272,24 @@ export async function syncRecentActivity(opts?: {
 export function scheduleRecentActivitySync(reason: ActivitySyncReason = 'local_push') {
   if (typeof window === 'undefined') return;
 
-  if (reason === 'manual' || reason === 'open_search' || reason === 'boot' || reason === 'full_window') {
+  if (
+    reason === 'manual' ||
+    reason === 'open_search' ||
+    reason === 'boot' ||
+    reason === 'full_window' ||
+    reason === 'scope_change'
+  ) {
     if (debounceTimer) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
     void syncRecentActivity({
       reason,
-      forceFull: reason === 'boot' || reason === 'full_window' || reason === 'open_search',
+      forceFull:
+        reason === 'boot' ||
+        reason === 'full_window' ||
+        reason === 'open_search' ||
+        reason === 'scope_change',
     });
     return;
   }
@@ -298,12 +329,21 @@ function onSyncRequest(event: Event) {
   scheduleRecentActivitySync(reason);
 }
 
+function onScopeChanged() {
+  lastSyncedScopeKey = null;
+  clearActivitySyncBackoffState();
+  lastError = '';
+  emitStatus();
+  scheduleRecentActivitySync('scope_change');
+}
+
 function attachGlobalListeners() {
   if (typeof window === 'undefined' || listenersAttached) return;
   listenersAttached = true;
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('online', onOnline);
   window.addEventListener(ACTIVITY_SYNC_REQUEST_EVENT, onSyncRequest as EventListener);
+  window.addEventListener(ACTIVITY_SCOPE_CHANGED_EVENT, onScopeChanged as EventListener);
 }
 
 function detachGlobalListeners() {
@@ -312,6 +352,7 @@ function detachGlobalListeners() {
   document.removeEventListener('visibilitychange', onVisibilityChange);
   window.removeEventListener('online', onOnline);
   window.removeEventListener(ACTIVITY_SYNC_REQUEST_EVENT, onSyncRequest as EventListener);
+  window.removeEventListener(ACTIVITY_SCOPE_CHANGED_EVENT, onScopeChanged as EventListener);
 }
 
 export function startRecentActivitySyncLoop() {
@@ -329,6 +370,7 @@ export function startRecentActivitySyncLoop() {
 export function stopRecentActivitySyncLoop() {
   if (!loopStarted) return;
   loopStarted = false;
+  lastSyncedScopeKey = null;
   if (intervalTimer) {
     clearInterval(intervalTimer);
     intervalTimer = null;

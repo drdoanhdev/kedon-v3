@@ -212,6 +212,8 @@ export default function BenhNhanPage() {
         pendingFocusPatientIdRef.current = parsedFocusId;
       }
     }
+
+    pendingOpenEditDialogRef.current = params.get('edit') === '1';
   }, [router.isReady, router.asPath]);
 
   // Sorting state - hỗ trợ multi-level sorting
@@ -242,6 +244,7 @@ export default function BenhNhanPage() {
   const diachiRef = useRef<HTMLInputElement | null>(null);
   const initialAddFocusRef = useRef<'ten' | 'namsinh' | 'dienthoai' | 'diachi' | null>(null);
   const pendingFocusPatientIdRef = useRef<number | null>(null);
+  const pendingOpenEditDialogRef = useRef(false);
 
   const buildActivityPatient = useCallback((bn: BenhNhan | undefined) => {
     if (!bn?.id) return null;
@@ -534,8 +537,11 @@ export default function BenhNhanPage() {
     const focusId = pendingFocusPatientIdRef.current;
     if (!focusId) return;
 
-    const targetExists = benhNhans.some((bn) => bn.id === focusId);
-    if (!targetExists) return;
+    const targetPatient = benhNhans.find((bn) => bn.id === focusId);
+    if (!targetPatient) return;
+
+    const shouldOpenEdit = pendingOpenEditDialogRef.current;
+    pendingOpenEditDialogRef.current = false;
 
     setSelectedBenhNhanId(focusId);
     setActiveTab("don-thuoc");
@@ -553,9 +559,18 @@ export default function BenhNhanPage() {
 
     pendingFocusPatientIdRef.current = null;
 
+    if (shouldOpenEdit) {
+      setForm({ ...targetPatient, gioitinh: targetPatient.gioitinh || '' });
+      setIsEditing(true);
+      setOpen(true);
+    }
+
     const params = new URLSearchParams(window.location.search);
-    if (params.has('focusId')) {
-      params.delete('focusId');
+    const hadFocus = params.has('focusId');
+    const hadEdit = params.has('edit');
+    if (hadFocus) params.delete('focusId');
+    if (hadEdit) params.delete('edit');
+    if (hadFocus || hadEdit) {
       const queryString = params.toString();
       const nextUrl = queryString ? `${router.pathname}?${queryString}` : router.pathname;
       router.replace(nextUrl, undefined, { shallow: true });

@@ -5,6 +5,7 @@ import { User } from '@supabase/supabase-js'
 import { createClient } from '@supabase/supabase-js'
 import toast from 'react-hot-toast'
 import { getDeviceLabel, getOrCreateDeviceId } from '../lib/deviceIdentity'
+import { notifyActivityScopeChanged } from '../lib/recentActivity'
 
 const HARD_LOGIN_DENY_CODES = new Set([
   'DEVICE_ID_REQUIRED',
@@ -199,6 +200,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const switchTenant = useCallback((tenantId: string) => {
     setCurrentTenantId(tenantId)
     try { localStorage.setItem('currentTenantId', tenantId) } catch {}
+    notifyActivityScopeChanged('tenant')
   }, [])
 
   // --- Fetch user role ---
