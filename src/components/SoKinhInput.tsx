@@ -6,7 +6,7 @@ import React, { useState, useRef, useEffect } from 'react';
  * Quy tắc gõ tắt (token cách nhau bằng dấu cách):
  *   Token1 → SPH (3 chữ số → ÷100, mặc định âm; +75 → +0.75; 0/pl/plano → Plano)
  *   Token2 → CYL (luôn âm; nếu giá trị nằm trong khoảng ADD và không có Token3 thì là ADD)
- *   Token3 → AXIS (1–180)
+ *   Token3 → AXIS (1–180; gõ 0 → 180°)
  *   Token4 → ADD  (luôn dương, +0.75 đến +4.00)
  *
  * Ví dụ:
@@ -85,12 +85,16 @@ const parseCyl = (token: string): number | null => {
 	return v > 0 ? -v : v; // luôn âm
 };
 
+const normalizeAxisDegrees = (n: number): number | null => {
+	if (n === 0) return 180;
+	if (n < 1 || n > 180) return null;
+	return n;
+};
+
 const parseAxisToken = (token: string): number | null => {
 	const t = token.trim();
 	if (!/^\d{1,3}$/.test(t)) return null;
-	const n = parseInt(t, 10);
-	if (n < 1 || n > 180) return null;
-	return n;
+	return normalizeAxisDegrees(parseInt(t, 10));
 };
 
 const parseAdd = (token: string): number | null => {
@@ -135,10 +139,13 @@ const parseCanonical = (text: string): RxValue | null => {
 	let m = REGEX_FULL.exec(t);
 	if (m) {
 		const sph = canonicalSph(m[1]);
+		const axisRaw = parseInt(m[3], 10);
+		const axis = normalizeAxisDegrees(axisRaw);
+		if (axis === null) return null;
 		return {
 			sph,
 			cyl: parseFloat(m[2]),
-			axis: parseInt(m[3], 10),
+			axis,
 			add: m[4] ? Math.abs(parseFloat(m[4])) : null,
 		};
 	}

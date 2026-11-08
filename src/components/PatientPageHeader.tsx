@@ -112,9 +112,7 @@ export function PatientMobileHeader({
     ...extraLinks,
   ].filter((link) => Boolean(link.href && link.label));
 
-  const showCompactSwitch = Boolean(switchPageLink && switchPageLabel);
-  const stackedExtraLinks = extraLinks.filter((link) => Boolean(link.href && link.label));
-  const hasBottomActions = Boolean(footerAction);
+  const hasBottomActions = pageLinks.length > 0 || Boolean(footerAction);
   const displayNotes = pickDisplayNotes(patientNotes, 2);
 
   // ── Tính chiều cao thực tế của secondary rows từ nội dung ──────
@@ -215,8 +213,8 @@ export function PatientMobileHeader({
           className="px-3"
           style={{ paddingTop: `${pt}px`, paddingBottom: `${pb}px` }}
         >
-          {/* ── ROW 1: Avatar + Name + ⋮ / compact page switch (stacked) ── */}
-          <div className="flex items-start">
+          {/* ── ROW 1: Avatar + Name + 3-dot menu ── */}
+          <div className="flex items-center">
 
             {/* Avatar + name — tap opens edit patient */}
             <button
@@ -276,75 +274,52 @@ export function PatientMobileHeader({
               </div>
             </button>
 
-            {/* ⋮ menu + quick page links — stacked vertically */}
-            <div className="flex flex-col items-end gap-0.5 flex-shrink-0 ml-1">
-              <div ref={menuRef} className="relative">
-                <button
-                  type="button"
-                  aria-label="Thêm"
-                  className="h-8 w-8 flex items-center justify-center text-white/75 hover:text-white rounded-full active:bg-white/10"
-                  onClick={() => setMenuOpen((v) => !v)}
-                >
-                  <MoreVertical
-                    style={{
-                      width:  `${Math.round(lerp(20, 17, r))}px`,
-                      height: `${Math.round(lerp(20, 17, r))}px`,
-                    }}
-                  />
-                </button>
+            {/* 3-dot menu — page links in bottom chip row + menu when collapsed */}
+            <div ref={menuRef} className="relative flex-shrink-0">
+              <button
+                type="button"
+                aria-label="Thêm"
+                className="h-8 w-8 flex items-center justify-center text-white/75 hover:text-white rounded-full active:bg-white/10"
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                <MoreVertical
+                  style={{
+                    width:  `${Math.round(lerp(20, 17, r))}px`,
+                    height: `${Math.round(lerp(20, 17, r))}px`,
+                  }}
+                />
+              </button>
 
-                {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[196px] z-50 overflow-hidden">
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1.5 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[196px] z-50 overflow-hidden">
+                  <button
+                    type="button"
+                    className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                    onClick={() => { setMenuOpen(false); onEditPatient(); }}
+                  >
+                    Sửa thông tin
+                  </button>
+                  {onManageNotes && (
                     <button
                       type="button"
-                      className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                      onClick={() => { setMenuOpen(false); onEditPatient(); }}
+                      className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors border-t border-gray-50"
+                      onClick={() => { setMenuOpen(false); onManageNotes(); }}
                     >
-                      Sửa thông tin
+                      Ghi chú
                     </button>
-                    {onManageNotes && (
-                      <button
-                        type="button"
-                        className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors border-t border-gray-50"
-                        onClick={() => { setMenuOpen(false); onManageNotes(); }}
-                      >
-                        Ghi chú
-                      </button>
-                    )}
-                    {pageLinks.map((link) => (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        className="block w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors border-t border-gray-50"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        {link.label}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {showCompactSwitch && (
-                <Link
-                  href={switchPageLink}
-                  className="h-7 px-2.5 rounded-full border border-white/40 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center whitespace-nowrap hover:bg-white/20 active:bg-white/25"
-                >
-                  {switchPageIcon ? (
-                    <span className="mr-1 inline-flex shrink-0">{switchPageIcon}</span>
-                  ) : null}
-                  {switchPageLabel}
-                </Link>
+                  )}
+                  {pageLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="block w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors border-t border-gray-50"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
               )}
-              {stackedExtraLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="h-7 px-2.5 rounded-full border border-white/35 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center whitespace-nowrap hover:bg-white/20 active:bg-white/25"
-                >
-                  {link.label}
-                </Link>
-              ))}
             </div>
           </div>
 
@@ -483,10 +458,19 @@ export function PatientMobileHeader({
               )}
             </div>
 
-            {/* Row 6: optional footer (e.g. face enroll) */}
+            {/* Row 6: Bottom actions — chip row (page switches + optional footer) */}
             {hasBottomActions && (
               <div className="mt-1.5 flex items-stretch gap-1.5">
                 {footerAction}
+                {pageLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="h-6 px-2.5 flex-1 min-w-0 rounded-full border border-white/35 bg-white/10 text-white text-[11px] font-semibold inline-flex items-center justify-center whitespace-nowrap active:bg-white/20"
+                  >
+                    <span className="truncate">{link.label}</span>
+                  </Link>
+                ))}
               </div>
             )}
           </div>
