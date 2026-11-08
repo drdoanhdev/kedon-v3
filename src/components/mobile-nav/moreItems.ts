@@ -1,0 +1,55 @@
+import {
+  ArrowRightLeft,
+  BarChart,
+  BarChart3,
+  CalendarDays,
+  CreditCard,
+  FileText,
+  Frame,
+  Glasses,
+  Home,
+  List,
+  Pill,
+  Printer,
+  Search,
+  Send,
+  Settings,
+  Shield,
+  Sparkles,
+  Users,
+  Warehouse,
+} from 'lucide-react';
+import type { MoreItem } from './types';
+
+export function getMoreMenuItems(currentRole: string | undefined, userRole: string | undefined): MoreItem[] {
+  const isOwnerAdmin = currentRole === 'owner' || currentRole === 'admin';
+  const items: MoreItem[] = [
+    { href: '/', label: 'Trang chủ', icon: Home },
+    { href: '/benh-nhan', label: 'Bệnh nhân', icon: Users, feature: 'patient_management' },
+    { href: '/lich-hen', label: 'Lịch hẹn', icon: CalendarDays, feature: 'appointments' },
+    { href: '/don-kinh', label: 'Đơn kính', icon: Glasses, feature: 'prescription_glasses' },
+    { href: '/don-thuoc', label: 'Đơn thuốc', icon: FileText, feature: 'prescription_medicine' },
+    { href: '/quan-ly-kho', label: 'Kho tròng', icon: Warehouse, feature: 'lens_catalog' },
+    { href: '/quan-ly-kho-gong', label: 'Kho gọng', icon: Frame, feature: 'frame_catalog' },
+    { href: '/quan-ly-kho-thuoc', label: 'Kho thuốc', icon: Pill, feature: 'drug_catalog' },
+    { href: '/danh-muc', label: 'Danh mục', icon: List, feature: 'categories' },
+    { href: '/bao-cao', label: 'Báo cáo', icon: BarChart, feature: 'basic_reports' },
+    { href: '/bao-cao-super', label: 'Báo cáo Pro', icon: BarChart, feature: 'advanced_reports' },
+    { href: '/bao-cao-chuoi', label: 'Báo cáo chuỗi', icon: BarChart3, feature: 'chain_reports' },
+    { href: '/ton-kho-chuoi', label: 'Tồn kho chuỗi', icon: BarChart3, feature: 'multi_branch' },
+    { href: '/cham-cong', label: 'Chấm công', icon: CalendarDays, feature: 'staff_attendance' },
+    { href: '/lab-gia-cong', label: 'Lab gia công', icon: Glasses, feature: 'multi_branch' },
+    { href: '/cham-soc-khach-hang', label: 'Chăm sóc KH', icon: Users, feature: 'crm' },
+    { href: '/quan-ly-ghi-chu-khach-hang', label: 'Việc cần làm KH', icon: CalendarDays, feature: 'crm' },
+    { href: '/dieu-chuyen-kho', label: 'Điều chuyển kho', icon: ArrowRightLeft, feature: 'branch_transfer' },
+    { href: '/tra-cuu-khach-hang', label: 'Tra cứu KH', icon: Search, feature: 'multi_branch' },
+    { href: '/cau-hinh-in', label: 'Cấu hình in', icon: Printer },
+    { href: '/tem-kinh', label: 'In tem kính', icon: Printer, feature: 'print_config' },
+    { href: '/cai-dat-nhan-tin', label: 'Nhắn tin tự động', icon: Send, visible: isOwnerAdmin },
+    { href: '/quan-ly-phong-kham', label: 'Phòng khám', icon: Settings, visible: isOwnerAdmin },
+    { href: '/tinh-nang', label: 'Tính năng phần mềm', icon: Sparkles },
+    { href: '/billing', label: 'Gói dịch vụ', icon: CreditCard },
+    { href: '/admin', label: 'Quản trị nền tảng', icon: Shield, visible: userRole === 'superadmin' },
+  ];
+  return items.filter((i) => i.visible !== false);
+}
