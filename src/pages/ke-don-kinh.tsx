@@ -2183,9 +2183,8 @@ export default function KeDonKinh() {
               onEditPatient={() => { if (benhNhan) { setPatientForm({ ...benhNhan }); setOpenEditPatient(true); } }}
               onManageNotes={openNotesManagement}
               switchPageLink={`/ke-don?bn=${benhnhanid}`}
-              switchPageIcon={<Pill className="w-[18px] h-[18px]" />}
               switchPageLabel="Đơn thuốc"
-              extraLinks={benhnhanid ? [{ href: `/tien-luong-ksct?bn=${benhnhanid}`, label: 'Tiên lượng KSCT' }] : []}
+              extraLinks={benhnhanid ? [{ href: `/tien-luong-ksct?bn=${benhnhanid}`, label: 'Tiên lượng' }] : []}
               mobileTab={mobileTab}
               mobileTabLabels={mobileTabLabels}
               onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
@@ -2224,7 +2223,7 @@ export default function KeDonKinh() {
               onManageNotes={openNotesManagement}
               switchPageLink={`/ke-don?bn=${benhnhanid}`}
               switchPageLabel="Đơn thuốc"
-              extraLinks={benhnhanid ? [{ href: `/tien-luong-ksct?bn=${benhnhanid}`, label: 'Tiên lượng KSCT' }] : []}
+              extraLinks={benhnhanid ? [{ href: `/tien-luong-ksct?bn=${benhnhanid}`, label: 'Tiên lượng' }] : []}
               familySection={<PatientFamilyDesktopChip benhnhanId={patientIdNumber} />}
               renderBackgroundUploadNotice={renderBackgroundUploadNotice}
             />

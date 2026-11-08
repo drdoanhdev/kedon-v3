@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, Glasses, X, AlertTriangle } from 'lucide-react';
+import { Trash2, Pencil, FilePlus, Calendar, Pill, History, Activity, Image as ImageIcon, X, AlertTriangle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Label } from '../components/ui/label';
@@ -386,6 +386,9 @@ export default function KeDon() {
   const searchDesktopRef = useRef<HTMLInputElement | null>(null);
   const soluongRefs = useRef<(HTMLInputElement | null)[]>([]);
   const cachdungRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const focusSoluongIdxRef = useRef<number | null>(null);
+  const openMobileQtyAfterAddRef = useRef(false);
+  const mobileSoluongRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!activeDonThuocMediaId) return;
     setDraftQueueResetToken((prev) => prev + 1);
@@ -982,6 +985,7 @@ export default function KeDon() {
   const themThuoc = useCallback(
     (thuoc: Thuoc) => {
       if (dsChon.some((t) => t.thuoc.id === thuoc.id)) return;
+      const newIdx = dsChon.length;
       setDsChon((prev) => [
         ...prev,
         {
@@ -992,10 +996,41 @@ export default function KeDon() {
       ]);
       setMobileSearchOpen(false);
       setTimThuocDonDangKe('');
-      setHighlightedIndex(-1); // Reset highlighted index
+      setHighlightedIndex(-1);
+      const onMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
+      if (onMobile) {
+        openMobileQtyAfterAddRef.current = true;
+        setMobileDetailIdx(newIdx);
+      } else {
+        focusSoluongIdxRef.current = newIdx;
+      }
     },
     [dsChon]
   );
+
+  useEffect(() => {
+    const idx = focusSoluongIdxRef.current;
+    if (idx === null) return;
+    focusSoluongIdxRef.current = null;
+    const timer = window.setTimeout(() => {
+      const el = soluongRefs.current[idx];
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [dsChon.length]);
+
+  useEffect(() => {
+    if (mobileDetailIdx === null || !openMobileQtyAfterAddRef.current) return;
+    openMobileQtyAfterAddRef.current = false;
+    const timer = window.setTimeout(() => {
+      mobileSoluongRef.current?.focus();
+      mobileSoluongRef.current?.select();
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [mobileDetailIdx]);
 
   const xoaThuoc = useCallback((id: number) => {
     setDsChon((prev) => prev.filter((t) => t.thuoc.id !== id));
@@ -1556,7 +1591,6 @@ export default function KeDon() {
             onEditPatient={openEditPatientDialog}
             onManageNotes={openNotesManagement}
             switchPageLink={`/ke-don-kinh?bn=${benhnhanid}`}
-            switchPageIcon={<Glasses className="w-[18px] h-[18px]" />}
             switchPageLabel="Đơn kính"
             mobileTab={mobileTab}
             mobileTabLabels={mobileTabLabels}
@@ -1834,33 +1868,29 @@ export default function KeDon() {
                   </DialogHeader>
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-600">Cách dùng</Label>
-                      <Textarea
-                        autoFocus
-                        rows={3}
-                        placeholder="VD: Uống 1 viên sau ăn sáng, 1 viên sau ăn tối..."
-                        value={dsChon[mobileDetailIdx].cachdung}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setDsChon((prev) => {
-                            const updated = [...prev];
-                            if (mobileDetailIdx !== null && updated[mobileDetailIdx]) {
-                              updated[mobileDetailIdx].cachdung = val;
-                            }
-                            return updated;
-                          });
-                        }}
-                        className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
                       <Label className="text-xs text-gray-600">Số lượng ({dsChon[mobileDetailIdx].thuoc.donvitinh})</Label>
                       <Input
+                        ref={mobileSoluongRef}
                         type="number"
                         min={1}
                         step={1}
                         value={dsChon[mobileDetailIdx].soluongInput !== undefined ? dsChon[mobileDetailIdx].soluongInput : String(dsChon[mobileDetailIdx].soluong)}
                         onFocus={(e) => e.target.select()}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          setDsChon((prev) => {
+                            const updated = [...prev];
+                            if (mobileDetailIdx === null || !updated[mobileDetailIdx]) return updated;
+                            const buf = updated[mobileDetailIdx].soluongInput;
+                            const parsed = buf !== undefined && buf !== '' ? parseInt(buf, 10) : updated[mobileDetailIdx].soluong;
+                            updated[mobileDetailIdx].soluong = (Number.isNaN(parsed) || parsed < 1) ? 1 : parsed;
+                            delete updated[mobileDetailIdx].soluongInput;
+                            return updated;
+                          });
+                          setMobileDetailIdx(null);
+                          openMobileSearch();
+                        }}
                         onChange={(e) => {
                           const raw = e.target.value;
                           setDsChon((prev) => {
@@ -1887,6 +1917,25 @@ export default function KeDon() {
                           });
                         }}
                         className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-600">Cách dùng</Label>
+                      <Textarea
+                        rows={3}
+                        placeholder="VD: Uống 1 viên sau ăn sáng, 1 viên sau ăn tối..."
+                        value={dsChon[mobileDetailIdx].cachdung}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDsChon((prev) => {
+                            const updated = [...prev];
+                            if (mobileDetailIdx !== null && updated[mobileDetailIdx]) {
+                              updated[mobileDetailIdx].cachdung = val;
+                            }
+                            return updated;
+                          });
+                        }}
+                        className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div className="flex justify-between gap-2 pt-1">
@@ -2682,10 +2731,19 @@ export default function KeDon() {
                         onFocus={(e) => { e.target.select(); setFocusedRowIdx(idx); }}
                         onBlurCapture={() => setFocusedRowIdx(-1)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            cachdungRefs.current[idx]?.focus();
-                          }
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          setDsChon((prev) => {
+                            const updated = [...prev];
+                            const buf = updated[idx].soluongInput;
+                            if (buf !== undefined) {
+                              const parsed = buf !== '' ? parseInt(buf, 10) : NaN;
+                              updated[idx].soluong = (Number.isNaN(parsed) || parsed < 1) ? 1 : parsed;
+                              delete updated[idx].soluongInput;
+                            }
+                            return updated;
+                          });
+                          searchDesktopRef.current?.focus();
                         }}
                         min={1}
                         step={1}
