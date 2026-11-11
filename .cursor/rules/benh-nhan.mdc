@@ -1,0 +1,35 @@
+---
+description: Quy ước module trang Bệnh nhân
+globs:
+  - src/pages/benh-nhan.tsx
+  - src/components/benh-nhan/**
+  - src/lib/patient/**
+alwaysApply: false
+---
+
+# Module Bệnh nhân
+
+## Cấu trúc
+
+- Route giữ nguyên: `/benh-nhan` → `src/pages/benh-nhan.tsx` (wrapper mỏng).
+- Logic/UI module: `src/components/benh-nhan/`.
+- Types/utils/API client: `src/lib/patient/`.
+- Tái dùng sẵn có: `capitalizeWords` (`src/lib/utils`), `parsePatientSeed` (`src/lib/patientSeed`), `PatientResult` / `rankResults` (`src/lib/patientSearch`), `usePatientSearch`, `useMediaQuery`, `FamilyCard`.
+
+## URL query (không đổi hành vi)
+
+- `?search=...&focusId=...&edit=1` — từ FAB hồ sơ.
+- `?new=1&quick_name=...&quick_namsinh=...&quick_phone=...&quick_diachi=...` — mở form thêm rồi `router.replace` shallow xóa các param này.
+
+## Hồ sơ bệnh nhân
+
+- 6 tab: đơn thuốc, đơn kính, lịch hẹn, gia đình, ghi chú, chuỗi (chuỗi chỉ khi multi-branch).
+- Phân trang từ API — không slice lần nữa ở client.
+- Merge: chọn ≥2 BN; Ctrl+Enter xác nhận khi dialog merge mở.
+- Mobile: vuốt card mở Sửa / Đơn thuốc / Đơn kính.
+
+## Kiểm tra
+
+- Sau mỗi bước refactor: `npm run typecheck` + `npm run lint`.
+- Test tay theo `docs/TEST_CHECKLIST.md`.
+- Không đổi hành vi UI/API trừ khi yêu cầu rõ.

@@ -19,6 +19,8 @@ export type PatientSearchPanelProps = {
   canLoadMoreSearchResults: boolean;
   onLoadMoreSearch: () => void;
   onAddNewPatient: () => void;
+  /** Deep link form đầy đủ trên /benh-nhan (merge/ghi chú...). */
+  onOpenPatientPage?: () => void;
   onEnterExpandFirst: () => void;
   expandedMenuPatientId: number | null;
   onTogglePatientMenu: (id: number) => void;
@@ -41,6 +43,7 @@ export function PatientSearchPanel({
   canLoadMoreSearchResults,
   onLoadMoreSearch,
   onAddNewPatient,
+  onOpenPatientPage,
   onEnterExpandFirst,
   expandedMenuPatientId,
   onTogglePatientMenu,
@@ -132,7 +135,7 @@ export function PatientSearchPanel({
             </div>
             <button type="button" onClick={onAddNewPatient} className={emptyBtnClass}>
               <UserPlus className="w-4 h-4" />
-              Thêm khách hàng mới
+              Thêm khách mới
             </button>
           </div>
         )}
@@ -171,11 +174,20 @@ export function PatientSearchPanel({
         )}
       </div>
 
-      <div className={`border-t border-gray-100 ${footerPad}`}>
+      <div className={`border-t border-gray-100 ${footerPad} space-y-2`}>
         <button type="button" onClick={onAddNewPatient} className={footerAddClass}>
           <UserPlus className="w-4 h-4" />
-          Thêm khách hàng mới
+          Thêm khách mới
         </button>
+        {onOpenPatientPage && (
+          <button
+            type="button"
+            onClick={onOpenPatientPage}
+            className="w-full text-center text-xs text-blue-600 hover:underline py-1"
+          >
+            Mở trang Bệnh nhân
+          </button>
+        )}
       </div>
     </div>
   );

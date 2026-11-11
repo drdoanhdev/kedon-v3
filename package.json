@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "clean": "rimraf .next && rimraf node_modules/.cache",
     "pack:print-agent": "powershell -ExecutionPolicy Bypass -File services/print-agent/scripts/pack-optigo-print-agent.ps1",
     "test": "vitest run",

@@ -11,10 +11,15 @@ import { usePatientSearch } from '../../hooks/usePatientSearch';
 import { useRecentActivityHub } from '../../hooks/useRecentActivityHub';
 import { useKeyboardOpen } from '../../hooks/useKeyboardOpen';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { pushRecentActivity, scheduleRecentActivitySync } from '../../lib/recentActivity';
+import {
+  buildActivityPatientRef,
+  pushRecentActivity,
+} from '../../lib/recentActivity';
+import { scheduleRecentActivitySync } from '../../lib/recentActivitySync';
 import { actionFromDefault } from '../../lib/mobileNavActivity';
 import { parsePatientSeed } from '../../lib/patientSeed';
 import { digitsOnly, openZaloDeepLink, toDialNumber, toZaloNumber } from '../../lib/phone';
+import type { BenhNhan } from '../../lib/patient/types';
 import type { PatientResult } from '../../lib/patientSearch';
 import type { FeatureKey } from '../../lib/featureConfig';
 import {
@@ -32,6 +37,11 @@ import { MoreSheet } from './MoreSheet';
 import { NavTabItem } from './NavTabItem';
 import { PageTabBtn } from './PageTabBtn';
 import { PatientSearchSheet } from './PatientSearchSheet';
+import { QuickPatientCreateDialog } from './QuickPatientCreateDialog';
+import {
+  PostCreatePatientActions,
+  type PostCreateAction,
+} from './PostCreatePatientActions';
 
 export default function MobileBottomNav() {
   const router = useRouter();
@@ -45,7 +55,7 @@ export default function MobileBottomNav() {
     currentRole,
     userRole,
   } = useAuth();
-  const { branches, currentBranchId, switchBranch, isMultiBranch } = useBranch();
+  const { branches, currentBranchId, currentBranch, switchBranch, isMultiBranch } = useBranch();
   const { canAccessFeature } = useFeatureGate();
   const { pageTabs } = usePageTabsContext();
   const { counts } = useNotificationPolling();
@@ -56,6 +66,11 @@ export default function MobileBottomNav() {
   const showSearch = sheet === 'search';
   const showMore = sheet === 'more';
   const showFabMenu = sheet === 'fab';
+
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreateSeed, setQuickCreateSeed] = useState('');
+  const [postCreateOpen, setPostCreateOpen] = useState(false);
+  const [createdPatient, setCreatedPatient] = useState<BenhNhan | null>(null);
 
   const {
     term: searchTerm,
@@ -258,7 +273,7 @@ export default function MobileBottomNav() {
     setExpandedMenuPatientId((prev) => (prev === firstId ? null : firstId));
   };
 
-  const handleAddNewPatient = (seedText?: string) => {
+  const buildBenhNhanNewUrl = (seedText?: string) => {
     const rawText = (seedText ?? searchTerm).trim();
     const params = new URLSearchParams();
     params.set('new', '1');
@@ -269,9 +284,77 @@ export default function MobileBottomNav() {
       if (seed.dienthoai) params.set('quick_phone', seed.dienthoai);
       if (seed.diachi) params.set('quick_diachi', seed.diachi);
     }
-    closeAllSheets();
-    router.push(`/benh-nhan?${params.toString()}`);
+    return `/benh-nhan?${params.toString()}`;
   };
+
+  const handleAddNewPatient = (seedText?: string) => {
+    const rawText = (seedText ?? searchTerm).trim();
+    setQuickCreateSeed(rawText);
+    clearFabHoldTimer();
+    fabLongPressTriggeredRef.current = false;
+    clearExpandedMenu();
+    setSheet('none');
+    setQuickCreateOpen(true);
+  };
+
+  const handleOpenPatientPage = () => {
+    const url = buildBenhNhanNewUrl();
+    closeAllSheets();
+    router.push(url);
+  };
+
+  const handlePatientCreated = (patient: BenhNhan) => {
+    setQuickCreateOpen(false);
+    setCreatedPatient(patient);
+    const ref = buildActivityPatientRef(patient);
+    if (ref) {
+      pushRecentActivity({
+        action: 'search_hit',
+        patient: ref,
+        source: 'fab_quick_create',
+      });
+    }
+    setPostCreateOpen(true);
+  };
+
+  const handlePostCreateAction = (action: PostCreateAction) => {
+    const patient = createdPatient;
+    const id = Number(patient?.id);
+    setPostCreateOpen(false);
+
+    if (!patient || !Number.isFinite(id) || id <= 0) {
+      setCreatedPatient(null);
+      return;
+    }
+
+    const ref = buildActivityPatientRef(patient);
+
+    if (action === 'kinh' || action === 'thuoc') {
+      if (ref) {
+        pushRecentActivity({
+          action: action === 'kinh' ? 'open_rx_glasses' : 'open_rx_drug',
+          patient: ref,
+          source: 'fab_quick_create',
+        });
+      }
+      setCreatedPatient(null);
+      closeAllSheets();
+      router.push(action === 'kinh' ? `/ke-don-kinh?bn=${id}` : `/ke-don?bn=${id}`);
+      return;
+    }
+
+    // stay: keep PAB search open with name/phone seed
+    const stayTerm = (patient.dienthoai || patient.ten || '').trim();
+    if (stayTerm) {
+      setSearchTerm(stayTerm);
+      setSearchVisibleCount(FAB_SEARCH_INITIAL_VISIBLE);
+    }
+    setCreatedPatient(null);
+    setSheet('search');
+  };
+
+  const defaultDiachi =
+    (currentBranch?.dia_chi || currentBranch?.ten_chi_nhanh || '').trim();
 
   const handleFabPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -341,6 +424,7 @@ export default function MobileBottomNav() {
           canLoadMoreSearchResults,
           onLoadMoreSearch: () => setSearchVisibleCount((prev) => prev + FAB_SEARCH_VISIBLE_STEP),
           onAddNewPatient: () => handleAddNewPatient(),
+          onOpenPatientPage: handleOpenPatientPage,
           onEnterExpandFirst: handleEnterExpandFirst,
           expandedMenuPatientId,
           onTogglePatientMenu: togglePatientMenu,
@@ -486,6 +570,24 @@ export default function MobileBottomNav() {
         moreItems={moreItems}
         canAccessFeature={canAccessFeature}
         onSignOut={signOut}
+      />
+
+      <QuickPatientCreateDialog
+        open={quickCreateOpen}
+        seedText={quickCreateSeed}
+        defaultDiachi={defaultDiachi}
+        onClose={() => setQuickCreateOpen(false)}
+        onCreated={handlePatientCreated}
+      />
+
+      <PostCreatePatientActions
+        open={postCreateOpen}
+        patient={createdPatient}
+        onAction={handlePostCreateAction}
+        onClose={() => {
+          setPostCreateOpen(false);
+          setCreatedPatient(null);
+        }}
       />
     </>
   );

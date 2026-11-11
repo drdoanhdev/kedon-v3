@@ -1,0 +1,14 @@
+---
+description: Quy ước chung của dự án
+alwaysApply: true
+---
+
+- Stack: Next.js Pages Router, TypeScript, Tailwind, shadcn/ui, axios, react-hot-toast. Giao diện tiếng Việt.
+- Tên domain giữ nguyên tiếng Việt không dấu: benhnhan, donthuoc, donkinh, hen_kham.
+- Trước khi tạo helper/hook/component mới, PHẢI tìm trong `src/lib`, `src/components`, `src/hooks` xem đã có cái tương tự chưa. Ưu tiên tái sử dụng.
+- Không dùng `any`. Kiểu dùng chung đặt ở file types (ưu tiên `src/lib/**/types.ts`).
+- Mỗi file mục tiêu &lt; 250 dòng khi tách module. File orchestration / page wrapper có thể ~80–150 dòng. Vượt thì tiếp tục tách.
+- Không đổi hành vi hiện có khi refactor, trừ khi yêu cầu rõ ràng.
+- Đọc `docs/ARCHITECTURE.md` trước khi thay đổi cấu trúc lớn.
+- Mỗi lần sửa xong: chạy `npm run typecheck` và `npm run lint`, sửa đến khi không thêm lỗi mới, rồi báo kết quả.
+- Không sửa file ngoài phạm vi được giao. Nếu phát hiện vấn đề ở file khác, liệt kê lại chứ không tự sửa.
