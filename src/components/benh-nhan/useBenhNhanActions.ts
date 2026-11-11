@@ -3,7 +3,8 @@ import type { NextRouter } from 'next/router';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { calcPatientAge } from '@/lib/patient/age';
-import { createBenhNhan, deleteBenhNhan, updateBenhNhan } from '@/lib/patient/api';
+import { deleteBenhNhan } from '@/lib/patient/api';
+import { submitPatientForm } from '@/lib/patient/submitPatientForm';
 import { parsePatientSeed } from '@/lib/patientSeed';
 import { pushRecentActivity } from '@/lib/recentActivity';
 import type { BenhNhan } from '@/lib/patient/types';
@@ -138,52 +139,30 @@ export function useBenhNhanActions(options: {
 
   const handleSubmit = useCallback(async () => {
     if (isSubmitting) return;
-    if (!form.ten || !form.namsinh || !form.diachi) {
-      toast.error('Họ tên, năm sinh/ngày sinh và địa chỉ là bắt buộc!');
-      return;
-    }
-    const namsinhStr = form.namsinh.trim();
-    if (!/^\d{4}$/.test(namsinhStr) && !/^\d{2}\/\d{2}\/\d{4}$/.test(namsinhStr)) {
-      toast.error('Năm sinh phải là yyyy hoặc dd/mm/yyyy');
-      return;
-    }
-    const finalForm: BenhNhan = {
-      ...form,
-      namsinh: namsinhStr,
-      gioitinh: form.gioitinh?.trim() || null,
-    };
-
     setIsSubmitting(true);
     try {
-      if (isEditing) {
-        const updated = await updateBenhNhan(finalForm);
-        toast.success('Đã cập nhật bệnh nhân');
+      const result = await submitPatientForm({ form, isEditing });
+      if (!result.ok) return;
+
+      if (result.mode === 'update') {
+        const updated = result.patient;
         setBenhNhans((prev) => prev.map((bn) => (
           bn.id === updated.id
             ? { ...bn, ...updated, tuoi: calcPatientAge(updated.namsinh) }
             : bn
         )));
-      } else {
-        const created = await createBenhNhan(finalForm);
-        toast.success('Đã thêm bệnh nhân');
-        if (created?.id) {
-          const row: BenhNhan = {
-            ...created,
-            tuoi: calcPatientAge(created.namsinh),
-            ngay_kham_gan_nhat: null,
-          };
-          if (currentPage === 1 && !debouncedSearch.trim()) {
-            setBenhNhans((prev) => [row, ...prev].slice(0, rowsPerPage));
-          }
-          setTotal((prev) => prev + 1);
+      } else if (result.patient?.id) {
+        const row: BenhNhan = {
+          ...result.patient,
+          tuoi: calcPatientAge(result.patient.namsinh),
+          ngay_kham_gan_nhat: null,
+        };
+        if (currentPage === 1 && !debouncedSearch.trim()) {
+          setBenhNhans((prev) => [row, ...prev].slice(0, rowsPerPage));
         }
+        setTotal((prev) => prev + 1);
       }
       setOpen(false);
-    } catch (error: unknown) {
-      const message = axios.isAxiosError(error) && error.response?.data
-        ? [error.response.data.message, error.response.data.error].filter(Boolean).join(': ')
-        : error instanceof Error ? error.message : String(error);
-      toast.error(`Lỗi: ${message}`);
     } finally {
       setIsSubmitting(false);
     }

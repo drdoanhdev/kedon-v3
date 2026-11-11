@@ -21,12 +21,14 @@ export type PatientFormDialogProps = {
   setForm: React.Dispatch<React.SetStateAction<BenhNhan>>;
   isSubmitting: boolean;
   onSubmit: () => void;
-  onDelete: (id: number) => Promise<void>;
-  confirm: (message: string) => Promise<boolean>;
+  /** Chỉ dùng khi isEditing — có thể bỏ qua ở chế độ thêm nhanh. */
+  onDelete?: (id: number) => Promise<void>;
+  confirm?: (message: string) => Promise<boolean>;
   tenRef: RefObject<HTMLInputElement | null>;
   namsinhRef: RefObject<HTMLInputElement | null>;
   dienthoaiRef: RefObject<HTMLInputElement | null>;
   diachiRef: RefObject<HTMLInputElement | null>;
+  title?: string;
 };
 
 export function PatientFormDialog({
@@ -43,12 +45,15 @@ export function PatientFormDialog({
   namsinhRef,
   dienthoaiRef,
   diachiRef,
+  title,
 }: PatientFormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Sửa Bệnh Nhân' : 'Thêm Bệnh Nhân'}</DialogTitle>
+          <DialogTitle>
+            {title ?? (isEditing ? 'Sửa Bệnh Nhân' : 'Thêm Bệnh Nhân')}
+          </DialogTitle>
           {isEditing && form.id && (
             <div className="text-sm text-gray-500">Mã BN: {form.mabenhnhan || '—'}</div>
           )}
@@ -164,7 +169,7 @@ export function PatientFormDialog({
           />
         </div>
         <DialogFooter className="mt-2 flex items-center gap-2">
-          {isEditing && (
+          {isEditing && onDelete && confirm && (
             <Button
               type="button"
               variant="destructive"

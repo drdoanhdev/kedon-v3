@@ -91,7 +91,8 @@ Pattern chung: `requireTenant()` + branch access + `setNoCacheHeaders` + Supabas
 | `fetchWithAuth.ts` | fetch + Bearer/tenant/branch | một số trang (gồm benh-nhan một phần) |
 | `apiClient.ts` / `apiAuthHeaders.ts` | Axios + interceptors | hầu hết pages |
 | `patientSearch.ts` | `PatientResult`, `rankResults` | `usePatientSearch`, mobile nav |
-| `patientSeed.ts` | Parse chuỗi quick-create | MobileBottomNav |
+| `patientSeed.ts` | Parse chuỗi quick-create | MobileBottomNav (PAB), benh-nhan |
+| `patient/submitPatientForm.ts` | Validate + create/update BN dùng chung | benh-nhan actions, PAB quick create |
 | `recentActivity.ts` | Log hoạt động local | benh-nhan, mobile nav |
 | `utils.ts` | `capitalizeWords`, `searchByStartsWith` | benh-nhan |
 | `productFeaturesCatalog.ts` | Catalog `/tinh-nang` | tinh-nang.tsx |
@@ -160,10 +161,10 @@ flowchart LR
 | `loc-trung.tsx` | R bulk | — | — | yes |
 | `lich-hen.tsx` | R search | — | — | — |
 | `quan-ly-ghi-chu-khach-hang.tsx` | — | R/W branch-wide | — | — |
-| `usePatientSearch` / MobileBottomNav | R search | — | — | — (create qua URL `?new=1`) |
+| `usePatientSearch` / MobileBottomNav (PAB) | R search + create nhanh | — | — | — (deep link `?new=1` vẫn hỗ trợ) |
 | `tra-cuu-khach-hang` | qua `/api/branches/patients` | — | — | — |
 
-**Create BN:** chỉ trang `/benh-nhan` (POST). **Update:** benh-nhan + ke-don + ke-don-kinh. **Delete:** chỉ benh-nhan.
+**Create BN:** trang `/benh-nhan` (POST) và PAB (`QuickPatientCreateDialog` → `/api/benh-nhan`, rồi chọn kê kính / kê thuốc / ở lại tìm kiếm). Deep link `?new=1&quick_*` trên `/benh-nhan` giữ nguyên. **Update:** benh-nhan + ke-don + ke-don-kinh. **Delete:** chỉ benh-nhan.
 
 ---
 
