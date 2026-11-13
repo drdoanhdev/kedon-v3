@@ -529,100 +529,7 @@ export default function KeDon() {
   useEffect(() => { mobileTabRef.current = mobileTab; }, [mobileTab]);
   const mobileTabLabels = ['Đơn thuốc', 'Đơn cũ', 'Diễn tiến', 'Ảnh'] as const;
 
-  // ── Mobile header scroll-driven animation ──────────────────────
-  const [mobileHeaderRatio, setMobileHeaderRatio] = useState(0);
-  const mobileHeaderRatioRef = useRef(0);
-
-  const snapRatio = useCallback((target: 0 | 1) => {
-    const from = mobileHeaderRatioRef.current;
-    if (Math.abs(from - target) < 0.01) {
-      mobileHeaderRatioRef.current = target;
-      setMobileHeaderRatio(target);
-      return;
-    }
-    const duration = 200;
-    const startTime = performance.now();
-    const animate = (now: number) => {
-      const t = Math.min(1, (now - startTime) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      const ratio = from + (target - from) * eased;
-      mobileHeaderRatioRef.current = ratio;
-      setMobileHeaderRatio(ratio);
-      if (t < 1) requestAnimationFrame(animate);
-    };
-    requestAnimationFrame(animate);
-  }, []);
-
-  const touchStartXRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const touchStartRatioRef = useRef(0);
-  const mobileWrapperRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const wrapper = mobileWrapperRef.current;
-    if (!wrapper) return;
-    const MAX_TRAVEL = 128;
-
-    const getActivePanel = (): HTMLElement | null =>
-      wrapper.querySelector<HTMLElement>(`[data-panel-idx="${mobileTabRef.current}"]`);
-
-    const onTouchStart = (e: TouchEvent) => {
-      touchStartXRef.current = e.touches[0].clientX;
-      touchStartYRef.current = e.touches[0].clientY;
-      touchStartRatioRef.current = mobileHeaderRatioRef.current;
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      const dx = e.touches[0].clientX - touchStartXRef.current;
-      const dy = e.touches[0].clientY - touchStartYRef.current;
-      const dyUp = -dy;
-      if (Math.abs(dx) > Math.abs(dyUp) * 1.4 && Math.abs(dx) > 8) return;
-      const startRatio = touchStartRatioRef.current;
-      const panel = getActivePanel();
-      const touchInPanel = panel?.contains(e.target as Node) ?? false;
-      if (dyUp > 0) {
-        if (startRatio < 1) {
-          e.preventDefault();
-          const raw = startRatio + dyUp / MAX_TRAVEL;
-          const newRatio = Math.min(1, raw);
-          mobileHeaderRatioRef.current = newRatio;
-          setMobileHeaderRatio(newRatio);
-          if (raw > 1) {
-            if (panel) { panel.style.overflowY = 'auto'; panel.scrollTop = (raw - 1) * MAX_TRAVEL; }
-          }
-        } else if (!touchInPanel) {
-          // Header compact nhưng touch trên vùng header → chặn native scroll
-          e.preventDefault();
-        }
-      } else if (dyUp < 0) {
-        if ((panel?.scrollTop ?? 0) <= 0 && startRatio > 0) {
-          e.preventDefault();
-          mobileHeaderRatioRef.current = Math.max(0, startRatio + dyUp / MAX_TRAVEL);
-          setMobileHeaderRatio(mobileHeaderRatioRef.current);
-        } else if (!touchInPanel) {
-          // Touch trên header → chặn native scroll
-          e.preventDefault();
-        }
-      }
-    };
-
-    const onTouchEnd = () => {
-      const r = mobileHeaderRatioRef.current;
-      if (r > 0 && r < 1) snapRatio(r >= 0.5 ? 1 : 0);
-    };
-
-    wrapper.addEventListener('touchstart', onTouchStart, { passive: true });
-    wrapper.addEventListener('touchmove', onTouchMove, { passive: false });
-    wrapper.addEventListener('touchend', onTouchEnd, { passive: true });
-    wrapper.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    return () => {
-      wrapper.removeEventListener('touchstart', onTouchStart);
-      wrapper.removeEventListener('touchmove', onTouchMove);
-      wrapper.removeEventListener('touchend', onTouchEnd);
-      wrapper.removeEventListener('touchcancel', onTouchEnd);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapRatio, benhNhan?.id]);
+  // Header bệnh nhân cố định; chỉ panel bên dưới được cuộn (không collapse theo gesture).
 
   // ── Notes management ────────────────────────────────────────────
   const [openNotesDialog, setOpenNotesDialog] = useState(false);
@@ -1580,9 +1487,9 @@ export default function KeDon() {
   <div className="flex flex-col lg:block">
 
         {/* Mobile layout - Clinical blue theme */}
-  <div ref={mobileWrapperRef} className="block lg:hidden bg-[#f5f6f8] h-[calc(100dvh-68px)] flex flex-col overflow-hidden">
+  <div className="flex lg:hidden bg-[#f5f6f8] h-[calc(100dvh-60px-env(safe-area-inset-bottom))] flex-col overflow-hidden overscroll-none">
 
-          {/* Patient Mobile Header — sticky + scroll-driven animation */}
+          {/* Patient Mobile Header — cố định, không cuộn theo form */}
           <PatientMobileHeader
             className="flex-shrink-0"
             benhNhan={benhNhan}
@@ -1595,7 +1502,6 @@ export default function KeDon() {
             mobileTab={mobileTab}
             mobileTabLabels={mobileTabLabels}
             onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
-            mobileHeaderRatio={mobileHeaderRatio}
             familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
             renderBackgroundUploadNotice={renderBackgroundUploadNotice}
           />
@@ -1621,8 +1527,8 @@ export default function KeDon() {
           {/* === Panel 0: Đơn thuốc === */}
           <div
             data-panel-idx="0"
-            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
-            className="flex-shrink-0 h-full p-2 space-y-2"
+            style={{ width: '100vw' }}
+            className="flex-shrink-0 h-full overflow-y-auto overscroll-y-contain p-2 space-y-2"
           >
 
           {/* Diagnosis & Date - Mobile flat style */}
@@ -2153,8 +2059,8 @@ export default function KeDon() {
           {/* === Panel 1: Đơn cũ — mỗi đơn là 1 card độc lập === */}
           <div
             data-panel-idx="1"
-            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
-            className="flex-shrink-0 h-full p-2 space-y-0.5"
+            style={{ width: '100vw' }}
+            className="flex-shrink-0 h-full overflow-y-auto overscroll-y-contain p-2 space-y-0.5"
           >
             {dsDonCu.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-400">Chưa có đơn thuốc nào.</div>
@@ -2228,8 +2134,8 @@ export default function KeDon() {
           {/* === Panel 2: Diễn tiến — mỗi ghi chú là 1 card độc lập === */}
           <div
             data-panel-idx="2"
-            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
-            className="flex-shrink-0 h-full p-2 space-y-2"
+            style={{ width: '100vw' }}
+            className="flex-shrink-0 h-full overflow-y-auto overscroll-y-contain p-2 space-y-2"
           >
             <div className="flex justify-end">
               <Dialog open={openDialog} onOpenChange={setOpenDialog}>
@@ -2301,8 +2207,8 @@ export default function KeDon() {
           {/* === Panel 3: Ảnh đơn thuốc === */}
           <div
             data-panel-idx="3"
-            style={{ width: '100vw', overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto' }}
-            className="flex-shrink-0 h-full p-2 space-y-2"
+            style={{ width: '100vw' }}
+            className="flex-shrink-0 h-full overflow-y-auto overscroll-y-contain p-2 space-y-2"
           >
             <DonKinhMediaPanel
               donKinhId={null}

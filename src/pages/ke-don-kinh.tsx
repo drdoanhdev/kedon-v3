@@ -665,120 +665,7 @@ export default function KeDonKinh() {
       </div>
     );
   }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
-  // Mobile header scroll-driven ratio (0 = expanded, 1 = compact)
-  const [mobileHeaderRatio, setMobileHeaderRatio] = useState(0);
-  const mobileHeaderRatioRef = useRef(0);
-
-  // Snap ratio to 0 or 1 với easing khi ngón tay nhả ra giữa chừng
-  const snapRatio = useCallback((target: 0 | 1) => {
-    const from = mobileHeaderRatioRef.current;
-    if (Math.abs(from - target) < 0.01) {
-      mobileHeaderRatioRef.current = target;
-      setMobileHeaderRatio(target);
-      return;
-    }
-    const duration = 200;
-    const startTime = performance.now();
-    const animate = (now: number) => {
-      const t = Math.min(1, (now - startTime) / duration);
-      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      const ratio = from + (target - from) * eased;
-      mobileHeaderRatioRef.current = ratio;
-      setMobileHeaderRatio(ratio);
-      if (t < 1) requestAnimationFrame(animate);
-    };
-    requestAnimationFrame(animate);
-  }, []);
-
-  // Touch refs
-  const touchStartXRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const touchStartRatioRef = useRef(0);
-  const mobileContentRef = useRef<HTMLDivElement | null>(null);
-
-  // Non-passive touch interceptor: header "hấp thụ" scroll trước, sau đó panel mới scroll
-  useEffect(() => {
-    const wrapper = mobileContentRef.current;
-    if (!wrapper) return;
-    const MAX_TRAVEL = 128;
-
-    const getActivePanel = (): HTMLElement | null =>
-      wrapper.querySelector<HTMLElement>(`[data-panel-idx="${mobileTabRef.current}"]`);
-
-    const onTouchStart = (e: TouchEvent) => {
-      touchStartXRef.current = e.touches[0].clientX;
-      touchStartYRef.current = e.touches[0].clientY;
-      touchStartRatioRef.current = mobileHeaderRatioRef.current;
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      const dx = e.touches[0].clientX - touchStartXRef.current;
-      const dy = e.touches[0].clientY - touchStartYRef.current;
-      const dyUp = -dy;
-
-      // Bỏ qua nếu đây là gesture ngang (chuyển tab)
-      if (Math.abs(dx) > Math.abs(dyUp) * 1.4 && Math.abs(dx) > 8) return;
-
-      const startRatio = touchStartRatioRef.current;
-      const panel = getActivePanel();
-      const touchInPanel = panel?.contains(e.target as Node) ?? false;
-
-      if (dyUp > 0) {
-        // ── Cuộn lên ──
-        if (startRatio < 1) {
-          // Header chưa compact → hấp thụ scroll, chặn native scroll
-          e.preventDefault();
-          const raw = startRatio + dyUp / MAX_TRAVEL;
-          const newRatio = Math.min(1, raw);
-          mobileHeaderRatioRef.current = newRatio;
-          setMobileHeaderRatio(newRatio);
-
-          if (raw > 1) {
-            if (panel) {
-              panel.style.overflowY = 'auto';
-              panel.scrollTop = (raw - 1) * MAX_TRAVEL;
-            }
-          }
-        } else if (!touchInPanel) {
-          // Header compact nhưng touch trên vùng header → chặn native scroll
-          e.preventDefault();
-        }
-        // else: startRatio = 1 và touch trong panel → panel scroll natively
-      } else if (dyUp < 0) {
-        // ── Cuộn xuống ──
-        if ((panel?.scrollTop ?? 0) <= 0 && startRatio > 0) {
-          e.preventDefault();
-          const newRatio = Math.max(0, startRatio + dyUp / MAX_TRAVEL);
-          mobileHeaderRatioRef.current = newRatio;
-          setMobileHeaderRatio(newRatio);
-        } else if (!touchInPanel) {
-          // Touch trên header → chặn native scroll
-          e.preventDefault();
-        }
-      }
-    };
-
-    const onTouchEnd = () => {
-      const r = mobileHeaderRatioRef.current;
-      if (r > 0 && r < 1) {
-        snapRatio(r >= 0.5 ? 1 : 0);
-      }
-    };
-
-    wrapper.addEventListener('touchstart', onTouchStart, { passive: true });
-    wrapper.addEventListener('touchmove', onTouchMove, { passive: false });
-    wrapper.addEventListener('touchend', onTouchEnd, { passive: true });
-    wrapper.addEventListener('touchcancel', onTouchEnd, { passive: true });
-
-    return () => {
-      wrapper.removeEventListener('touchstart', onTouchStart);
-      wrapper.removeEventListener('touchmove', onTouchMove);
-      wrapper.removeEventListener('touchend', onTouchEnd);
-      wrapper.removeEventListener('touchcancel', onTouchEnd);
-    };
-  // mobileContentRef bao gồm cả header và viewport; re-run khi patient load.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapRatio, benhNhan?.id]);
+  // Header bệnh nhân cố định; chỉ panel bên dưới được cuộn (không collapse theo gesture).
 
   // Patient notes management dialog state
   const [openNotesDialog, setOpenNotesDialog] = useState(false);
@@ -2040,7 +1927,7 @@ export default function KeDonKinh() {
       beforeMemberSwitch={confirmBeforeFamilySwitch}
     >
       {/* Mobile: Stack layout, Desktop: Keep sidebar */}
-      <div className="flex flex-col h-[calc(100dvh-68px)] overflow-hidden lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
+      <div className="flex flex-col h-[calc(100dvh-60px-env(safe-area-inset-bottom))] overflow-hidden overscroll-none lg:mt-0 lg:flex-row lg:h-[calc(100vh-72px)]">
         
         {/* Left sidebar - Hidden on mobile, shown on desktop (tab layout) */}
         <aside className="hidden lg:flex lg:flex-col w-72 flex-shrink-0 border-r border-gray-200 bg-[#f5f6f8] overflow-hidden">
@@ -2173,8 +2060,8 @@ export default function KeDonKinh() {
         </aside>
 
         {/* Main content area */}
-        <div ref={mobileContentRef} className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
-            {/* Patient info — Mobile: sticky header + tabs + notes */}
+        <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
+            {/* Patient info — Mobile: cố định, không cuộn theo form */}
             <PatientMobileHeader
               className="lg:hidden flex-shrink-0"
               benhNhan={benhNhan}
@@ -2188,7 +2075,6 @@ export default function KeDonKinh() {
               mobileTab={mobileTab}
               mobileTabLabels={mobileTabLabels}
               onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
-              mobileHeaderRatio={mobileHeaderRatio}
               familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
               renderBackgroundUploadNotice={renderBackgroundUploadNotice}
             />
@@ -2204,9 +2090,8 @@ export default function KeDonKinh() {
             >
             <div
               data-panel-idx="0"
-              className={`absolute inset-0 overscroll-y-contain px-2 py-2 flex flex-col gap-2 ${mobileTab === 0 ? 'pointer-events-auto' : 'pointer-events-none'} lg:static lg:inset-auto lg:p-4 lg:gap-4 lg:pointer-events-auto lg:overflow-y-auto`}
+              className={`absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 flex flex-col gap-2 ${mobileTab === 0 ? 'pointer-events-auto' : 'pointer-events-none'} lg:static lg:inset-auto lg:p-4 lg:gap-4 lg:pointer-events-auto`}
               style={{
-                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${-mobileTab * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
@@ -3018,9 +2903,8 @@ export default function KeDonKinh() {
             {/* Panel 1: Đơn cũ (mobile viewport track) */}
             <div
               data-panel-idx="1"
-              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 ${mobileTab === 1 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 1 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
-                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(1 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
@@ -3032,9 +2916,8 @@ export default function KeDonKinh() {
             {/* Panel 2: Lịch hẹn (mobile viewport track) */}
             <div
               data-panel-idx="2"
-              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 ${mobileTab === 2 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 ${mobileTab === 2 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
-                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(2 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
@@ -3118,9 +3001,8 @@ export default function KeDonKinh() {
             {/* Panel 3: Ảnh đơn kính (mobile viewport track) */}
             <div
               data-panel-idx="3"
-              className={`lg:hidden absolute inset-0 overscroll-y-contain px-2 py-2 space-y-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
+              className={`lg:hidden absolute inset-0 overflow-y-auto overscroll-y-contain px-2 py-2 space-y-2 ${mobileTab === 3 ? 'pointer-events-auto' : 'pointer-events-none'}`}
               style={{
-                overflowY: mobileHeaderRatio > 0 && mobileHeaderRatio < 1 ? 'hidden' : 'auto',
                 transform: `translate3d(calc(${(3 - mobileTab) * 100}% + ${tabDragX}px), 0, 0)`,
                 transition: tabDragging ? 'none' : 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)',
                 willChange: 'transform',
