@@ -40,7 +40,8 @@ import {
   updateBackgroundUploadTask,
 } from '@/lib/media/backgroundUploadPersistence';
 import { buildActivityPatientRef, pushRecentActivity } from '@/lib/recentActivity';
-import { uploadMediaBinary } from '@/lib/media/clientUpload';
+import { uploadPrescriptionMediaQueue } from '@/lib/media/uploadPrescriptionMedia';
+import { useMobileHeaderCollapse } from '@/hooks/useMobileHeaderCollapse';
 
 interface BenhNhan {
   id: number;
@@ -304,81 +305,6 @@ function getHenCountdown(dateStr: string, trangThai: string): { text: string; cl
   return { text: `Còn ${diff} ngày`, className: 'text-gray-500 bg-gray-50' };
 }
 
-async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const size = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-      img.onerror = () => reject(new Error('Cannot read image dimensions'));
-      img.src = objectUrl;
-    });
-    return size;
-  } catch {
-    return null;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-async function uploadDraftMediaQueue(
-  donKinhId: number,
-  draftQueue: DraftDonKinhUploadItem[]
-): Promise<{ successCount: number; failedCount: number; failedItems: DraftDonKinhUploadItem[] }> {
-  let successCount = 0;
-  let failedCount = 0;
-  const failedItems: DraftDonKinhUploadItem[] = [];
-
-  for (const draft of draftQueue) {
-    let mediaId: number | null = null;
-
-    try {
-      const createRes = await axios.post('/api/don-kinh/media', {
-        don_kinh_id: donKinhId,
-        loai_anh: 'don_kinh',
-        mime_type: draft.file.type || 'image/jpeg',
-        size_bytes: draft.file.size,
-        original_filename: draft.file.name,
-        source_device: draft.sourceDevice,
-        captured_at: new Date().toISOString(),
-      });
-
-      const uploadMeta = createRes.data?.upload as { method?: 'PUT'; signedUrl?: string; proxyUrl?: string; contentType?: string } | undefined;
-      mediaId = Number(createRes.data?.data?.id || 0) || null;
-      if (!uploadMeta?.signedUrl && !uploadMeta?.proxyUrl) {
-        throw new Error('Không nhận được signed upload URL');
-      }
-
-      const uploadRes = await uploadMediaBinary(uploadMeta, draft.file);
-
-      if (!uploadRes.ok) {
-        throw new Error(`Upload thất bại (${uploadRes.status})`);
-      }
-
-      const imageDimensions = await readImageDimensions(draft.file);
-      if (mediaId) {
-        await axios.patch('/api/don-kinh/media', {
-          id: mediaId,
-          status: 'uploaded',
-          width: imageDimensions?.width,
-          height: imageDimensions?.height,
-          size_bytes: draft.file.size,
-        });
-      }
-
-      successCount += 1;
-    } catch {
-      failedCount += 1;
-      failedItems.push(draft);
-      if (mediaId) {
-        await axios.patch('/api/don-kinh/media', { id: mediaId, status: 'failed' }).catch(() => {});
-      }
-    }
-  }
-
-  return { successCount, failedCount, failedItems };
-}
-
 type DetectedBarcodeValue = { rawValue?: string };
 type BarcodeDetectorLike = { detect: (source: HTMLVideoElement) => Promise<DetectedBarcodeValue[]> };
 type BarcodeDetectorCtorLike = {
@@ -485,6 +411,7 @@ export default function KeDonKinh() {
   const [backgroundUploadingCount, setBackgroundUploadingCount] = useState(0);
   const [backgroundFailedTasks, setBackgroundFailedTasks] = useState<BackgroundDonKinhFailedTask[]>([]);
   const runningBackgroundOwnersRef = useRef<Set<number>>(new Set());
+  const highlightFromUrlConsumedRef = useRef(false);
 
   useEffect(() => {
     if (!activeDonKinhMediaId) return;
@@ -531,7 +458,7 @@ export default function KeDonKinh() {
       });
 
       const queue = persistedItemsToDraftQueue(task.items) as DraftDonKinhUploadItem[];
-      const result = await uploadDraftMediaQueue(task.ownerId, queue);
+      const result = await uploadPrescriptionMediaQueue('don_kinh', task.ownerId, queue);
       toast.dismiss(toastId);
 
       if (result.failedCount === 0) {
@@ -575,9 +502,11 @@ export default function KeDonKinh() {
         const taskId = await enqueueBackgroundUploadTask('don_kinh', donKinhId, items);
         if (!taskId) {
           // Fallback nếu IndexedDB không khả dụng.
-          const fallbackResult = await uploadDraftMediaQueue(donKinhId, items);
+          const fallbackResult = await uploadPrescriptionMediaQueue('don_kinh', donKinhId, items);
           if (fallbackResult.failedCount > 0) {
             toast.error(`Đơn kính #${donKinhId}: lỗi ${fallbackResult.failedCount} ảnh (trình duyệt không hỗ trợ lưu tác vụ nền)`);
+          } else if (fallbackResult.successCount > 0) {
+            toast.success(`Đã tải nền ${fallbackResult.successCount} ảnh lên đơn kính #${donKinhId}`);
           }
           return;
         }
@@ -653,7 +582,9 @@ export default function KeDonKinh() {
                   <button
                     type="button"
                     className="h-7 px-2 rounded-md border border-amber-300 text-amber-800 text-[11px] hover:bg-amber-100"
-                    onClick={() => setBackgroundFailedTasks((prev) => prev.filter((t) => t.taskId !== task.taskId))}
+                    onClick={() => {
+                      void removeBackgroundUploadTask(task.taskId).then(() => syncBackgroundFailedTasks());
+                    }}
                   >
                     Ẩn
                   </button>
@@ -664,9 +595,7 @@ export default function KeDonKinh() {
         )}
       </div>
     );
-  }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask]);
-  // Header bệnh nhân cố định; chỉ panel bên dưới được cuộn (không collapse theo gesture).
-
+  }, [backgroundUploadingCount, backgroundFailedTasks, retryBackgroundFailedTask, syncBackgroundFailedTasks]);
   // Patient notes management dialog state
   const [openNotesDialog, setOpenNotesDialog] = useState(false);
   const [allPatientNotes, setAllPatientNotes] = useState<PatientNote[]>([]);
@@ -791,6 +720,7 @@ export default function KeDonKinh() {
   const tabSwipeStart = useRef<{ x: number; y: number; locked: 'h' | 'v' | null }>({ x: 0, y: 0, locked: null });
   const tabSwipeActive = useRef(false);
   const tabViewportRef = useRef<HTMLDivElement | null>(null);
+  const mobileHeaderRatio = useMobileHeaderCollapse(tabViewportRef, mobileTab);
   const onTabTouchStart = (e: React.TouchEvent) => {
     const t = e.target as HTMLElement;
     // Chỉ chặn ở vùng đã đánh dấu no-swipe (nếu có vùng có gesture riêng).
@@ -1882,6 +1812,18 @@ export default function KeDonKinh() {
     setIsEditing(true);
   };
 
+  useEffect(() => {
+    if (highlightFromUrlConsumedRef.current) return;
+    const raw = searchParams.get('highlight');
+    const targetId = raw ? Number.parseInt(raw, 10) : NaN;
+    if (!Number.isFinite(targetId) || targetId <= 0) return;
+    const don = donKinhs.find((item) => item.id === targetId);
+    if (!don) return;
+    highlightFromUrlConsumedRef.current = true;
+    setHighlightId(targetId);
+    handleSelectDon(don);
+  }, [donKinhs, searchParams]);
+
   if (!benhnhanid) {
     return (
       <div className="p-1">
@@ -2061,7 +2003,7 @@ export default function KeDonKinh() {
 
         {/* Main content area */}
         <div className="flex-1 flex flex-col min-h-0 bg-[#f5f6f8] overflow-hidden">
-            {/* Patient info — Mobile: cố định, không cuộn theo form */}
+            {/* Patient info — Mobile: thu gọn theo scrollTop panel (không chặn gesture) */}
             <PatientMobileHeader
               className="lg:hidden flex-shrink-0"
               benhNhan={benhNhan}
@@ -2075,6 +2017,7 @@ export default function KeDonKinh() {
               mobileTab={mobileTab}
               mobileTabLabels={mobileTabLabels}
               onTabChange={(idx) => setMobileTab(idx as 0 | 1 | 2 | 3)}
+              mobileHeaderRatio={mobileHeaderRatio}
               familySection={<PatientFamilyMobileChip benhnhanId={patientIdNumber} />}
               renderBackgroundUploadNotice={renderBackgroundUploadNotice}
             />
@@ -3015,6 +2958,8 @@ export default function KeDonKinh() {
                 onPhotoAdded={() => setMobileTab(0)}
                 headerTitle={mobileMediaPanelTitle}
                 draftNoticeText={mobileMediaDraftNotice}
+                patientId={patientIdNumber}
+                previousVisitSource="don_kinh"
               />
               <PatientMediaTimeline
                 patientId={patientIdNumber}
@@ -3022,6 +2967,7 @@ export default function KeDonKinh() {
                 hideHeader
                 onCountChange={setImageTabCount}
                 ownerIdFilter={activeDonKinhMediaId}
+                showOpenPrescriptionLink
               />
             </div>
             </div>
@@ -3162,6 +3108,8 @@ export default function KeDonKinh() {
             donKinhId={activeDonKinhMediaId}
             onDraftQueueChange={setDraftMediaQueue}
             draftQueueResetToken={draftQueueResetToken}
+            patientId={patientIdNumber}
+            previousVisitSource="don_kinh"
           />
 
           </div>

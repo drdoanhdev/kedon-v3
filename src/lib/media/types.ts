@@ -76,7 +76,7 @@ export function isAllowedImageMimeType(value: unknown): value is string {
   const normalized = value.toLowerCase().split(';')[0].trim();
   return ALLOWED_IMAGE_MIME_TYPES.has(normalized);
 }
-
 export function getMediaLimitPerKind(kind: MediaImageKind): number {
   return MEDIA_LIMIT_PER_KIND[kind];
 }
+
